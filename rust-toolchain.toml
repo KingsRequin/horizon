@@ -1,0 +1,5 @@
+# Même Rust en local et en CI : un nouveau Rust ajoute des avertissements de clippy, et la CI
+# les traite en erreurs. À monter à la main, en corrigeant ce que clippy signale alors.
+[toolchain]
+channel = "1.94.1"
+components = ["clippy"]

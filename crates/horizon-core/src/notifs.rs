@@ -85,7 +85,7 @@ impl NotifStore {
                     self.unread.insert(n.id);
                 }
                 self.list.push(n.clone());
-                self.list.sort_by(|a, b| b.at_ms.cmp(&a.at_ms));
+                self.list.sort_by_key(|n| std::cmp::Reverse(n.at_ms));
                 for dropped in self.list.drain(CAPACITY.min(self.list.len())..) {
                     self.unread.remove(&dropped.id);
                 }
