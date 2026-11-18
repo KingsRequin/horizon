@@ -83,7 +83,9 @@ component FlashFade inherits Rectangle {
         entering when root.entering: {
             opacity: 0;
             out {
-                animate opacity { duration: Theme.dur-base; easing: cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+                // Jamais de courbe à rebond sur une opacité : au-delà de 1, le rendu logiciel de
+                // Slint déborde en teintant les icônes (panique en debug, alpha faux en release).
+                animate opacity { duration: Theme.dur-base; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
             }
         }
     ]

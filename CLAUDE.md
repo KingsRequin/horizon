@@ -86,5 +86,7 @@ pure doit le nommer).
   en page dont la taille dépend de la largeur de la fenêtre fait une boucle de liaison (poser à la
   main). Autres pièges de Slint : `natif/README.md`.
 - Toute nouvelle fenêtre appelle `ui::accent::follow(&fenêtre)` (accent, animations réduites).
+- Jamais de courbe à rebond (`cubic-bezier(…, 1.2)`) sur une opacité : au-delà de 1, le rendu
+  logiciel de Slint déborde en teintant une icône (panique en debug, alpha faux en release).
 - Scripts Python en heredoc : `\a`, `\U`… corrompent les chemins Windows, et certains caractères
   (« … ») arrivent mal ; préférer l'outil d'édition. Écrire les fichiers en LF.
