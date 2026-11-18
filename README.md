@@ -1,86 +1,161 @@
+<div align="center">
+
+<img src="packaging/icons/Square150x150Logo.png" width="96" alt="Horizon logo">
+
 # Horizon
 
-*[Français](README.fr.md)*
+**A fast, modular toolbar at the top of every screen, for Windows 10 and 11.**
 
-A modular toolbar at the top of every screen, for Windows 10 and 11 (one or several monitors,
-mixed scaling). Written in Rust with [Slint](https://slint.dev) (software rendering, layered
-windows): one process, ~50 MB of memory, ~1.5 % of one core at rest, no WebView2.
+Music, shortcuts, notifications, system stats, Claude Code sessions, weather, calendar…
+in one native app that uses ~50 MB of memory and stays out of your way.
 
-> The interface is in French only for now. Contributions (translations included) are welcome.
+[![Release](https://img.shields.io/github/v/release/KingsRequin/horizon?style=flat-square)](https://github.com/KingsRequin/horizon/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/KingsRequin/horizon/ci.yml?branch=master&style=flat-square&label=CI)](https://github.com/KingsRequin/horizon/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square&logo=windows)
+![Rust](https://img.shields.io/badge/Rust-Slint-orange?style=flat-square&logo=rust)
+
+[**Download**](https://github.com/KingsRequin/horizon/releases/latest) ·
+[Features](#features) ·
+[Install](#install) ·
+[FAQ](#faq) ·
+[Français](README.fr.md)
+
+<img src="docs/images/hero.png" alt="A tall Horizon bar: shortcuts, microphone, system and clock in the strip; music, Claude Code, system and weather as tiles" width="100%">
+
+</div>
+
+> [!NOTE]
+> The interface is in **French** for now. Translations are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Why Horizon?
+
+- **Native and light.** Rust + Slint, software rendering, one process: ~50 MB of memory and
+  ~1.5 % of one CPU core at rest for four bars. No Electron, no WebView.
+- **Every screen gets its own bar.** It reserves its space, so maximized windows start below
+  it, and hides when a window goes fullscreen.
+- **Yours to arrange.** Drag widgets around, pick a style per screen, make a bar taller to show
+  panels as tiles, switch layouts automatically per app.
+- **Updates itself.** New versions come from GitHub Releases, checked with SHA-256 and
+  installed at the next start.
 
 ## Features
 
-- **One bar per screen** that reserves its space (maximized windows start below it), in
-  "islands" or "graphic" style, clickable, hover-only or information-only. It hides when a
-  window goes fullscreen and comes back when the mouse rests at the top edge.
-- **Modular**: right-click a bar → *Modifier la barre*, drag widgets around, *+* to add one,
-  right-click a widget for its settings, to remove it or to send it to another screen; Ctrl+Z
-  undoes. **Tall bars** show widget panels as tiles below the strip. **Profiles** switch the
-  layout automatically while a given app is in the foreground.
-- **Widgets**: now playing (cover, controls, scroll to seek, the bar glows with the bass),
-  shortcuts with any icon (brand logos, images, app icons) and an "open" dot, Windows
-  notifications with a dynamic island, CPU / GPU / memory, microphone and audio panel (default
-  devices, per-app volume), clock with timer and pomodoro, Claude Code sessions (hooks: waiting,
-  permission requests, token usage, bring the terminal to the front), Claude quota, suggestions
-  from usage (apps, Vivaldi history), headset battery (30+ wireless headsets read over HID, see
-  `README.fr.md`), weather (Open-Meteo), calendar (iCal), servers from `~/.ssh/config`, windows
-  per screen, and [Essaim](https://github.com/KingsRequin/essaim) (music-reactive cursor).
-- **Command palette** (Ctrl+Alt+P), **Do not disturb**, volume / media on-screen display in
-  place of Windows', accent color taken from the album cover or the wallpaper, game mode.
-- **Automatic updates** from GitHub Releases (verified with SHA-256, installed at the next start).
+<table>
+<tr>
+<td width="33%" valign="top"><img src="docs/images/media.png" alt="Now playing panel"></td>
+<td width="33%" valign="top"><img src="docs/images/system.png" alt="System panel"></td>
+<td width="33%" valign="top"><img src="docs/images/weather.png" alt="Weather panel"></td>
+</tr>
+<tr>
+<td valign="top"><b>Now playing</b> — cover, controls, seek with the wheel, per-app volume. The
+bar glows with the bass, in the colors of the album art.</td>
+<td valign="top"><b>System</b> — CPU, GPU and memory as graphs or gauges, and the apps that use
+them the most.</td>
+<td valign="top"><b>Weather</b> — now, hour by hour and the next days (Open-Meteo, no account
+needed).</td>
+</tr>
+</table>
+
+Hover a widget to see its panel; make a bar taller and panels become **tiles** (picture above).
+Every feature in detail (French): [docs/guide.md](docs/guide.md).
+
+**Two styles, one per screen** — "islands" (top) or "graphic" (bottom):
+
+<img src="docs/images/bars.png" alt="Islands and graphic styles" width="100%">
+
+**Edit mode** — right-click a bar → *Modifier la barre*: drag widgets between zones and screens,
+<kbd>+</kbd> to add one, <kbd>Ctrl</kbd>+<kbd>Z</kbd> to undo.
+
+<img src="docs/images/edit.png" alt="Edit mode" width="100%">
+
+**Command palette** (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd>) — fuzzy search over your
+shortcuts, Start menu apps, audio devices, timer, profiles and more.
+
+**Widgets**
+
+| | |
+|---|---|
+| 🎵 **Now playing** | Any app that talks to Windows media controls (Spotify, browsers, YouTube Music…) |
+| 🚀 **Shortcuts** | Any icon (brand logos, images, app icons), a dot when the app is open, click to focus or launch |
+| 🔔 **Notifications** | Windows notifications with a dynamic island, Do not disturb, mute per app |
+| 📊 **System** | CPU, GPU, memory as graphs or gauges |
+| 🎙️ **Microphone & audio** | Default devices, favorites, per-app volume |
+| 🤖 **Claude Code** | Sessions (working, waiting, permission requests), token usage, bring the terminal back; subscription quota |
+| 🎧 **Headset battery** | 30+ wireless headsets read directly over HID (Logitech, SteelSeries, HyperX, Razer, Corsair, Astro, Audeze, JBL) |
+| 🌤️ **Weather**, 📅 **Calendar** | Open-Meteo; any iCal address (Google, Outlook…) |
+| 🖥️ **Servers** | Hosts from `~/.ssh/config`, online status and latency, SSH in one click |
+| 🪟 **Windows** | Open windows per screen, bring one to the current screen |
+| ✨ **Suggestions** | Apps and sites you use at this time of day |
+| 🌀 **[Essaim](https://github.com/KingsRequin/essaim)** | Pause and tune the music-reactive cursor |
+
+**And also:** timer and pomodoro, volume and media on-screen display in place of Windows',
+accent color from the wallpaper, game mode, layout profiles per app, status page that tells you
+what works and what doesn't.
 
 ## Install
 
-1. Download `Horizon-<version>.zip` from [Releases](https://github.com/KingsRequin/horizon/releases)
-   and extract it.
-2. Double-click `Installer.cmd`. Horizon goes to `%LOCALAPPDATA%\Programs\Horizon`, starts with
-   Windows and appears in the Start menu. No administrator rights needed. The exe is not signed:
-   on "Windows protected your PC", choose "More info" → "Run anyway".
-3. To read other apps' notifications, turn on Windows developer mode (Settings → System → For
-   developers) and run `Installer.cmd` again (package identity without signing, see
-   `docs/notifications.md`). Everything else works without it.
+1. Download `Horizon-<version>.zip` from the [latest release](https://github.com/KingsRequin/horizon/releases/latest) and extract it.
+2. Double-click **`Installer.cmd`**. Horizon goes to `%LOCALAPPDATA%\Programs\Horizon`, starts
+   with Windows and appears in the Start menu. No administrator rights needed.
+3. *(Optional)* To show other apps' notifications, turn on **developer mode** in Windows
+   (Settings → System → For developers) and run `Installer.cmd` again.
 
-Claude Code users: the installer adds Horizon's hooks to `%USERPROFILE%\.claude\settings.json`
-(a backup is kept next to it); run `Installer.cmd -NoClaudeHooks` to skip them. Uninstall with
-`Desinstaller.cmd` (`-RemoveConfig -RemoveClaudeHooks` removes everything).
+Then right-click a bar → **Modifier la barre** to make it yours.
 
-Updates: Horizon checks GitHub one minute after start and every 12 hours, downloads and verifies
-the new version, then installs it at the next start; the island and *Réglages d'Horizon › État*
-offer to install it right away. Turn it off in *Réglages d'Horizon › Fonctions*.
+Uninstall with `Desinstaller.cmd` (add `-RemoveConfig` to also delete your settings).
 
-## Build from source
+## FAQ
 
-Rust 1.90 or newer, on Windows.
+<details>
+<summary><b>Windows says "Windows protected your PC".</b></summary>
 
-```
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
-scripts\install.ps1            # build in release, install and start
-```
+Horizon is not code-signed (certificates are expensive for a free project). Click
+*More info* → *Run anyway*. The source is here, and every release is built by GitHub Actions
+from this repository.
+</details>
 
-Sound capture and analysis come from [audio-commun](https://github.com/KingsRequin/audio-commun),
-shared with Essaim. To work on both at once, clone it next to this repository and point to it in
-`.cargo/config.toml` (not tracked):
+<details>
+<summary><b>Why does reading notifications need developer mode?</b></summary>
 
-```toml
-[patch."https://github.com/KingsRequin/audio-commun"]
-audio-commun = { path = "../audio-commun" }
-```
+Windows only lets apps with a *package identity* read notifications. Horizon registers an
+unsigned one, which Windows accepts in developer mode only. Details in
+[docs/notifications.md](docs/notifications.md).
+</details>
 
-Code layout and how to add a widget: `natif/README.md` (one folder per widget:
-`natif/ui/widgets/<id>/` for the interface, `natif/src/widgets/<id>/` for its service).
+<details>
+<summary><b>Does it change anything in my Claude Code setup?</b></summary>
 
-### Personal edition
+If Claude Code is installed, the installer adds Horizon's hooks to
+`%USERPROFILE%\.claude\settings.json` (a backup is kept). They only report events to Horizon;
+they never answer permission requests. Install with `Installer.cmd -NoClaudeHooks` to skip them.
+</details>
 
-A few widgets talk to the author's own, unpublished apps (Prisme RGB engine, SharkApp phone
-agent, a BetterDiscord voice relay). They sit behind the Cargo feature `personal`, which neither
-the Releases nor a default build include (`scripts\install.ps1 -Personal` builds it).
+<details>
+<summary><b>Where are my settings?</b></summary>
 
-### Releasing
+`%APPDATA%\Horizon` (`layout.json`, `settings.toml`, log). Most options are in the right-click
+menu of a bar → *Réglages d'Horizon*.
+</details>
 
-Bump `version` in `Cargo.toml` (`[workspace.package]`), commit, then push a `v<version>` tag. The
-`Release` workflow builds the public edition with `scripts\package.ps1` and publishes the zip,
-`horizon.exe`, `horizon-hook.exe` and `SHA256SUMS`, which installed copies pick up.
+## Roadmap
+
+- **Plugins** — widgets in their own folder (Slint interface + JavaScript), installed from a
+  library on GitHub and loaded without restarting, with a guide to write them with an AI assistant.
+- **Discord voice** through the official local RPC (who's talking, mute, per-user volume).
+- **Translations.**
+
+## Built with Claude Code
+
+Horizon was written entirely with [Claude Code](https://claude.com/claude-code), Anthropic's
+AI coding agent. [KingsRequin](https://github.com/KingsRequin) designed it and supervised all of
+it: every feature was specified, reviewed and tested on a real four-monitor setup before being
+kept.
+
+## Contributing
+
+Bug reports and ideas: [issues](https://github.com/KingsRequin/horizon/issues). Building from
+source and code layout: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

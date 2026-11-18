@@ -1,16 +1,8 @@
-# Horizon
+# Horizon — guide détaillé
 
-*[English](README.md)*
+*Présentation et installation : [README](../README.fr.md). Développement : [CONTRIBUTING.md](../CONTRIBUTING.md).*
 
-Barre d'outils modulaire en haut de chaque écran, pour Windows 10 et 11 (un ou plusieurs
-écrans, mises à l'échelle différentes). Rust + Slint (rendu logiciel, fenêtres « layered ») : un
-seul processus, ~50 Mo de mémoire, ~1,5 % d'un cœur au repos, sans WebView2. L'interface est en
-français.
-
-- Installer : [Releases](https://github.com/KingsRequin/horizon/releases), voir
-  [Installation](#installation) ; les mises à jour arrivent ensuite toutes seules.
-- Notifications (identité de paquet) : `docs/notifications.md`
-- Organisation du code et ajout d'un widget : `natif/README.md`
+Ce guide décrit en détail chaque fonction, les fichiers de configuration et les casques reconnus.
 
 ## Ce que fait Horizon
 
@@ -39,13 +31,12 @@ français.
 - Widgets : lecture en cours (pochette, commandes, molette ±10 s avec bulle « +20 s · 2:43 »),
   raccourcis à icône libre (logo,
   image ou icône de l'appli sans flèche), notifications (et îlot dynamique), processeur / GPU /
-  mémoire (courbes ou jauges, détail au survol), micro et Krisp, horloge, sessions Claude Code,
+  mémoire (courbes ou jauges, détail au survol), micro, horloge, sessions Claude Code,
   quota Claude, suggestions selon l'usage (applis utilisées, historique de Vivaldi), batterie du
   casque, météo (Open-Meteo, ville dans les réglages), agenda (adresses iCal secrètes, lien de
   visio), serveurs (`~/.ssh/config`), fenêtres ouvertes par écran, et
   [Essaim](https://github.com/KingsRequin/essaim) (curseur animé qui suit la musique : pause et
-  réglages en direct ; le widget n'apparaît que quand Essaim tourne). Widgets de l'édition
-  personnelle : voir [plus bas](#édition-personnelle).
+  réglages en direct ; le widget n'apparaît que quand Essaim tourne).
 - **Raccourcis** : pastille sous l'icône quand l'appli a une fenêtre ouverte (relevé léger des
   fenêtres toutes les 2 s et à chaque changement de premier plan ; `.lnk`, exe et
   `shell:AppsFolder`, pas les URL ni les `.url`). Clic = l'appli ouverte revient au premier
@@ -137,13 +128,12 @@ français.
   touches, autre appli), la touche de lecture pressée (crochet du shell `HSHELL_APPCOMMAND`, pas
   de crochet clavier) et chaque nouveau morceau. L'îlot XAML de Windows est poussé hors écran
   tant que la barre principale est visible ; il revient en plein écran, si la fonction est
-  coupée et à la fermeture (pas après un plantage : redémarrer l'Explorateur le remet). Aperçu :
-  `?mock=main&osd=volume|mute|media|next|track`.
+  coupée et à la fermeture (pas après un plantage : redémarrer l'Explorateur le remet).
 - La barre d'un écran se cache quand une fenêtre y est en plein écran ; elle revient si la
   souris reste 150 ms dans les 12 px du haut de l'écran (traverser vers l'écran du dessus ne
   la fait pas apparaître).
 - Molette sur une zone vide d'une barre : volume général. L'écran du haut s'assombrit la nuit.
-- **Panneau Audio** (survol du widget micro et Krisp) : sortie et micro par défaut (clic = devient
+- **Panneau Audio** (survol du widget micro) : sortie et micro par défaut (clic = devient
   le défaut pour la console, le multimédia et les communications), épingle = favori en tête
   (les autres périphériques se replient derrière « N autres » ; favoris dans
   `%APPDATA%\Horizon\audio.json`), volume général et muet, volume et muet de chaque appli qui a
@@ -166,54 +156,7 @@ français.
 
 ## Installation
 
-1. Télécharger `Horizon-<version>.zip` depuis les
-   [Releases](https://github.com/KingsRequin/horizon/releases), l'extraire.
-2. Double-cliquer sur `Installer.cmd` : Horizon est copié dans `%LOCALAPPDATA%\Programs\Horizon`,
-   démarre avec la session et apparaît dans le menu Démarrer. Pas de droits administrateur.
-   L'exe n'est pas signé : SmartScreen affiche « Windows a protégé votre ordinateur » →
-   « Informations complémentaires » → « Exécuter quand même ».
-3. Notifications des autres applis (cloche, îlot) : activer le mode développeur de Windows
-   (Paramètres › Système › Espace développeurs), puis relancer `Installer.cmd` (identité de paquet
-   sans signature, voir `docs/notifications.md`). Sans lui, tout le reste marche.
-
-Claude Code : l'installation ajoute les hooks d'Horizon dans `%USERPROFILE%\.claude\settings.json`
-(copie de sauvegarde à côté) ; `Installer.cmd -NoClaudeHooks` pour s'en passer.
-Désinstaller : `Desinstaller.cmd` (`-RemoveConfig -RemoveClaudeHooks` retire tout).
-
-Depuis les sources (Rust 1.90 ou plus récent, Windows) :
-
-```
-scripts\install.ps1                 # compile, installe, démarre (hooks Claude Code compris)
-scripts\install.ps1 -NoClaudeHooks  # sans les hooks
-scripts\uninstall.ps1 [-RemoveClaudeHooks] [-RemoveConfig]
-```
-
-## Édition personnelle
-
-Horizon a d'abord été écrit pour un poste précis : quelques widgets parlent à des applis qui ne
-sont pas publiées. Ils sont derrière la fonction Cargo `personal`, absente des Releases et de
-toute compilation par défaut :
-
-- **Éclairage** (moteur RGB Prisme, `ws://127.0.0.1:28650`) : scène, extinction, luminosité,
-  fenêtre de réglages de Prisme ; couleur de la pochette et du fond d'écran envoyée à Prisme,
-  signaux lumineux (Claude attend, fin du minuteur, Ne pas déranger) ;
-- **Discord vocal** (relais `ws://127.0.0.1:28642` et plugin BetterDiscord) : salon, qui parle,
-  micro et son coupés, quitter le salon, volume par participant, statut « Ne pas déranger » ;
-  bouton Krisp du widget micro ;
-- **Batteries** du téléphone et de la montre, et **appels** dans l'îlot (fichiers écrits par
-  l'agent SharkApp).
-
-`scripts\install.ps1 -Personal` compile cette édition. Un widget s'y range en ajoutant
-`"personal": true` à son `widget.json` (voir `natif/README.md`).
-
-## Publier une version
-
-1. Monter `version` dans `Cargo.toml` (section `[workspace.package]`), commiter.
-2. Pousser une étiquette `v<version>` (`git tag v0.2.0 && git push origin v0.2.0`).
-3. Le workflow `Release` (`.github/workflows/release.yml`) vérifie, compile l'édition publique
-   (`scripts\package.ps1`, avec `HORIZON_RELEASE=1`) et publie la Release avec le zip,
-   `horizon.exe`, `horizon-hook.exe` et `SHA256SUMS`. Les Horizon installés la prennent au plus
-   tard 12 h après.
+Voir le [README](../README.fr.md#installation) ; depuis les sources : [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Casques reconnus
 
@@ -243,38 +186,4 @@ connaît la batterie. Sonde : `cargo run -p horizon-sys --example headset_probe`
 - `tmp\` : copies temporaires de l'historique et des icônes de Vivaldi (lues sans le verrouiller) ;
 - `horizon.log` : journal.
 
-Ports locaux : récepteur des hooks `127.0.0.1:28660` ; client d'Essaim `ws://127.0.0.1:28670`
-(édition personnelle : relais Discord `28642`, Prisme `28650`).
-
-## Développement
-
-```
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
-cargo clippy --workspace --all-targets --features horizon-natif/personal -- -D warnings
-cargo build -p horizon-natif [--release]
-```
-
-Essai d'une compilation : `horizon.exe --quit` sur l'installée, lancer
-`target\{debug|release}\horizon.exe`, puis relancer l'installée.
-Pendant qu'elle tourne, un second lancement avec un argument d'essai agit sur elle sans clic :
-`--reglages [page]` (section des Réglages d'Horizon, `widget:<id d'exemplaire>`, `profiles`),
-`--palette-essai`, `--alerte-essai <genre>`, `--edition-essai <quoi>` ; `--essai`
-au lancement ouvre les fenêtres d'essai de la plateforme (saisie, clavier, souris). Détails :
-`natif/README.md`.
-
-Organisation du code et ajout d'un widget : voir `CLAUDE.md` et `natif/README.md`. La capture
-et l'analyse du son viennent de la bibliothèque
-[audio-commun](https://github.com/KingsRequin/audio-commun) (partagée avec Essaim). Pour la
-modifier en même temps qu'Horizon, la cloner à côté et la désigner dans `.cargo/config.toml`
-(non suivi par git) :
-
-```toml
-[patch."https://github.com/KingsRequin/audio-commun"]
-audio-commun = { path = "../audio-commun" }
-```
-
-Lancer `cargo` depuis le dépôt. Sondes : `cargo run -p horizon-sys --example audio_probe`
-(périphériques, sessions par appli, appariement de la lecture en cours ; lecture seule) ;
-`cargo run -p horizon-core --example servers_probe` (hôtes de `~/.ssh/config` et test TCP) ;
-`horizon.exe --notif-probe` (depuis PowerShell).
+Ports locaux : récepteur des hooks `127.0.0.1:28660` ; client d'Essaim `ws://127.0.0.1:28670`.
