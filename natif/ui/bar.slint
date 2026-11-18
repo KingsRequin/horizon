@@ -345,10 +345,12 @@ export component BarWindow inherits Window {
             }
         }
 
+        // Hors édition, seulement la place des widgets de droite : déclarée après la zone gauche
+        // et le centre, une zone de toute la largeur leur prendrait survols et clics.
         right-zone := TouchArea {
-            x: root.editing ? root.right-zone-x : 0;
+            x: root.editing ? root.right-zone-x : root.width - t.band-pad - right-row.preferred-width;
             z: root.drag-zone == 2 ? 1 : 0;
-            width: root.editing ? root.right-zone-w : root.width;
+            width: root.editing ? root.right-zone-w : right-row.preferred-width + t.band-pad;
             height: parent.height;
             scroll-event(e) => {
                 if !root.editing || root.right-max-scroll <= 0 {
@@ -361,7 +363,7 @@ export component BarWindow inherits Window {
             clip: root.editing && root.drag-id == "";
         right-row := HorizontalLayout {
             // Alignée à droite ; trop pleine, elle part de la gauche et défile (« safe flex-end »).
-            x: !root.editing ? root.width - t.band-pad - self.preferred-width
+            x: !root.editing ? 0
                 : root.right-max-scroll > 0 ? root.zone-pad - root.right-scroll
                 : root.right-zone-w - root.zone-pad - self.preferred-width;
             width: self.preferred-width;
