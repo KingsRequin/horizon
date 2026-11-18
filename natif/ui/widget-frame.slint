@@ -132,3 +132,39 @@ export component StatusDot inherits Rectangle {
     drop-shadow-color: root.fill;
     animate background { duration: root.smooth ? Theme.dur-base : 0; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
 }
+
+// Largeur de la pastille « +N » (les widgets limités la retirent de leur place).
+export global More {
+    out property <length> width: 30px;
+}
+
+// « +N » d'un widget limité faute de place (src/overflow.rs) : survol = le panneau `panel`, qui
+// montre tous les éléments.
+export component MoreChip inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <int> count;
+    in property <string> panel;
+    in property <bool> interactive;
+    in property <bool> clickable;
+    width: More.width;
+    height: root.t.inner-h;
+    border-radius: root.t.inner-radius;
+    background: area.has-hover && root.interactive ? root.t.hover : root.t.surface-1;
+    animate background { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    area := PanelArea {
+        interactive: root.interactive;
+        clickable: root.clickable;
+        panel: root.panel;
+        Text {
+            width: parent.width;
+            height: parent.height;
+            text: "+" + root.count;
+            color: root.t.text-dim;
+            font-family: Theme.font-ui;
+            font-weight: 600;
+            font-size: Theme.fs-meta;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

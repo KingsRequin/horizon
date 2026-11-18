@@ -1,6 +1,6 @@
 # Horizon — guide détaillé
 
-*Présentation et installation : [README](../README.fr.md). Développement : [CONTRIBUTING.md](../CONTRIBUTING.md).*
+*Présentation et installation : [README](../README.md). Développement : [CONTRIBUTING.md](../CONTRIBUTING.md).*
 
 Ce guide décrit en détail chaque fonction, les fichiers de configuration et les casques reconnus.
 
@@ -25,7 +25,10 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   focus : Tab, Échap ou un clic ailleurs le ferme) ; les actions destructrices (éteindre
   l'éclairage, quitter un salon) sont dans les panneaux ; un widget vide ou pas réglé ouvre ses
   réglages. Barre trop chargée pour son écran : titre du média et dernière notification
-  raccourcis, puis widgets secondaires masqués (suggestions, météo, éclairage, batteries…).
+  raccourcis, puis les widgets qui grandissent avec leur nombre d'éléments (raccourcis,
+  sessions Claude) sont limités : ils montrent ce qui tient et une pastille « +N », dont le
+  survol ouvre un panneau avec tous les éléments. Aucun widget n'est masqué tant que ça suffit ;
+  en tout dernier recours, des widgets secondaires le sont (suggestions, météo, éclairage…).
   Barre large (écran du haut) : serveurs avec leur nom, lieu de l'événement, prochaine remise à
   zéro du quota, ancienneté de la notification, message des sessions Claude.
 - Widgets : lecture en cours (pochette, commandes, molette ±10 s avec bulle « +20 s · 2:43 »),
@@ -156,7 +159,7 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
 
 ## Installation
 
-Voir le [README](../README.fr.md#installation) ; depuis les sources : [CONTRIBUTING.md](../CONTRIBUTING.md).
+Voir le [README](../README.md#installation) ; depuis les sources : [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Casques reconnus
 

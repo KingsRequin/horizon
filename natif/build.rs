@@ -115,9 +115,12 @@ fn widgets(dir: &Path, icons: &[String], out: &mut String) -> Vec<String> {
             squeeze.push((r, id.clone()));
         }
         let flag = |k: &str| json[k] == true;
+        // Widget extensible : sa plus petite largeur (« +N » seul), en px logiques.
+        let grows = json["grows"].as_u64().map(|v| v as u16);
+        assert!(json["grows"].is_null() || grows.is_some(), "{} : « grows » = largeur minimale en px", manifest.display());
         writeln!(
             manifests,
-            "    Manifest {{ id: {id:?}, label: {label:?}, icon: {icon:?}, squeeze: {rank:?}, clickable_on_hover: {}, personal: {}, personal_settings: {} }},",
+            "    Manifest {{ id: {id:?}, label: {label:?}, icon: {icon:?}, squeeze: {rank:?}, clickable_on_hover: {}, grows: {grows:?}, personal: {}, personal_settings: {} }},",
             flag("clickableOnHover"),
             flag("personal"),
             flag("personalSettings"),

@@ -1,12 +1,13 @@
 // Raccourcis (app/src/widgets/shortcuts/Widget.svelte, lib/ShortcutIcon.svelte) : une rangée
 // d'icônes ; pastille sous celles dont l'appli est ouverte ; clic = premier plan ou lancement,
-// Maj+clic = nouvelle fenêtre. Sans raccourci : le nom du widget (clic = ses réglages). Données
-// par exemplaire : src/widgets/shortcuts.
+// Maj+clic = nouvelle fenêtre. Sans raccourci : le nom du widget (clic = ses réglages). Barre trop
+// chargée (`slot.limit`) : les icônes qui tiennent, puis « +N » dont le survol ouvre le panneau de
+// tous les raccourcis. Données par exemplaire : src/widgets/shortcuts.
 
 import { Theme, StyleTokens } from "../../theme.slint";
 import { Icon } from "../../components.slint";
 import { Panels } from "../../panels.slint";
-import { WidgetFrame } from "../../widget-frame.slint";
+import { WidgetFrame, More, MoreChip } from "../../widget-frame.slint";
 import { AppButton, AppTray } from "../../app-button.slint";
 
 export struct ShortcutItem {
@@ -18,6 +19,8 @@ export struct ShortcutItem {
     blank: bool,
     running: bool,
     title: string,
+    // Nom seul (panneau).
+    label: string,
 }
 
 export global ShortcutsData {
@@ -30,6 +33,14 @@ export global ShortcutsData {
 export component ShortcutsWidget inherits WidgetFrame {
     property <[ShortcutItem]> items: ShortcutsData.items(root.slot.id);
     property <bool> any: root.items.length > 0;
+    // Pas d'une icône (bouton + écart de la rangée) et marge de la plaque (style C), comme AppTray.
+    property <length> spacing: root.t.graphic ? 4px : 2px;
+    property <length> tray-pad: root.t.graphic ? 6px : 0px;
+    property <length> step: root.t.inner-h + root.spacing;
+    // Icônes montrées : toutes, ou celles qui tiennent dans la limite avec « +N ».
+    property <int> fit-n: root.slot.limit <= 0 ? root.items.length
+        : min(root.items.length, max(0, floor((root.slot.limit - 2 * root.padding-x - root.gap - More.width - root.tray-pad + root.spacing) / root.step)));
+    property <bool> cut: root.any && root.fit-n < root.items.length;
     property <color> placeholder-color: root.hovered && root.clickable ? root.t.text : root.t.text-dim;
     padding-x: root.any ? 4px : 12px;
     gap: root.any ? 2px : 10px;
@@ -42,22 +53,38 @@ export component ShortcutsWidget inherits WidgetFrame {
         }
     }
 
-    if root.any: AppTray {
+    // Rangée entière, coupée net après la dernière icône qui tient.
+    if root.any: Rectangle {
         y: (root.t.island-h - self.height) / 2;
-        t: root.t;
-        for it[i] in root.items: AppButton {
+        width: root.cut ? max(0px, root.tray-pad + root.fit-n * root.step - root.spacing) : tray.preferred-width;
+        height: tray.preferred-height;
+        clip: root.cut;
+        // Collée à gauche (Slint centre sinon) : la coupe se fait à droite.
+        tray := AppTray {
+            x: 0;
             t: root.t;
-            inactive: !root.clickable;
-            running: it.running;
-            tip: it.title;
-            image: it.image;
-            tint-mode: it.tint-mode;
-            tint: it.tint;
-            blank: it.blank;
-            clicked(shift) => {
-                ShortcutsData.open(root.slot.id, i, shift);
+            for it[i] in root.items: AppButton {
+                t: root.t;
+                inactive: !root.clickable;
+                running: it.running;
+                tip: it.title;
+                image: it.image;
+                tint-mode: it.tint-mode;
+                tint: it.tint;
+                blank: it.blank;
+                clicked(shift) => {
+                    ShortcutsData.open(root.slot.id, i, shift);
+                }
             }
         }
+    }
+    if root.cut: MoreChip {
+        y: (root.t.island-h - self.height) / 2;
+        t: root.t;
+        count: root.items.length - root.fit-n;
+        panel: "shortcuts:" + root.slot.id;
+        interactive: root.interactive;
+        clickable: root.clickable;
     }
     if !root.any: Rectangle {
         y: (root.t.island-h - self.height) / 2;

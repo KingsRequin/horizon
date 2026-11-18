@@ -87,6 +87,7 @@ fn slots(bar: &BarLayout, list: &[WidgetInstance]) -> Vec<Slot> {
                 lead: 0.0,
                 data: crate::widgets::data_index(bar, w),
                 clickable: crate::widgets::clicks_on(bar.interaction, m.clickable_on_hover),
+                limit: 0.0,
             })
         })
         .collect()
@@ -200,6 +201,15 @@ pub fn open(app: &AppHandle, label: &str, monitor: &MonitorInfo, rect: (i32, i32
         // au tour suivant.
         let compact = win.upgrade().is_some_and(|w| w.get_compact());
         let changed = widths.try_borrow_mut().is_ok_and(|mut m| m.insert(compact, &id, w));
+        if changed {
+            schedule_fit(&l);
+        }
+    });
+    let (l, widths, win) = (label.to_owned(), ui.widths.clone(), ui.window.as_weak());
+    ui.window.on_full_measured(move |id, w| {
+        // Largeur de tous les éléments d'un widget extensible, même limité.
+        let compact = win.upgrade().is_some_and(|w| w.get_compact());
+        let changed = widths.try_borrow_mut().is_ok_and(|mut m| m.insert_full(compact, &id, w));
         if changed {
             schedule_fit(&l);
         }
@@ -426,14 +436,25 @@ const STATUS_ID: &str = "#status";
 /// avant chaque emplacement affiché sauf le premier. Un widget qui n'a rien à montrer (largeur
 /// nulle : Sessions Claude sans session) ne compte pas, comme `.slot:not(:has(*))` ; les témoins
 /// de la barre principale comptent dans la zone gauche.
-fn needs(b: &BarUi, widths: &overflow::Widths, compact: bool, hidden: &[(Zone, &'static str)]) -> [f32; 3] {
+fn needs(
+    b: &BarUi,
+    widths: &overflow::Widths,
+    compact: bool,
+    hidden: &[(Zone, &'static str)],
+    limits: &[(String, f32)],
+) -> [f32; 3] {
     let gap = b.window.get_gap();
     Zone::ALL.map(|z| {
         let status = if z == Zone::Left { widths.get(compact, STATUS_ID) } else { None };
         let shown: Vec<f32> = b.models[zone_index(z)]
             .iter()
             .filter(|s| !hidden.contains(&(z, s.kind.as_str())))
-            .map(|s| widths.get(compact, s.id.as_str()).unwrap_or(0.0))
+            .map(|s| {
+                // Widget extensible : entier, ou à sa limite.
+                let w = if crate::widgets::grows(&s.kind) { widths.full(compact, &s.id) } else { widths.get(compact, &s.id) };
+                let limit = limits.iter().find(|(id, _)| id.as_str() == s.id.as_str()).map(|(_, l)| *l);
+                limit.map_or(w, |l| w.map(|w| w.min(l))).unwrap_or(0.0)
+            })
             .chain(status)
             .filter(|w| *w > 0.0)
             .collect();
@@ -444,13 +465,19 @@ fn needs(b: &BarUi, widths: &overflow::Widths, compact: bool, hidden: &[(Zone, &
 /// Masque et écarte les emplacements (ligne par ligne : rien n'est recréé). Un widget vide
 /// (largeur naturelle nulle) ne prend pas d'écart et laisse au suivant la place de premier,
 /// sauf en mode édition (`editing`), où il garde sa place, nommée.
-fn show_slots(b: &BarUi, widths: &overflow::Widths, compact: bool, hidden: &[(Zone, &'static str)], editing: bool) {
+fn show_slots(b: &BarUi, widths: &overflow::Widths, fit: &Fit, editing: bool) {
+    let (compact, hidden) = (fit.compact, &fit.hidden);
     let gap = b.window.get_gap();
     for z in Zone::ALL {
         let model = &b.models[zone_index(z)];
         let mut first = true;
         for row in 0..model.row_count() {
             let Some(mut s) = model.row_data(row) else { continue };
+            let limit = fit.limits.iter().find(|(id, _)| id.as_str() == s.id.as_str()).map_or(0.0, |(_, l)| *l);
+            if s.limit != limit {
+                s.limit = limit;
+                model.set_row_data(row, s.clone());
+            }
             let hide = hidden.contains(&(z, s.kind.as_str()));
             let empty = !editing && widths.get(compact, s.id.as_str()).is_some_and(|w| w <= 0.0);
             let lead = if hide || empty || first { 0.0 } else { gap };
@@ -474,24 +501,61 @@ fn show_slots(b: &BarUi, widths: &overflow::Widths, compact: bool, hidden: &[(Zo
     }
 }
 
-/// Applique la règle du débordement (`overflow.rs`), d'après les largeurs annoncées.
+/// Règle du débordement (`overflow.rs`) : resserrer, puis limiter les widgets extensibles, puis
+/// seulement masquer des widgets secondaires si ça ne suffit pas.
+fn fit_bar(b: &BarUi, widths: &overflow::Widths, inner: f32, editing: bool) -> Fit {
+    let none: &[(String, f32)] = &[];
+    let fits = |compact, limits: &[(String, f32)]| !overflow::overflowing(inner, needs(b, widths, compact, &[], limits)).contains(&true);
+    if fits(false, none) {
+        return Fit::default();
+    }
+    if editing || fits(true, none) {
+        return Fit { compact: true, ..Fit::default() };
+    }
+    let grows: Vec<overflow::Grow> = Zone::ALL
+        .into_iter()
+        .flat_map(|z| {
+            b.models[zone_index(z)]
+                .iter()
+                .filter_map(|s| {
+                    let min = crate::widgets::grow_min(&s.kind)?;
+                    let full = widths.full(true, &s.id).filter(|w| *w > 0.0)?;
+                    Some(overflow::Grow { zone: z, id: s.id.to_string(), full, min })
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let (limits, still) = overflow::limits(inner, needs(b, widths, true, &[], none), &grows);
+    if !still.contains(&true) {
+        return Fit { compact: true, limits, hidden: Vec::new() };
+    }
+    let mut fit = overflow::fit(
+        crate::widgets::SQUEEZE_ORDER,
+        false,
+        |compact, hidden| overflow::overflowing(inner, needs(b, widths, compact, hidden, &limits)),
+        |z, kind| b.models[zone_index(z)].iter().any(|s| s.kind == kind),
+    );
+    fit.limits = limits;
+    fit
+}
+
+/// Applique la règle du débordement, d'après les largeurs annoncées.
 fn run_fit(label: &str) {
     let Some(b) = get(label) else { return };
     b.fit_pending.set(false);
     let widths = b.widths.borrow().clone();
     let inner = b.window.get_inner_width();
     let editing = super::edit::editing(label);
-    let fit = overflow::fit(
-        crate::widgets::SQUEEZE_ORDER,
-        editing,
-        |compact, hidden| overflow::overflowing(inner, needs(&b, &widths, compact, hidden)),
-        |z, kind| b.models[zone_index(z)].iter().any(|s| s.kind == kind),
-    );
-    show_slots(&b, &widths, fit.compact, &fit.hidden, editing);
+    let fit = fit_bar(&b, &widths, inner, editing);
+    show_slots(&b, &widths, &fit, editing);
     if fit != *b.fit.borrow() {
         log::info!(
             "{label} : {}",
-            if fit.compact { format!("trop chargée, resserrée ; masqués : {:?}", fit.hidden) } else { "tout tient".to_owned() }
+            if fit.compact {
+                format!("trop chargée, resserrée ; limités : {:?} ; masqués : {:?}", fit.limits, fit.hidden)
+            } else {
+                "tout tient".to_owned()
+            }
         );
         *b.fit.borrow_mut() = fit;
     }

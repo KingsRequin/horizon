@@ -1,4 +1,5 @@
 {
   "label": "Sessions Claude Code",
-  "icon": "terminalWindow"
+  "icon": "terminalWindow",
+  "grows": 74
 }

@@ -8,7 +8,7 @@
 import { Theme, StyleTokens } from "../../theme.slint";
 import { Tip } from "../../tooltip.slint";
 import { Icon, Slot } from "../../components.slint";
-import { WidgetFrame } from "../../widget-frame.slint";
+import { WidgetFrame, More, MoreChip } from "../../widget-frame.slint";
 
 // Une session, textes déjà faits côté Rust (src/widgets/claude_sessions/ui.rs).
 export struct ClaudeSessionRow {
@@ -149,6 +149,13 @@ component SessionPill inherits Rectangle {
 
 export component ClaudeSessionsWidget inherits WidgetFrame {
     property <[ClaudeSessionRow]> list: root.wide && !root.compact ? ClaudeSessionsData.all : ClaudeSessionsData.active;
+    // Barre trop chargée (`slot.limit`) : pastilles d'une même largeur, celles qui tiennent, puis
+    // « +N » (le panneau, au survol, les montre toutes).
+    property <length> pill-w: 120px;
+    property <length> icon-w: 14px;
+    property <int> fit-n: root.slot.limit <= 0 ? root.list.length
+        : min(root.list.length, max(0, floor((root.slot.limit - 2 * root.padding-x - root.icon-w - root.gap - More.width) / (root.pill-w + root.gap))));
+    property <bool> cut: root.fit-n < root.list.length;
     empty: root.list.length == 0;
     panel: "claude_sessions";
     gap: 6px;
@@ -159,12 +166,42 @@ export component ClaudeSessionsWidget inherits WidgetFrame {
         size: 14px;
         color: root.t.text-dim;
     }
-    for s in root.list: SessionPill {
+    if !root.cut: HorizontalLayout {
+        spacing: root.gap;
+        for s in root.list: SessionPill {
+            y: (root.t.island-h - self.height) / 2;
+            t: root.t;
+            s: s;
+            clickable: root.clickable;
+            wide: root.wide;
+            compact: root.compact;
+        }
+    }
+    // Limitée : coupée net après la dernière pastille qui tient.
+    if root.cut: Rectangle {
+        width: max(0px, root.fit-n * (root.pill-w + root.gap) - root.gap);
+        clip: true;
+        HorizontalLayout {
+            x: 0;
+            spacing: root.gap;
+            alignment: start;
+            for s in root.list: SessionPill {
+                y: (root.t.island-h - self.height) / 2;
+                width: root.pill-w;
+                t: root.t;
+                s: s;
+                clickable: root.clickable;
+                wide: root.wide;
+                compact: true;
+            }
+        }
+    }
+    if root.cut: MoreChip {
         y: (root.t.island-h - self.height) / 2;
         t: root.t;
-        s: s;
+        count: root.list.length - root.fit-n;
+        panel: "claude_sessions";
+        interactive: root.interactive;
         clickable: root.clickable;
-        wide: root.wide;
-        compact: root.compact;
     }
 }

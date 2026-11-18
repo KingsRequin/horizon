@@ -43,6 +43,9 @@ pub struct Manifest {
     pub squeeze: Option<u64>,
     /// Reste cliquable sur une barre « Survol seul ».
     pub clickable_on_hover: bool,
+    /// Grandit avec son nombre d'éléments : limité quand la barre manque de place, il montre
+    /// « +N » et le reste au survol. Sa plus petite largeur (« +N » seul, px logiques).
+    pub grows: Option<u16>,
     /// Ne sert qu'avec une appli personnelle (absent de l'édition partagée).
     pub personal: bool,
     /// Édition partagée : pas de « Réglages… ».
@@ -55,6 +58,16 @@ include!(concat!(env!("OUT_DIR"), "/widgets.rs"));
 /// garde, rien n'est affiché) ou personnel dans l'édition partagée.
 pub fn manifest(id: &str) -> Option<&'static Manifest> {
     MANIFESTS.iter().find(|m| m.id == id && (crate::PERSONAL || !m.personal))
+}
+
+/// Le widget `id` grandit avec son nombre d'éléments (`grows` de son manifeste).
+pub fn grows(id: &str) -> bool {
+    grow_min(id).is_some()
+}
+
+/// Plus petite largeur d'un widget extensible (« +N » seul).
+pub fn grow_min(id: &str) -> Option<f32> {
+    manifest(id).and_then(|m| m.grows).map(f32::from)
 }
 
 /// Démarrage d'une fonction (fils, connexions) ; un échec est journalisé sans arrêter Horizon.

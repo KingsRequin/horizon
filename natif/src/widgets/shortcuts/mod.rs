@@ -1,13 +1,15 @@
 //! Widget « Raccourcis » : une rangée d'icônes (logo Simple Icons, image choisie ou icône de
 //! l'exe / du raccourci), pastille sous celles dont l'appli est ouverte ; clic = l'appli ouverte
 //! revient au premier plan, sinon elle est lancée ; Maj+clic = nouvelle instance. Sans raccourci,
-//! le nom du widget ; un clic ouvre ses réglages.
+//! le nom du widget ; un clic ouvre ses réglages. Barre trop chargée : « +N », et le panneau
+//! (`panel`) montre tous les raccourcis de l'exemplaire.
 //!
 //! Repris de `app/src-tauri/src/widgets/shortcuts/` (service : `running.rs`) et de
 //! `app/src/widgets/shortcuts/Widget.svelte` + `lib/ShortcutIcon.svelte` (rangée : `bind`).
 //! Différences : les icônes vont à Slint en images (`ui::images`), plus d'URL `data:` ; la boîte
 //! « Ouvrir » des réglages est celle de Windows (`ui::dialogs`).
 
+mod panel;
 pub mod running;
 
 use super::Backend;
@@ -31,6 +33,7 @@ pub const BACKEND: Backend = Backend {
     },
     start: Some(running::start),
     bind: Some(bind),
+    panel: Some(panel::PANEL),
     ..Backend::NONE
 };
 
@@ -157,12 +160,43 @@ impl BarShortcuts {
                         Some((i, m, c)) => (i, m, c),
                         None => (Image::default(), TINT_NONE, slint::Color::default()),
                     };
-                    ShortcutItem { blank: image.size().width == 0, image, tint_mode, tint, running: on, title: title(&s.label, on).into() }
+                    ShortcutItem {
+                        blank: image.size().width == 0,
+                        image,
+                        tint_mode,
+                        tint,
+                        running: on,
+                        title: title(&s.label, on).into(),
+                        label: s.label.as_str().into(),
+                    }
                 })
                 .collect();
             crate::ui::model::sync(&self.model(instance), rows);
         }
     }
+}
+
+impl BarShortcuts {
+    /// Ouvre le raccourci `index` de l'exemplaire (ou ramène son appli au premier plan).
+    fn open(&self, instance: &str, index: usize, shift: bool) {
+        let target = self.items.borrow().get(instance).and_then(|l| l.get(index)).map(|s| s.target.clone());
+        if let Some(t) = target {
+            running::shortcuts_open(t, shift);
+        }
+    }
+}
+
+thread_local! {
+    /// Raccourcis de chaque barre ouverte : le panneau retrouve ceux de son exemplaire.
+    static BARS: RefCell<Vec<Weak<BarShortcuts>>> = RefCell::default();
+}
+
+/// Barre qui porte l'exemplaire `instance`.
+fn bar_of(instance: &str) -> Option<Rc<BarShortcuts>> {
+    BARS.with_borrow_mut(|bars| {
+        bars.retain(|b| b.strong_count() > 0);
+        bars.iter().filter_map(Weak::upgrade).find(|b| b.items.borrow().contains_key(instance))
+    })
 }
 
 fn refresh_weak(me: &Weak<BarShortcuts>) {
@@ -186,12 +220,8 @@ pub fn bind(app: &AppHandle, window: &BarWindow, label: &str, bar: &BarLayout) {
     let m = me.clone();
     g.on_items(move |instance| ModelRc::from(m.model(&instance)));
     let m = me.clone();
-    g.on_open(move |instance, index, shift| {
-        let target = m.items.borrow().get(instance.as_str()).and_then(|l| l.get(index as usize)).map(|s| s.target.clone());
-        if let Some(t) = target {
-            running::shortcuts_open(t, shift);
-        }
-    });
+    g.on_open(move |instance, index, shift| m.open(&instance, index as usize, shift));
+    BARS.with_borrow_mut(|b| b.push(Rc::downgrade(&me)));
     me.refresh();
     let m = Rc::downgrade(&me);
     crate::host::listen(running::EV_RUNNING, Some(label), move |e| {

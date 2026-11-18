@@ -1,0 +1,78 @@
+// Panneau des Raccourcis : tous les raccourcis d'un exemplaire, avec leur nom. Il s'ouvre au
+// survol du « +N » quand la barre manque de place (et sert de tuile dans une barre haute). Clic =
+// l'appli revient au premier plan, ou est lancée. Relié par src/widgets/shortcuts/panel.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { PanelBase } from "../../panel/base.slint";
+import { PanelHead } from "../../panel/head.slint";
+import { PanelScroll } from "../../panel/scroll.slint";
+import { ListRow } from "../../panel/row.slint";
+import { ShortcutItem } from "widget.slint";
+
+export global ShortcutsPanelData {
+    // Raccourcis de l'exemplaire (même modèle que sa rangée dans la barre).
+    pure callback items(string) -> [ShortcutItem];
+    // Exemplaire, rang.
+    callback open(string, int);
+}
+
+export component ShortcutsPanel inherits PanelBase {
+    property <[ShortcutItem]> items: ShortcutsPanelData.items(root.instance);
+    width: 280px;
+    spacing: 8px;
+
+    head := PanelHead {
+        t: root.t;
+        title: "Raccourcis";
+    }
+    PanelScroll {
+        t: root.t;
+        // `max-height: 460px` du panneau.
+        limit: 460px - head.preferred-height - 8px;
+        spacing: 0;
+        gutter: 0;
+        for it[i] in root.items: ListRow {
+            t: root.t;
+            padding-x: 8px;
+            padding-y: 6px;
+            gap: 9px;
+            radius: root.t.island-radius - 2px;
+            tip: it.title;
+            clicked => {
+                ShortcutsPanelData.open(root.instance, i);
+            }
+            VerticalLayout {
+                alignment: center;
+                Image {
+                    width: 18px;
+                    height: 18px;
+                    source: it.image;
+                    image-fit: contain;
+                    colorize: it.tint-mode == 2 ? root.t.text : it.tint-mode == 1 ? it.tint : transparent;
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                Text {
+                    text: it.label;
+                    color: root.t.text;
+                    font-family: Theme.font-ui;
+                    font-weight: 500;
+                    font-size: root.t.fs-body;
+                    overflow: elide;
+                }
+            }
+            // Appli déjà ouverte : la pastille d'accent de la barre.
+            if it.running: VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 6px;
+                    height: 6px;
+                    border-radius: 3px;
+                    background: Theme.accent;
+                }
+            }
+        }
+    }
+}

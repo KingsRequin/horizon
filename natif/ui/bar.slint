@@ -157,6 +157,9 @@ export component BarWindow inherits Window {
     out property <length> inner-width: root.width - 2 * t.band-pad;
     out property <length> gap: t.zone-gap;
     callback measured(int, string, length);
+    // Largeur complète d'un emplacement, sans limite (identifiant, px logiques) : seuls les widgets
+    // extensibles s'en servent (src/ui/bar.rs).
+    callback full-measured(string, length);
 
     // Barre large (écran de 2 560 px logiques et plus) : les widgets montrent plus de détails.
     out property <bool> wide: root.width >= 2200px;
@@ -295,6 +298,7 @@ export component BarWindow inherits Window {
                 offset-x: s.id == root.drag-id ? root.drag-dx : 0;
                 offset-y: s.id == root.drag-id ? root.drag-dy : 0;
                 measured(w) => { root.measured(0, s.id, w); }
+                full(w) => { root.full-measured(s.id, w); }
                 shown(w) => { root.slot-shown(0, s.id, w); }
                 hovered(on) => { root.slot-hover(s.id, on); }
                 drag(phase, x, y) => { root.slot-drag(s.id, phase, x, y); }
@@ -334,6 +338,7 @@ export component BarWindow inherits Window {
                 offset-x: s.id == root.drag-id ? root.drag-dx : 0;
                 offset-y: s.id == root.drag-id ? root.drag-dy : 0;
                 measured(w) => { root.measured(1, s.id, w); }
+                full(w) => { root.full-measured(s.id, w); }
                 shown(w) => { root.slot-shown(1, s.id, w); }
                 hovered(on) => { root.slot-hover(s.id, on); }
                 drag(phase, x, y) => { root.slot-drag(s.id, phase, x, y); }
@@ -380,6 +385,7 @@ export component BarWindow inherits Window {
                 offset-x: s.id == root.drag-id ? root.drag-dx : 0;
                 offset-y: s.id == root.drag-id ? root.drag-dy : 0;
                 measured(w) => { root.measured(2, s.id, w); }
+                full(w) => { root.full-measured(s.id, w); }
                 shown(w) => { root.slot-shown(2, s.id, w); }
                 hovered(on) => { root.slot-hover(s.id, on); }
                 drag(phase, x, y) => { root.slot-drag(s.id, phase, x, y); }

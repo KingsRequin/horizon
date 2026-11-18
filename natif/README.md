@@ -601,7 +601,10 @@ de la version Tauri.
 1. **Manifeste** : `ui/widgets/<id>/widget.json` (même contenu que
    `app/src/widgets/<id>/widget.json` : `label`, `icon`, `squeeze`, `clickableOnHover`,
    `personal`…). `build.rs` le trouve seul et vérifie l'icône ; le widget apparaît aussitôt dans
-   les barres comme emplacement nommé (`SlotView`).
+   les barres comme emplacement nommé (`SlotView`). Un widget qui grandit avec son nombre
+   d'éléments (raccourcis, sessions Claude) déclare `"grows": <largeur minimale en px>` : barre
+   trop chargée, il reçoit `slot.limit`, montre ce qui tient puis `MoreChip` (« +N », panneau au
+   survol), et n'est jamais masqué tant qu'une limite suffit (`src/overflow.rs`, `limits`).
 2. **Interface** : `ui/widgets/<id>/widget.slint`, `export component <Id>Widget inherits
    WidgetFrame` : ses éléments sont posés dans l'îlot ; `empty`, `panel` (`"<id>"`, ou
    `"<id>:" + root.slot.id` pour un panneau propre à l'exemplaire), `tip`, `activated` d'après

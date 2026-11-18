@@ -1,4 +1,5 @@
 {
   "label": "Raccourcis",
-  "icon": "squaresFour"
+  "icon": "squaresFour",
+  "grows": 40
 }

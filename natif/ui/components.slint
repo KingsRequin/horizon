@@ -85,6 +85,8 @@ export struct Slot {
     lead: length,
     data: int,
     clickable: bool,
+    // Largeur maximale d'un widget extensible (barre trop chargée, src/overflow.rs) ; 0 = aucune.
+    limit: length,
 }
 
 // Emplacement nommé d'un widget pas encore porté (lib/WidgetPlaceholder.svelte) : son icône et

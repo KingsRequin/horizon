@@ -1,169 +1,171 @@
 <div align="center">
 
-<img src="packaging/icons/Square150x150Logo.png" width="96" alt="Horizon logo">
+<img src="packaging/icons/Square150x150Logo.png" width="96" alt="Logo d'Horizon">
 
 # Horizon
 
-**A fast, modular toolbar at the top of every screen, for Windows 10 and 11.**
+**Une barre d'outils rapide et modulaire en haut de chaque écran, pour Windows 10 et 11.**
 
-Music, shortcuts, notifications, system stats, Claude Code sessions, weather, calendar…
-in one native app that uses ~50 MB of memory and stays out of your way.
+Musique, raccourcis, notifications, système, sessions Claude Code, météo, agenda…
+dans une appli native qui utilise ~50 Mo de mémoire et se fait oublier.
 
-[![Release](https://img.shields.io/github/v/release/KingsRequin/horizon?style=flat-square)](https://github.com/KingsRequin/horizon/releases)
+[![Version](https://img.shields.io/github/v/release/KingsRequin/horizon?style=flat-square&label=version)](https://github.com/KingsRequin/horizon/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/KingsRequin/horizon/ci.yml?branch=master&style=flat-square&label=CI)](https://github.com/KingsRequin/horizon/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Licence MIT](https://img.shields.io/badge/licence-MIT-blue?style=flat-square)](LICENSE)
 ![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square&logo=windows)
 ![Rust](https://img.shields.io/badge/Rust-Slint-orange?style=flat-square&logo=rust)
 
-[**Download**](https://github.com/KingsRequin/horizon/releases/latest) ·
-[Features](#features) ·
-[Install](#install) ·
-[FAQ](#faq) ·
-[Français](README.fr.md)
+[**Télécharger**](https://github.com/KingsRequin/horizon/releases/latest) ·
+[Fonctions](#fonctions) ·
+[Installation](#installation) ·
+[Questions](#questions-fréquentes) ·
+[English](README.md)
 
-<img src="docs/images/hero.png" alt="A tall Horizon bar: shortcuts, microphone, system and clock in the strip; music, Claude Code, system and weather as tiles" width="100%">
+<img src="docs/images/hero.png" alt="Une barre haute d'Horizon : raccourcis, micro, système et horloge dans la bande ; musique, Claude Code, système et météo en tuiles" width="100%">
 
 </div>
 
-> [!NOTE]
-> The interface is in **French** for now. Translations are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
+## Pourquoi Horizon ?
 
-## Why Horizon?
+- **Natif et léger.** Rust + Slint, rendu logiciel, un seul processus : ~50 Mo de mémoire et
+  ~1,5 % d'un cœur au repos pour quatre barres. Ni Electron, ni WebView.
+- **Une barre par écran.** Elle réserve sa place (les fenêtres agrandies commencent dessous) et
+  se cache quand une fenêtre passe en plein écran.
+- **À ta façon.** Glisse les widgets, choisis un style par écran, agrandis une barre pour
+  afficher des panneaux en tuiles, change de disposition selon l'appli au premier plan.
+- **Se met à jour seule.** Les nouvelles versions viennent des Releases GitHub, vérifiées
+  (SHA-256) et installées au démarrage suivant.
 
-- **Native and light.** Rust + Slint, software rendering, one process: ~50 MB of memory and
-  ~1.5 % of one CPU core at rest for four bars. No Electron, no WebView.
-- **Every screen gets its own bar.** It reserves its space, so maximized windows start below
-  it, and hides when a window goes fullscreen.
-- **Yours to arrange.** Drag widgets around, pick a style per screen, make a bar taller to show
-  panels as tiles, switch layouts automatically per app.
-- **Updates itself.** New versions come from GitHub Releases, checked with SHA-256 and
-  installed at the next start.
+## Fonctions
 
-## Features
+**Elle suit la musique.** Pendant la lecture, les îlots s'éclairent avec les basses et flashent à
+chaque grosse caisse, aux couleurs de la pochette (le style graphique montre un spectre). Au plus
+20 mises à jour par seconde, et seulement quand quelque chose change.
 
-**It follows the music.** While something plays, the islands light up with the bass and flash on
-every kick, in the colors of the album art (the graphic style shows a spectrum). Updated at most
-20 times per second, and only when something changes.
-
-<img src="docs/images/music.gif" alt="Bars pulsing with the music" width="100%">
+<img src="docs/images/music.gif" alt="Barres qui pulsent avec la musique" width="100%">
 
 <table>
 <tr>
-<td width="33%" valign="top"><img src="docs/images/media.png" alt="Now playing panel"></td>
-<td width="33%" valign="top"><img src="docs/images/system.png" alt="System panel"></td>
-<td width="33%" valign="top"><img src="docs/images/weather.png" alt="Weather panel"></td>
+<td width="33%" valign="top"><img src="docs/images/media.png" alt="Panneau de lecture"></td>
+<td width="33%" valign="top"><img src="docs/images/system.png" alt="Panneau système"></td>
+<td width="33%" valign="top"><img src="docs/images/weather.png" alt="Panneau météo"></td>
 </tr>
 <tr>
-<td valign="top"><b>Now playing</b> — cover, controls, seek with the wheel, per-app volume. The
-bar glows with the bass, in the colors of the album art.</td>
-<td valign="top"><b>System</b> — CPU, GPU and memory as graphs or gauges, and the apps that use
-them the most.</td>
-<td valign="top"><b>Weather</b> — now, hour by hour and the next days (Open-Meteo, no account
-needed).</td>
+<td valign="top"><b>Lecture en cours</b> : pochette, commandes, avance à la molette, volume par
+appli. La barre s'illumine avec les basses, aux couleurs de la pochette.</td>
+<td valign="top"><b>Système</b> : processeur, carte graphique et mémoire en courbes ou en jauges,
+et les applis qui en consomment le plus.</td>
+<td valign="top"><b>Météo</b> : maintenant, heure par heure et les jours suivants (Open-Meteo,
+sans compte).</td>
 </tr>
 </table>
 
-Hover a widget to see its panel; make a bar taller and panels become **tiles** (picture above).
-Every feature in detail (French): [docs/guide.md](docs/guide.md).
+Survole un widget pour voir son panneau ; agrandis une barre et les panneaux deviennent des
+**tuiles** (image du haut).
 
-**Two styles, one per screen** — "islands" (top) or "graphic" (bottom):
+**Deux styles, au choix par écran** : « îlots » (en haut) ou « graphique » (en bas).
 
-<img src="docs/images/bars.png" alt="Islands and graphic styles" width="100%">
+<img src="docs/images/bars.png" alt="Styles îlots et graphique" width="100%">
 
-**Edit mode** — right-click a bar → *Modifier la barre*: drag widgets between zones and screens,
-<kbd>+</kbd> to add one, <kbd>Ctrl</kbd>+<kbd>Z</kbd> to undo.
+**Mode édition** : clic droit sur une barre → *Modifier la barre*. Glisse les widgets d'une zone
+ou d'un écran à l'autre, <kbd>+</kbd> pour en ajouter, <kbd>Ctrl</kbd>+<kbd>Z</kbd> pour annuler.
 
-<img src="docs/images/edit.png" alt="Edit mode" width="100%">
+<img src="docs/images/edit.png" alt="Mode édition" width="100%">
 
-**Command palette** (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd>) — fuzzy search over your
-shortcuts, Start menu apps, audio devices, timer, profiles and more.
+**Palette de commandes** (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd>) : recherche floue dans tes
+raccourcis, les applis du menu Démarrer, les sorties audio, le minuteur, les profils…
 
 **Widgets**
 
 | | |
 |---|---|
-| 🎵 **Now playing** | Any app that talks to Windows media controls (Spotify, browsers, YouTube Music…) |
-| 🚀 **Shortcuts** | Any icon (brand logos, images, app icons), a dot when the app is open, click to focus or launch |
-| 🔔 **Notifications** | Windows notifications with a dynamic island, Do not disturb, mute per app |
-| 📊 **System** | CPU, GPU, memory as graphs or gauges |
-| 🎙️ **Microphone & audio** | Default devices, favorites, per-app volume |
-| 🤖 **Claude Code** | Sessions (working, waiting, permission requests), token usage, bring the terminal back; subscription quota |
-| 🎧 **Headset battery** | 30+ wireless headsets read directly over HID (Logitech, SteelSeries, HyperX, Razer, Corsair, Astro, Audeze, JBL) |
-| 🌤️ **Weather**, 📅 **Calendar** | Open-Meteo; any iCal address (Google, Outlook…) |
-| 🖥️ **Servers** | Hosts from `~/.ssh/config`, online status and latency, SSH in one click |
-| 🪟 **Windows** | Open windows per screen, bring one to the current screen |
-| ✨ **Suggestions** | Apps and sites you use at this time of day |
-| 🌀 **[Essaim](https://github.com/KingsRequin/essaim)** | Pause and tune the music-reactive cursor |
+| 🎵 **Lecture en cours** | Toute appli reliée aux commandes média de Windows (Spotify, navigateurs, YouTube Music…) |
+| 🚀 **Raccourcis** | N'importe quelle icône (logos de marques, images, icônes d'applis), pastille quand l'appli est ouverte |
+| 🔔 **Notifications** | Notifications de Windows avec îlot dynamique, Ne pas déranger, appli coupée |
+| 📊 **Système** | Processeur, carte graphique, mémoire, en courbes ou en jauges |
+| 🎙️ **Micro et audio** | Périphériques par défaut, favoris, volume par appli |
+| 🤖 **Claude Code** | Sessions (travaille, attend, demande d'autorisation), consommation, terminal ramené au premier plan ; quota de l'abonnement |
+| 🎧 **Batterie du casque** | Plus de 30 casques sans fil lus directement (Logitech, SteelSeries, HyperX, Razer, Corsair, Astro, Audeze, JBL) |
+| 🌤️ **Météo**, 📅 **Agenda** | Open-Meteo ; toute adresse iCal (Google, Outlook…) |
+| 🖥️ **Serveurs** | Hôtes de `~/.ssh/config`, état et latence, SSH en un clic |
+| 🪟 **Fenêtres** | Fenêtres ouvertes par écran, en ramener une sur l'écran courant |
+| ✨ **Suggestions** | Applis et sites que tu utilises à cette heure-ci |
+| 🌀 **[Essaim](https://github.com/KingsRequin/essaim)** | Pause et réglages du curseur animé qui suit la musique |
 
-**And also:** timer and pomodoro, volume and media on-screen display in place of Windows',
-accent color from the wallpaper, game mode, layout profiles per app, status page that tells you
-what works and what doesn't.
+**Et aussi :** minuteur et pomodoro, affichage du volume et du média à la place de celui de
+Windows, couleur d'accent tirée du fond d'écran, mode jeu, profils de disposition par appli,
+page « État » qui dit ce qui marche et ce qui ne marche pas.
 
-## Install
+Toutes les fonctions en détail : [docs/guide.md](docs/guide.md).
 
-1. Download `Horizon-<version>.zip` from the [latest release](https://github.com/KingsRequin/horizon/releases/latest) and extract it.
-2. Double-click **`Installer.cmd`**. Horizon goes to `%LOCALAPPDATA%\Programs\Horizon`, starts
-   with Windows and appears in the Start menu. No administrator rights needed.
-3. *(Optional)* To show other apps' notifications, turn on **developer mode** in Windows
-   (Settings → System → For developers) and run `Installer.cmd` again.
+## Installation
 
-Then right-click a bar → **Modifier la barre** to make it yours.
+1. Télécharge `Horizon-<version>.zip` depuis la [dernière version](https://github.com/KingsRequin/horizon/releases/latest) et extrais-le.
+2. Double-clique sur **`Installer.cmd`**. Horizon est copié dans `%LOCALAPPDATA%\Programs\Horizon`,
+   démarre avec Windows et apparaît dans le menu Démarrer. Pas besoin de droits administrateur.
+3. *(Facultatif)* Pour afficher les notifications des autres applis, active le **mode
+   développeur** de Windows (Paramètres → Système → Espace développeurs), puis relance
+   `Installer.cmd`.
 
-Uninstall with `Desinstaller.cmd` (add `-RemoveConfig` to also delete your settings).
+Ensuite : clic droit sur une barre → **Modifier la barre**.
 
-## FAQ
+Désinstaller : `Desinstaller.cmd` (avec `-RemoveConfig` pour effacer aussi tes réglages).
+
+## Questions fréquentes
 
 <details>
-<summary><b>Windows says "Windows protected your PC".</b></summary>
+<summary><b>Windows affiche « Windows a protégé votre ordinateur ».</b></summary>
 
-Horizon is not code-signed (certificates are expensive for a free project). Click
-*More info* → *Run anyway*. The source is here, and every release is built by GitHub Actions
-from this repository.
+Horizon n'est pas signé (un certificat coûte cher pour un projet gratuit). Clique sur
+*Informations complémentaires* → *Exécuter quand même*. Le code est ici, et chaque version est
+compilée par GitHub Actions à partir de ce dépôt.
 </details>
 
 <details>
-<summary><b>Why does reading notifications need developer mode?</b></summary>
+<summary><b>Pourquoi le mode développeur pour les notifications ?</b></summary>
 
-Windows only lets apps with a *package identity* read notifications. Horizon registers an
-unsigned one, which Windows accepts in developer mode only. Details in
-[docs/notifications.md](docs/notifications.md).
+Windows ne laisse lire les notifications qu'aux applis qui ont une *identité de paquet*.
+Horizon en enregistre une sans signature, ce que Windows n'accepte qu'en mode développeur.
+Détails : [docs/notifications.md](docs/notifications.md).
 </details>
 
 <details>
-<summary><b>Does it change anything in my Claude Code setup?</b></summary>
+<summary><b>Est-ce que ça modifie ma configuration de Claude Code ?</b></summary>
 
-If Claude Code is installed, the installer adds Horizon's hooks to
-`%USERPROFILE%\.claude\settings.json` (a backup is kept). They only report events to Horizon;
-they never answer permission requests. Install with `Installer.cmd -NoClaudeHooks` to skip them.
+Si Claude Code est installé, l'installation ajoute les hooks d'Horizon dans
+`%USERPROFILE%\.claude\settings.json` (une copie de sauvegarde est gardée). Ils ne font que
+signaler les événements à Horizon et ne répondent jamais aux demandes d'autorisation.
+`Installer.cmd -NoClaudeHooks` pour s'en passer.
 </details>
 
 <details>
-<summary><b>Where are my settings?</b></summary>
+<summary><b>Où sont mes réglages ?</b></summary>
 
-`%APPDATA%\Horizon` (`layout.json`, `settings.toml`, log). Most options are in the right-click
-menu of a bar → *Réglages d'Horizon*.
+Dans `%APPDATA%\Horizon` (`layout.json`, `settings.toml`, journal). La plupart des options sont
+dans le menu du clic droit sur une barre → *Réglages d'Horizon*.
 </details>
 
-## Roadmap
+## Feuille de route
 
-- **Plugins** — widgets in their own folder (Slint interface + JavaScript), installed from a
-  library on GitHub and loaded without restarting, with a guide to write them with an AI assistant.
-- **Discord voice** through the official local RPC (who's talking, mute, per-user volume).
-- **Translations.**
+- **Plugins** : des widgets dans leur propre dossier (interface Slint + JavaScript), installés
+  depuis une bibliothèque sur GitHub et chargés sans redémarrer, avec un guide pour les écrire
+  avec une IA.
+- **Discord vocal** par le RPC local officiel (qui parle, micro coupé, volume par personne).
+- **Traductions.**
 
-## Built with Claude Code
+## Fait avec Claude Code
 
-Horizon was written entirely with [Claude Code](https://claude.com/claude-code), Anthropic's
-AI coding agent. [KingsRequin](https://github.com/KingsRequin) designed it and supervised all of
-it: every feature was specified, reviewed and tested on a real four-monitor setup before being
-kept.
+Horizon a été entièrement écrit avec [Claude Code](https://claude.com/claude-code), l'agent de
+programmation d'Anthropic. [KingsRequin](https://github.com/KingsRequin) l'a conçu et a supervisé
+tout le travail : chaque fonction a été décidée, relue et testée sur une vraie installation à
+quatre écrans avant d'être gardée.
 
-## Contributing
+## Contribuer
 
-Bug reports and ideas: [issues](https://github.com/KingsRequin/horizon/issues). Building from
-source and code layout: [CONTRIBUTING.md](CONTRIBUTING.md).
+Bugs et idées : [issues](https://github.com/KingsRequin/horizon/issues). Compiler et organisation
+du code : [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## License
+## Licence
 
-[MIT](LICENSE). Bundled icons, fonts and adapted headset protocols: see
+[MIT](LICENSE). Icônes, polices et protocoles de casques repris : voir
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

@@ -51,6 +51,9 @@ export component WidgetView inherits Rectangle {
     in property <length> offset-x;
     in property <length> offset-y;
     callback measured(length);
+    // Largeur complète (sans limite) : la naturelle, annoncée tant que l'emplacement n'est pas
+    // limité (widgets extensibles, src/overflow.rs). Limité, il garde la dernière.
+    callback full(length);
     // Largeur montrée, sans l'écart : le widget, ou en mode édition son nom s'il est vide.
     out property <length> shown-w: root.editing && root.natural <= 0 ? placeholder-w : root.natural;
     callback shown(length);
@@ -74,10 +77,16 @@ export component WidgetView inherits Rectangle {
     out property <length> natural: row.preferred-width;
     init => {
         root.measured(root.natural);
+        if root.slot.limit <= 0 {
+            root.full(root.natural);
+        }
         root.shown(root.shown-w);
     }
     changed natural => {
         root.measured(root.natural);
+        if root.slot.limit <= 0 {
+            root.full(root.natural);
+        }
     }
     changed shown-w => {
         root.shown(root.shown-w);
