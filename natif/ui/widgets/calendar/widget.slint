@@ -1,0 +1,132 @@
+// Agenda (app/src/widgets/calendar/Widget.svelte) : événement en cours ou prochain (dans les
+// 12 h) ; survol = agenda des jours à venir. Clic : rejoindre la visio qui commence, sinon le
+// panneau épinglé ; pas encore d'agenda : ses réglages (décidé par src/widgets/calendar.rs).
+// Barre large : le lieu de l'événement.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { WidgetFrame } from "../../widget-frame.slint";
+
+// État d'un exemplaire (src/widgets/calendar.rs).
+export struct CalendarItem {
+    configured: bool,
+    // Événement à montrer (en cours ou prochain).
+    has-next: bool,
+    // Couleur de son agenda (rang dans `Theme.calendars`).
+    color: int,
+    title: string,
+    // « dans 25 min », « en cours ».
+    when: string,
+    // Commence dans moins de 15 min.
+    soon: bool,
+    location: string,
+    link: bool,
+    // Au moins un agenda illisible.
+    error: bool,
+}
+
+export global CalendarData {
+    // Un par exemplaire (rang : `Slot.data`).
+    in-out property <[CalendarItem]> items;
+    // Clic sur l'exemplaire `data` (identifiant `id`).
+    callback clicked(int, string);
+}
+
+export component CalendarWidget inherits WidgetFrame {
+    property <CalendarItem> item: CalendarData.items[root.slot.data];
+    panel: root.item.configured ? "calendar:" + root.slot.id : "";
+    tip: root.item.configured ? "" : "Agenda : clic pour ajouter un agenda";
+
+    // Bouton de la hauteur `inner-h`, centré dans l'îlot ; son clic est décidé par Rust.
+    button := Rectangle {
+        y: (root.t.island-h - self.height) / 2;
+        height: root.t.inner-h;
+        border-radius: root.t.inner-radius;
+        background: root.clickable && area.has-hover ? Theme.accent-soft : transparent;
+        area := TouchArea {
+            enabled: root.clickable;
+            mouse-cursor: root.clickable ? pointer : default;
+            clicked => {
+                CalendarData.clicked(root.slot.data, root.slot.id);
+            }
+        }
+        HorizontalLayout {
+            max-width: root.wide ? 480px : 300px;
+            padding-left: 6px;
+            padding-right: 6px;
+            spacing: 6px;
+            VerticalLayout {
+                alignment: center;
+                Icon {
+                    source: @image-url("../../../icons/phosphor/calendarBlank.svg");
+                    size: 14px;
+                    color: root.t.text;
+                }
+            }
+            if !root.item.configured: Text {
+                text: "Agenda";
+                color: root.t.text-dim;
+                vertical-alignment: center;
+            }
+            if root.item.configured && root.item.has-next: VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 6px;
+                    height: 6px;
+                    border-radius: 3px;
+                    background: Theme.calendars[root.item.color];
+                }
+            }
+            if root.item.configured && root.item.has-next: Text {
+                horizontal-stretch: 1;
+                min-width: 0;
+                text: root.item.title;
+                color: root.t.text;
+                overflow: elide;
+                vertical-alignment: center;
+            }
+            if root.item.configured && root.item.has-next: Text {
+                horizontal-stretch: 0;
+                text: root.item.when;
+                color: root.item.soon ? Theme.accent : root.t.text-dim;
+                font-weight: root.item.soon ? 600 : 500;
+                vertical-alignment: center;
+            }
+            if root.wide && root.item.configured && root.item.has-next && root.item.location != "": HorizontalLayout {
+                max-width: 180px;
+                spacing: 3px;
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        source: @image-url("../../../icons/phosphor/mapPin.svg");
+                        size: 11px;
+                        color: root.t.text-dim;
+                    }
+                }
+                Text {
+                    min-width: 0;
+                    text: root.item.location;
+                    color: root.t.text-dim;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+            }
+            if root.item.configured && root.item.has-next && root.item.link: VerticalLayout {
+                alignment: center;
+                Icon {
+                    source: @image-url("../../../icons/phosphor/videoCamera.svg");
+                    size: 12px;
+                    color: root.t.text;
+                }
+            }
+            if root.item.configured && root.item.error: VerticalLayout {
+                alignment: center;
+                Icon {
+                    source: @image-url("../../../icons/phosphor/warning.svg");
+                    size: 13px;
+                    color: root.t.warn;
+                }
+            }
+        }
+    }
+}

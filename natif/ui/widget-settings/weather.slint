@@ -1,0 +1,120 @@
+// Réglages Météo (app/src/widgets/weather/Settings.svelte) : ville choisie, recherche par nom
+// (géocodage Open-Meteo, 350 ms après la dernière frappe, 2 caractères au moins), résultats à
+// choisir. Service : src/ui/widget_settings/weather.rs.
+
+import { Theme } from "../theme.slint";
+import { SettingsLayout } from "../settings/layout.slint";
+import { SettingsSubheading, SettingsNote } from "../settings/text.slint";
+import { InputField } from "../settings/input.slint";
+
+export struct PlaceRow {
+    name: string,
+    detail: string,
+}
+
+export global WeatherSettingsData {
+    in property <string> place-name;
+    in property <string> place-detail;
+    in property <[PlaceRow]> results;
+    // « Aucune ville trouvée. » ou l'erreur de la recherche.
+    in property <string> message;
+    // Vide le champ de recherche (après un choix).
+    in property <int> cleared;
+    callback search(string);
+    callback choose(int);
+}
+
+component PlaceButton inherits Rectangle {
+    in property <PlaceRow> place;
+    callback clicked();
+    height: 31px;
+    border-radius: Theme.r-md;
+    background: area.has-hover ? SettingsLayout.t.surface-2 : SettingsLayout.t.surface-1;
+    area := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 4px;
+        alignment: start;
+        Text {
+            text: root.place.name;
+            color: SettingsLayout.t.text;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.place.detail;
+            color: SettingsLayout.t.text-dim;
+            font-size: Theme.fs-meta;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+export component WeatherSettings inherits VerticalLayout {
+    alignment: start;
+    SettingsSubheading {
+        text: "Ville";
+    }
+    HorizontalLayout {
+        padding-bottom: 10px;
+        spacing: 4px;
+        alignment: start;
+        if WeatherSettingsData.place-name != "": Text {
+            text: WeatherSettingsData.place-name;
+            color: SettingsLayout.t.text;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+        if WeatherSettingsData.place-name != "": Text {
+            text: WeatherSettingsData.place-detail;
+            color: SettingsLayout.t.text-dim;
+            font-size: Theme.fs-meta;
+            vertical-alignment: center;
+        }
+        if WeatherSettingsData.place-name == "": Text {
+            text: "Aucune ville choisie.";
+            color: SettingsLayout.t.text-dim;
+            font-size: Theme.fs-meta;
+        }
+    }
+    query := InputField {
+        width: SettingsLayout.content-w;
+        height: 33px;
+        padding-x: 10px;
+        radius: Theme.r-lg;
+        placeholder: "Rechercher une ville…";
+        edited(t) => {
+            WeatherSettingsData.search(t);
+        }
+    }
+    if WeatherSettingsData.results.length > 0: VerticalLayout {
+        padding-top: 8px;
+        spacing: 4px;
+        for p[i] in WeatherSettingsData.results: PlaceButton {
+            place: p;
+            clicked => {
+                WeatherSettingsData.choose(i);
+            }
+        }
+    }
+    if WeatherSettingsData.message != "": SettingsNote {
+        text: WeatherSettingsData.message;
+        above: 8px;
+    }
+    SettingsNote {
+        text: "Prévisions d’Open-Meteo, relues toutes les 15 minutes. Seules les coordonnées de la ville sont envoyées.";
+        above: 14px;
+    }
+    changed cleared => {
+        query.set-text("");
+    }
+    property <int> cleared: WeatherSettingsData.cleared;
+}

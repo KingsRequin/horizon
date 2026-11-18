@@ -1,0 +1,48 @@
+// Jetons de l'interface de Prisme (repris de app/src/apps/prisme/app.css) : un design à part,
+// neutre ; la seule couleur vient des LED (`live`, teinte moyenne mise à jour en direct par le
+// plan de la page Lumière, src/prisme_window/render.rs).
+//
+// Écarts imposés par Slint et le rendu logiciel : police Inter (Segoe UI Variable n'est pas
+// distribuable ; Inter est la police d'Horizon la plus proche), pas d'interligne réglable, pas
+// d'ombre (le halo de la pastille « actif » est un disque translucide), mélanges `color-mix`
+// précalculés en sRGB.
+
+export global PrismeTheme {
+    out property <color> bg: #1a1d24;
+    out property <color> panel: #20242c;
+    out property <color> raised: #282d37;
+    out property <color> line: #323843;
+    out property <color> text: #ebe8e3;
+    out property <color> muted: #9097a3;
+    out property <color> faint: #626977;
+    out property <color> danger: #ff8a7a;
+    out property <color> ok: #86d9a8;
+    // Teinte moyenne des LED (posée par Rust).
+    in-out property <color> live: #aab6ff;
+    out property <color> live-soft: live.with-alpha(0.18);
+
+    // `color-mix(in oklab, var(--raised) 85%, var(--text))` : survol d'un bouton.
+    out property <color> raised-hover: #42464f;
+    // Bouton principal : `color-mix(var(--live) 30%, var(--raised))`, bord à 55 % sur `--line`.
+    out property <color> primary-bg: live.mix(raised, 0.30);
+    out property <color> primary-border: live.mix(line, 0.55);
+    // Fond et bord d'une case à cocher décochée (Chromium, thème sombre).
+    out property <color> check-bg: #3b3b3b;
+    out property <color> check-border: #858585;
+    // Piste d'un curseur (Chromium, thème sombre).
+    out property <color> track: #4b505b;
+
+    out property <length> radius-s: 6px;
+    out property <length> radius-m: 10px;
+
+    out property <string> font: "Inter";
+    out property <string> font-mono: "JetBrains Mono";
+    out property <length> fs: 14px;
+    out property <length> fs-small: 12.5px;
+    out property <length> fs-13: 13px;
+    out property <length> h1: 30px;
+    out property <length> h2: 19px;
+    out property <length> h3: 15px;
+
+    out property <duration> transition: 120ms;
+}

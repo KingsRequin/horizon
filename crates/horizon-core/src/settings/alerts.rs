@@ -1,0 +1,139 @@
+//! Section `[alerts]` : alertes et « Ne pas déranger », réglages globaux. Avant elle, ces
+//! options étaient lues dans le premier widget de chaque genre (Notifications pour le NPD,
+//! Sessions Claude Code pour « Claude attend », Casque et Batteries pour les seuils) : une
+//! clé absente du fichier garde cette valeur, jusqu'au premier enregistrement depuis la
+//! fenêtre « Réglages d'Horizon ».
+
+use crate::claude_sessions::AlertOptions;
+use crate::dnd::DndOptions;
+use crate::layout::{Layout, WidgetKind};
+use crate::low_battery;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AlertSettings {
+    /// « Claude attend » : projet et message dans l'îlot.
+    pub claude_island: Option<bool>,
+    /// « Claude attend » : signal lumineux par Prisme.
+    pub claude_light: Option<bool>,
+    /// Pendant « Ne pas déranger », l'îlot montre quand même « Claude attend ».
+    pub dnd_claude: Option<bool>,
+    /// … et les alertes d'état (batterie faible, serveur hors ligne).
+    pub dnd_battery: Option<bool>,
+    /// « Ne pas déranger » passe Discord en « Ne pas déranger ».
+    pub dnd_discord: Option<bool>,
+    /// « Ne pas déranger » tient la scène `focus` de Prisme.
+    pub dnd_light: Option<bool>,
+    /// Seuil de batterie faible du casque, en % (0 = pas d'alerte).
+    pub headset_low: Option<u8>,
+    /// Seuil de batterie faible du téléphone et de la montre, en % (0 = pas d'alerte).
+    pub devices_low: Option<u8>,
+}
+
+/// Seuil réglé : 0 = alerte coupée.
+fn threshold(v: u8) -> Option<u8> {
+    (v > 0).then_some(v.min(100))
+}
+
+impl AlertSettings {
+    /// Options de « Ne pas déranger ».
+    pub fn dnd(&self, layout: &Layout) -> DndOptions {
+        let old = DndOptions::from_widget(layout.first_of(WidgetKind::NOTIFICATIONS).map(|w| &w.settings));
+        DndOptions {
+            claude: self.dnd_claude.unwrap_or(old.claude),
+            battery: self.dnd_battery.unwrap_or(old.battery),
+            discord: self.dnd_discord.unwrap_or(old.discord),
+            light: self.dnd_light.unwrap_or(old.light),
+        }
+    }
+
+    /// Alerte « Claude attend ».
+    pub fn claude(&self, layout: &Layout) -> AlertOptions {
+        let old = AlertOptions::from_widget(layout.first_of(WidgetKind::CLAUDE_SESSIONS).map(|w| &w.settings));
+        AlertOptions { island: self.claude_island.unwrap_or(old.island), light: self.claude_light.unwrap_or(old.light) }
+    }
+
+    /// Seuil de batterie faible des appareils suivis par le widget `kind` (`Headset` ou
+    /// `Batteries`) ; `None` = pas d'alerte.
+    pub fn low_threshold(&self, layout: &Layout, kind: WidgetKind) -> Option<u8> {
+        let set = if kind == WidgetKind::HEADSET { self.headset_low } else { self.devices_low };
+        match set {
+            Some(v) => threshold(v),
+            None => low_battery::threshold_in(layout, kind),
+        }
+    }
+
+    /// Toutes les valeurs, celles d'avant comprises (pour la fenêtre de réglages).
+    pub fn resolved(&self, layout: &Layout) -> AlertSettings {
+        let (dnd, claude) = (self.dnd(layout), self.claude(layout));
+        let low = |kind| self.low_threshold(layout, kind).unwrap_or(0);
+        AlertSettings {
+            claude_island: Some(claude.island),
+            claude_light: Some(claude.light),
+            dnd_claude: Some(dnd.claude),
+            dnd_battery: Some(dnd.battery),
+            dnd_discord: Some(dnd.discord),
+            dnd_light: Some(dnd.light),
+            headset_low: Some(low(WidgetKind::HEADSET)),
+            devices_low: Some(low(WidgetKind::BATTERIES)),
+        }
+    }
+
+    /// Seuils ramenés à 100 % au plus.
+    pub(super) fn bounded(mut self) -> AlertSettings {
+        self.headset_low = self.headset_low.map(|v| v.min(100));
+        self.devices_low = self.devices_low.map(|v| v.min(100));
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layout::tests::real_monitors;
+    use serde_json::json;
+
+    fn with(kind: WidgetKind, settings: serde_json::Value) -> Layout {
+        let mut l = Layout::default_for(&real_monitors());
+        let id = l.first_of(kind).unwrap().id.clone();
+        l.set_widget_settings(&id, settings).unwrap();
+        l
+    }
+
+    #[test]
+    fn missing_keys_keep_the_widget_values() {
+        let l = with(WidgetKind::NOTIFICATIONS, json!({ "dndDiscord": false }));
+        let a = AlertSettings::default();
+        assert!(!a.dnd(&l).discord);
+        let a = AlertSettings { dnd_discord: Some(true), ..AlertSettings::default() };
+        assert!(a.dnd(&l).discord, "la valeur du fichier l'emporte");
+        let l = with(WidgetKind::CLAUDE_SESSIONS, json!({ "alertLight": false }));
+        assert_eq!(AlertSettings::default().claude(&l), AlertOptions { island: true, light: false });
+    }
+
+    #[test]
+    fn global_values_work_without_any_widget() {
+        let mut l = Layout::default_for(&real_monitors());
+        for b in &mut l.bars {
+            b.right.retain(|w| !matches!(w.kind, WidgetKind::CLAUDE_SESSIONS | WidgetKind::HEADSET));
+        }
+        assert_eq!(AlertSettings::default().claude(&l), AlertOptions { island: false, light: false });
+        assert_eq!(AlertSettings::default().low_threshold(&l, WidgetKind::HEADSET), None);
+        let a = AlertSettings { claude_island: Some(true), headset_low: Some(20), ..AlertSettings::default() };
+        assert!(a.claude(&l).island);
+        assert_eq!(a.low_threshold(&l, WidgetKind::HEADSET), Some(20));
+        let off = AlertSettings { devices_low: Some(0), ..AlertSettings::default() };
+        assert_eq!(off.low_threshold(&l, WidgetKind::BATTERIES), None);
+    }
+
+    #[test]
+    fn resolved_fills_everything() {
+        let l = with(WidgetKind::HEADSET, json!({ "lowAlert": 30 }));
+        let r = AlertSettings::default().resolved(&l);
+        assert_eq!(r.headset_low, Some(30));
+        assert_eq!(r.devices_low, Some(low_battery::DEFAULT_THRESHOLD));
+        assert_eq!(r.dnd_light, Some(false));
+        assert_eq!(r.claude_island, Some(true));
+    }
+}

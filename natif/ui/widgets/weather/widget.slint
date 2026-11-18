@@ -1,0 +1,88 @@
+// Météo (app/src/widgets/weather/Widget.svelte) : ciel et température du lieu choisi dans les
+// réglages ; survol = prévisions. Pas encore de lieu : clic = réglages.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { WidgetFrame } from "../../widget-frame.slint";
+import { Panels } from "../../panels.slint";
+
+// État d'un exemplaire (src/widgets/weather.rs).
+export enum WeatherState { unset, loading, forecast, error }
+
+export struct WeatherItem {
+    state: WeatherState,
+    // Ciel (prévision) ; sans prévision, l'icône de l'état est choisie ici.
+    icon: image,
+    temp: string,
+    // Dernière lecture ratée, prévision précédente gardée : estompée, point creux.
+    stale: bool,
+}
+
+export global WeatherData {
+    // Un par exemplaire (rang : `Slot.data`).
+    in-out property <[WeatherItem]> items;
+}
+
+export component WeatherWidget inherits WidgetFrame {
+    property <WeatherItem> item: WeatherData.items[root.slot.data];
+    property <bool> unset: root.item.state == WeatherState.unset;
+    property <string> own: "weather:" + root.slot.id;
+    // Survol = prévisions (ou l'erreur) ; pas encore de lieu : clic = réglages.
+    panel: root.item.state == WeatherState.forecast || root.item.state == WeatherState.error ? root.own : "";
+    pin: root.unset ? "" : root.own;
+    has-action: root.unset;
+    tip: root.unset ? "Météo : clic pour choisir une ville" : "";
+    activated => {
+        if root.unset {
+            Panels.settings(root.slot.id);
+        }
+    }
+
+    // Contenu de la hauteur `inner-h`, centré dans l'îlot.
+    Rectangle {
+        y: (root.t.island-h - self.height) / 2;
+        height: root.t.inner-h;
+        opacity: root.item.stale ? Theme.o-stale : 1;
+        HorizontalLayout {
+            padding-left: 6px;
+            padding-right: 6px;
+            spacing: 6px;
+            VerticalLayout {
+                alignment: center;
+                Icon {
+                    source: root.item.state == WeatherState.unset ? @image-url("../../../icons/phosphor/mapPin.svg")
+                        : root.item.state == WeatherState.error ? @image-url("../../../icons/phosphor/warning.svg")
+                        : root.item.state == WeatherState.loading ? @image-url("../../../icons/phosphor/cloud.svg")
+                        : root.item.icon;
+                    size: root.item.state == WeatherState.forecast ? 15px : 14px;
+                    color: root.item.state == WeatherState.error ? root.t.warn : root.t.text;
+                }
+            }
+            if root.item.state == WeatherState.forecast: Text {
+                text: root.item.temp;
+                color: root.t.text;
+                font-family: Theme.font-display;
+                font-weight: 600;
+                font-size: root.t.fs-body;
+                vertical-alignment: center;
+            }
+            if root.item.state != WeatherState.forecast: Text {
+                text: root.item.state == WeatherState.loading ? "…" : "Météo";
+                color: root.t.text-dim;
+                font-size: Theme.fs-meta;
+                vertical-alignment: center;
+            }
+            // Point creux d'une donnée périmée (`.stale-dot`).
+            if root.item.stale: VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 5px;
+                    height: 5px;
+                    border-radius: 2.5px;
+                    border-width: 1px;
+                    border-color: root.t.text;
+                }
+            }
+        }
+    }
+}

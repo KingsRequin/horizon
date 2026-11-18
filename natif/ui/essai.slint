@@ -1,0 +1,184 @@
+// Fenêtre d'essai de la plateforme (`horizon.exe --essai`) : saisie de texte, focus,
+// clavier (touches spéciales, modificateurs), clics, double-clic, clic droit, molette,
+// curseurs. Ouverte deux fois : fenêtre Windows ordinaire (opaque) et fenêtre sans cadre
+// (layered, transparente) qui prend le focus, comme la palette et les réglages à venir.
+
+import { Theme, Styles } from "theme.slint";
+import { Icon } from "components.slint";
+import { UndoBar } from "undo-bar.slint";
+
+export component EssaiWindow inherits Window {
+    in property <bool> opaque: true;
+    in property <image> icon-click;
+    in-out property <string> saisie;
+    in-out property <string> touche: "—";
+    in-out property <string> souris: "—";
+    in-out property <int> crans;
+    // Retrait d'essai annulable (src/undoable.rs) : texte du bandeau, vide = caché.
+    in property <string> undo-label;
+    callback undo-offer();
+    callback undo-undo();
+
+    property <length> radius: opaque ? 0 : Theme.r-2xl;
+
+    title: "Horizon — essai de la plateforme";
+    preferred-width: 520px;
+    preferred-height: 320px;
+    min-width: 380px;
+    min-height: 260px;
+    background: opaque ? Theme.page-bg : transparent;
+    default-font-family: Theme.font-ui;
+    default-font-size: Theme.fs-body;
+
+    pure function nom(t: string) -> string {
+        if (t == Key.Return) { return "Entrée"; }
+        if (t == Key.Escape) { return "Échap"; }
+        if (t == Key.Tab) { return "Tab"; }
+        if (t == Key.Backspace) { return "Retour arrière"; }
+        if (t == Key.Delete) { return "Suppr"; }
+        if (t == Key.LeftArrow) { return "←"; }
+        if (t == Key.RightArrow) { return "→"; }
+        if (t == Key.UpArrow) { return "↑"; }
+        if (t == Key.DownArrow) { return "↓"; }
+        if (t == Key.Home) { return "Début"; }
+        if (t == Key.End) { return "Fin"; }
+        if (t == Key.F1) { return "F1"; }
+        if (t == Key.Shift || t == Key.ShiftR) { return "Maj"; }
+        if (t == Key.Control || t == Key.ControlR) { return "Ctrl"; }
+        if (t == Key.Alt) { return "Alt"; }
+        if (t == Key.AltGr) { return "AltGr"; }
+        if (t == " ") { return "Espace"; }
+        return t;
+    }
+
+    Rectangle {
+        border-radius: root.radius;
+        background: Styles.islands.popup-bg;
+        border-width: root.opaque ? 0 : 1px;
+        border-color: Styles.islands.popup-border;
+    }
+
+    VerticalLayout {
+        padding: 18px;
+        spacing: 12px;
+        Text {
+            text: root.opaque ? "Fenêtre ordinaire (opaque)" : "Fenêtre sans cadre (layered)";
+            color: Styles.islands.text;
+            font-family: Theme.font-display;
+            font-size: Theme.fs-display;
+            font-weight: 600;
+        }
+        Text {
+            text: "Tape dans le champ (accents, AltGr, Ctrl+C / Ctrl+V), puis clique dans la zone clavier.";
+            color: Styles.islands.text-dim;
+            wrap: word-wrap;
+        }
+        Rectangle {
+            height: 34px;
+            border-radius: Theme.r-lg;
+            background: Theme.field-bg;
+            border-width: 1px;
+            border-color: input.has-focus ? Theme.accent : Styles.islands.line;
+            input := TextInput {
+                x: 10px;
+                width: parent.width - 20px;
+                height: parent.height;
+                vertical-alignment: center;
+                single-line: true;
+                text <=> root.saisie;
+                color: Styles.islands.text;
+                font-size: 13px;
+                selection-background-color: Theme.accent.with-alpha(0.35);
+            }
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            bouton := Rectangle {
+                width: 150px;
+                height: 34px;
+                border-radius: Theme.r-lg;
+                background: zone.pressed ? Styles.islands.press : zone.has-hover ? Styles.islands.hover : Styles.islands.surface-1;
+                animate background { duration: Theme.dur-fast; }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 6px;
+                    Icon {
+                        y: (parent.height - self.height) / 2;
+                        source: root.icon-click;
+                        size: 14px;
+                        color: Styles.islands.text;
+                    }
+                    Text {
+                        text: "Cliquer ici";
+                        color: Styles.islands.text;
+                        vertical-alignment: center;
+                    }
+                }
+                zone := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.souris = "clic"; }
+                    double-clicked => { root.souris = "double-clic"; }
+                    pointer-event(e) => {
+                        if (e.kind == PointerEventKind.down && e.button == PointerEventButton.right) {
+                            root.souris = "clic droit";
+                        }
+                    }
+                    scroll-event(e) => {
+                        root.crans += e.delta-y > 0 ? 1 : -1;
+                        root.souris = "molette (" + root.crans + ")";
+                        accept
+                    }
+                }
+            }
+            clavier := FocusScope {
+                width: 220px;
+                height: 34px;
+                key-pressed(e) => {
+                    root.touche = (e.modifiers.control ? "Ctrl+" : "") + (e.modifiers.alt ? "Alt+" : "") + (e.modifiers.shift ? "Maj+" : "") + root.nom(e.text);
+                    accept
+                }
+                Rectangle {
+                    border-radius: Theme.r-lg;
+                    border-width: 1px;
+                    border-color: clavier.has-focus ? Theme.accent : Styles.islands.line;
+                    Text {
+                        text: clavier.has-focus ? "Zone clavier : " + root.touche : "Zone clavier (cliquer)";
+                        color: Styles.islands.text-dim;
+                    }
+                    TouchArea {
+                        clicked => { clavier.focus(); }
+                    }
+                }
+            }
+            Rectangle {
+                width: 110px;
+                height: 34px;
+                border-radius: Theme.r-lg;
+                background: retrait.has-hover ? Styles.islands.hover : Styles.islands.surface-1;
+                Text {
+                    text: "Retirer (essai)";
+                    color: Styles.islands.text;
+                }
+                retrait := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.undo-offer(); }
+                }
+            }
+        }
+        Text {
+            text: "Souris : " + root.souris + "   ·   saisi : « " + root.saisie + " »";
+            color: Styles.islands.text-dim;
+            font-family: Theme.font-mono;
+            font-size: Theme.fs-meta;
+        }
+        Rectangle { }
+    }
+
+    UndoBar {
+        x: (parent.width - self.width) / 2;
+        y: parent.height - self.height - 18px;
+        t: Styles.islands;
+        label: root.undo-label;
+        undo => { root.undo-undo(); }
+    }
+}

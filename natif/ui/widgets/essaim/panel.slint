@@ -1,0 +1,223 @@
+// Panneau Essaim (app/src/widgets/essaim/Panel.svelte) : pause / reprise, état (moteur de dessin,
+// synchro Prisme) et réglages en direct (curseurs et cases, par groupe). Une valeur part à Essaim
+// 300 ms après le dernier mouvement du curseur (ou à son relâchement) ; en attendant, le curseur
+// garde la valeur choisie. Relié par src/widgets/essaim/panel.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { Eyebrow } from "../../gauge.slint";
+import { StatusDot } from "../../widget-frame.slint";
+import { PanelBase } from "../../panel/base.slint";
+import { PanelHead } from "../../panel/head.slint";
+import { PanelButton } from "../../panel/button.slint";
+import { Slider } from "../../panel/slider.slint";
+import { CheckBox } from "../../panel/check.slint";
+
+// Un réglage : curseur (`min`…`max`, pas `step`, valeur affichée `text`) ou case (`check`).
+export struct EssaimPanelSetting {
+    // « section.clé ».
+    id: string,
+    label: string,
+    check: bool,
+    min: float,
+    max: float,
+    step: float,
+    value: float,
+    checked: bool,
+    text: string,
+}
+
+export struct EssaimPanelGroup {
+    title: string,
+    settings: [EssaimPanelSetting],
+}
+
+export global EssaimPanelData {
+    // 0 absent, 1 en pause, 2 en veille (plein écran), 3 actif.
+    in-out property <int> status;
+    in-out property <bool> paused;
+    in-out property <bool> gpu;
+    in-out property <bool> prisme;
+    // Réglages reçus d'Essaim (sinon pas de groupes).
+    in-out property <bool> has-config;
+    in-out property <[EssaimPanelGroup]> groups;
+    callback set-paused(bool);
+    // Curseur déplacé (envoi temporisé) puis relâché (envoi tout de suite).
+    callback slide(string, float);
+    callback release(string);
+    callback check(string, bool);
+    // Ouvre `config.toml` d'Essaim.
+    callback open-config();
+}
+
+// Bouton du panneau (filet, fond `surface-1`).
+component EssaimButton inherits PanelButton {
+    height: 5px * 2 + 1.21 * root.t.fs-body;
+    padding-x: 10px;
+    radius: Theme.r-lg;
+    rest: root.t.surface-1;
+    border-width: 1px;
+    border-color: root.t.line;
+}
+
+// Ligne d'état : icône ou pastille, texte.
+component StateLine inherits HorizontalLayout {
+    in property <StyleTokens> t;
+    in property <string> text;
+    in property <bool> dim;
+    spacing: 8px;
+    @children
+    Text {
+        text: root.text;
+        horizontal-stretch: 1;
+        color: root.dim ? root.t.text-dim : root.t.text;
+        font-size: root.dim ? Theme.fs-meta : root.t.fs-body;
+        vertical-alignment: center;
+    }
+}
+
+export component EssaimPanel inherits PanelBase {
+    width: 290px;
+    spacing: 12px;
+
+    PanelHead {
+        t: root.t;
+        title: "Essaim";
+        center: true;
+        VerticalLayout {
+            alignment: center;
+            EssaimButton {
+                t: root.t;
+                icon: EssaimPanelData.paused ? @image-url("../../../icons/phosphor/play.svg") : @image-url("../../../icons/phosphor/pause.svg");
+                icon-size: 12px;
+                text: EssaimPanelData.paused ? "Reprendre" : "Mettre en pause";
+                fg: EssaimPanelData.paused ? Theme.accent : root.t.text;
+                border-color: EssaimPanelData.paused ? Theme.accent.with-alpha(0.5) : root.t.line;
+                clicked => {
+                    EssaimPanelData.set-paused(!EssaimPanelData.paused);
+                }
+            }
+        }
+    }
+
+    VerticalLayout {
+        spacing: 5px;
+        StateLine {
+            t: root.t;
+            text: EssaimPanelData.status == 0 ? "Essaim n’est pas lancé"
+                : EssaimPanelData.status == 1 ? "En pause"
+                : EssaimPanelData.status == 2 ? "En veille (plein écran)" : "Actif";
+            VerticalLayout {
+                alignment: center;
+                StatusDot {
+                    fill: EssaimPanelData.status == 3 ? root.t.ok : root.t.text-dim;
+                    glow: EssaimPanelData.status == 3 ? 6px : 0;
+                }
+            }
+        }
+        StateLine {
+            t: root.t;
+            dim: true;
+            text: EssaimPanelData.gpu ? "Dessin par la carte graphique" : "Dessin par le processeur (secours)";
+            VerticalLayout {
+                alignment: center;
+                Icon {
+                    source: EssaimPanelData.gpu ? @image-url("../../../icons/phosphor/graphicsCard.svg") : @image-url("../../../icons/phosphor/cpu.svg");
+                    size: 13px;
+                    color: root.t.text-dim;
+                }
+            }
+        }
+        StateLine {
+            t: root.t;
+            dim: true;
+            text: EssaimPanelData.prisme ? "Synchro Prisme connectée" : "Synchro Prisme non connectée";
+            VerticalLayout {
+                alignment: center;
+                Icon {
+                    source: @image-url("../../../icons/phosphor/lightbulb.svg");
+                    size: 13px;
+                    color: root.t.text-dim;
+                }
+            }
+        }
+    }
+
+    if EssaimPanelData.has-config: VerticalLayout {
+        spacing: 12px;
+        for g in EssaimPanelData.groups: VerticalLayout {
+            // `border-top: 1px solid var(--line)` et 10 px au-dessus du contenu.
+            Rectangle {
+                height: 1px;
+                background: root.t.line;
+            }
+            VerticalLayout {
+                padding-top: 10px;
+                spacing: 6px;
+                Eyebrow {
+                    t: root.t;
+                    label: g.title;
+                    horizontal-alignment: left;
+                }
+                for s in g.settings: VerticalLayout {
+                    spacing: 1px;
+                    if !s.check: HorizontalLayout {
+                        Text {
+                            text: s.label;
+                            horizontal-stretch: 1;
+                            color: root.t.text-dim;
+                            font-size: Theme.fs-meta;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: s.text;
+                            color: root.t.text;
+                            font-family: Theme.font-mono;
+                            font-weight: 500;
+                            font-size: Theme.fs-meta;
+                            vertical-alignment: center;
+                        }
+                    }
+                    if !s.check: Slider {
+                        // Hauteur d'un `<input type="range">` (16 px) : lignes aussi serrées que la page.
+                        height: 16px;
+                        t: root.t;
+                        value: s.value;
+                        minimum: s.min;
+                        maximum: s.max;
+                        step: s.step;
+                        moved(v) => {
+                            EssaimPanelData.slide(s.id, v);
+                        }
+                        released => {
+                            EssaimPanelData.release(s.id);
+                        }
+                    }
+                    if s.check: CheckBox {
+                        t: root.t;
+                        text: s.label;
+                        checked: s.checked;
+                        toggled(v) => {
+                            EssaimPanelData.check(s.id, v);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    HorizontalLayout {
+        alignment: start;
+        EssaimButton {
+            t: root.t;
+            icon: @image-url("../../../icons/phosphor/fileText.svg");
+            icon-size: 13px;
+            text: "Tous les réglages…";
+            fg: root.t.text-dim;
+            clicked => {
+                EssaimPanelData.open-config();
+            }
+        }
+    }
+}

@@ -1,0 +1,58 @@
+// Champ de saisie d'un panneau (`<input>` du minuteur : durée libre) : texte, indication grisée
+// quand il est vide (`placeholder`), contour rouge si la saisie est illisible (`invalid`),
+// Entrée = `accepted`. Anneau de focus dès qu'il a le focus (un champ de texte montre
+// `:focus-visible` aussi à la souris). Le panneau doit être épinglé pour qu'on y tape (une
+// fenêtre en aperçu ne prend pas le clavier).
+
+import { Theme, StyleTokens } from "../theme.slint";
+import { FocusRing } from "focus.slint";
+
+export component TextField inherits Rectangle {
+    in property <StyleTokens> t;
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <bool> invalid;
+    out property <bool> has-focus: input.has-focus;
+    // Texte modifié (à chaque frappe), Entrée.
+    callback edited(string);
+    callback accepted(string);
+    height: 30px;
+    min-width: 0;
+    border-radius: Theme.r-lg;
+    border-width: 1px;
+    border-color: root.invalid ? root.t.bad.with-alpha(0.6) : root.t.line;
+    background: root.t.surface-1;
+
+    if root.text == "": Text {
+        x: 10px;
+        width: root.width - 20px;
+        height: root.height;
+        text: root.placeholder;
+        color: root.t.text-dim;
+        font-size: root.t.fs-body;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    input := TextInput {
+        x: 10px;
+        width: root.width - 20px;
+        height: root.height;
+        text <=> root.text;
+        color: root.t.text;
+        font-size: root.t.fs-body;
+        vertical-alignment: center;
+        single-line: true;
+        selection-background-color: Theme.accent.with-alpha(0.4);
+        edited => {
+            root.edited(self.text);
+        }
+        accepted => {
+            root.accepted(self.text);
+        }
+    }
+    if input.has-focus: FocusRing {
+        width: root.width + 6px;
+        height: root.height + 6px;
+        radius: Theme.r-lg;
+    }
+}

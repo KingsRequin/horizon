@@ -1,0 +1,84 @@
+// Option à cocher d'une fenêtre de réglages (app/src/settings/ui/Check.svelte) : carte
+// `surface-1` avec la case (`CheckMark`, rendu de Chromium), le libellé et son explication. Toute
+// la carte se clique ; clavier (Tab, Espace, Entrée) avec l'anneau de focus. Désactivée :
+// estompée (`o-off`), rien ne réagit. Contrôlée : elle annonce `toggled(nouvelle valeur)`.
+
+import { Theme } from "../theme.slint";
+import { CheckMark } from "../panel/check.slint";
+import { SettingsLayout } from "layout.slint";
+
+export component SettingCheck inherits Rectangle {
+    in property <bool> checked;
+    in property <string> label;
+    in property <string> hint;
+    in property <bool> enabled: true;
+    out property <bool> keyboard;
+    callback toggled(bool);
+    property <length> text-w: max(60px, SettingsLayout.content-w - 20px - 10px - 13px);
+
+    VerticalLayout {
+        padding-bottom: 6px;
+        Rectangle {
+            border-radius: Theme.r-lg;
+            background: SettingsLayout.t.surface-1;
+            opacity: root.enabled ? 1 : Theme.o-off;
+            FocusScope {
+                enabled: root.enabled;
+                focus-on-click: false;
+                focus-gained(r) => {
+                    root.keyboard = r == FocusReason.tab-navigation;
+                }
+                focus-lost => {
+                    root.keyboard = false;
+                }
+                key-pressed(e) => {
+                    if e.text == " " || e.text == Key.Return {
+                        root.toggled(!root.checked);
+                        return accept;
+                    }
+                    reject
+                }
+            }
+            area := TouchArea {
+                enabled: root.enabled;
+                mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+                clicked => {
+                    root.toggled(!root.checked);
+                }
+            }
+            HorizontalLayout {
+                padding-top: 9px;
+                padding-bottom: 9px;
+                padding-left: 10px;
+                padding-right: 10px;
+                spacing: 10px;
+                alignment: start;
+                VerticalLayout {
+                    padding-top: 2px;
+                    alignment: start;
+                    CheckMark {
+                        checked: root.checked;
+                        hovered: area.has-hover;
+                        keyboard: root.keyboard;
+                    }
+                }
+                VerticalLayout {
+                    spacing: 3px;
+                    Text {
+                        width: root.text-w;
+                        text: root.label;
+                        color: SettingsLayout.t.text;
+                        wrap: word-wrap;
+                    }
+                    if root.hint != "": Text {
+                        width: root.text-w;
+                        text: root.hint;
+                        color: SettingsLayout.t.text-dim;
+                        font-size: Theme.fs-meta;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+    }
+}

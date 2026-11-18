@@ -1,0 +1,59 @@
+// Bandeau « « X » retiré · Annuler » (app/src/settings/ui/UndoBar.svelte), en bas d'une fenêtre de
+// réglages (phase F) : le retrait devient définitif à la fin du délai ou à la fermeture de la
+// fenêtre (logique : src/undoable.rs). Glisse de 12 px en apparaissant (`shown`).
+//
+// Le poser au bas de la fenêtre, centré : `UndoBar { x: (parent.width - self.width) / 2;
+// y: parent.height - self.height - 18px; … }`. Le rendu logiciel ne dessine pas l'ombre portée.
+
+import { Theme, StyleTokens } from "theme.slint";
+
+export component UndoBar inherits Rectangle {
+    in property <StyleTokens> t;
+    // Texte du retrait ; vide : bandeau caché.
+    in property <string> label;
+    callback undo();
+    property <bool> shown: root.label != "";
+    width: row.preferred-width;
+    height: row.preferred-height;
+    border-radius: Theme.r-xl;
+    background: root.t.surface-2;
+    opacity: root.shown ? 1 : 0;
+    visible: self.opacity > 0;
+    animate opacity { duration: Theme.dur-base; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+    row := HorizontalLayout {
+        y: root.shown ? 0 : 12px;
+        animate y { duration: Theme.dur-base; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+        padding-left: 14px;
+        padding-right: 8px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 14px;
+        Text {
+            text: root.label;
+            color: root.t.text;
+            font-size: Theme.fs-meta;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            width: action.preferred-width + 22px;
+            border-radius: Theme.r-md;
+            background: area.has-hover ? Theme.accent.brighter(0.1) : Theme.accent;
+            action := Text {
+                text: "Annuler";
+                color: Theme.on-accent;
+                font-family: Theme.font-ui;
+                font-size: Theme.fs-meta;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            area := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.undo();
+                }
+            }
+        }
+    }
+}

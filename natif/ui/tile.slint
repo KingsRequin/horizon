@@ -1,0 +1,195 @@
+// Tuile d'une barre haute (lib/Tile.svelte) : le panneau du widget (`PanelFill`, généré par
+// build.rs : le même `<Id>Panel` que la fenêtre surgissante) dans un cadre de panneau, à la
+// largeur de sa colonne ; un panneau plus haut que la tuile défile dedans (molette, barre fine).
+// Sa place et sa hauteur (bornée à la zone) viennent de Rust (`src/tiles.rs`), d'après la hauteur
+// naturelle qu'elle annonce (`measured`).
+//
+// Souris (`mode`, comme `interactive` et le `swallow` d'App.svelte) : 2 = cliquable, le panneau
+// réagit à tout ; 1 = survol seul, la molette fait défiler le panneau, rien dedans ne réagit ;
+// 0 = information seule, rien. En mode édition, la tuile se saisit entière (la molette fait
+// défiler la zone) : pas d'oscillation (`wiggle`), le rendu logiciel ne tourne rien.
+
+import { Theme, StyleTokens } from "theme.slint";
+import { PanelFill } from "@panel-view";
+
+export component Tile inherits Rectangle {
+    in property <StyleTokens> t;
+    // Genre du widget (« media ») et identifiant de l'exemplaire.
+    in property <string> kind;
+    in property <string> instance;
+    in property <float> dim;
+    in property <int> mode;
+    in property <bool> editing;
+    // Glisser en cours de cette tuile (mode édition).
+    in property <bool> dragging;
+    // Bords visibles de la zone des tuiles, dans la tuile (fondu de ce qui reste à défiler).
+    in property <bool> more-above;
+    in property <bool> more-below;
+    in property <length> view-top;
+    in property <length> view-bottom;
+    // Hauteur naturelle de la tuile : panneau, marges et bord.
+    out property <length> natural-h: fill.natural-h + 2 * (root.pad-y + 1px);
+    callback measured(length);
+    // La souris entre sur la tuile ou en sort (menu du clic droit).
+    callback hovered(bool);
+    // Glisser du mode édition : 0 appui, 1 déplacement, 2 relâché, 3 annulé ; position dans la
+    // fenêtre.
+    callback drag(int, length, length);
+    // Survol passif (le contenu) ou de la couverture (inerte, mode édition).
+    property <bool> hover: area.has-hover || cover.has-hover;
+    changed hover => {
+        root.hovered(root.hover);
+    }
+
+    property <length> pad-x: 16px;
+    property <length> pad-y: 14px;
+    property <length> fade: 28px;
+    property <length> view-h: max(0px, root.height - 2 * (root.pad-y + 1px));
+    property <length> max-scroll: max(0px, fill.natural-h - root.view-h);
+    property <length> offset: 0px;
+
+    // Défile le panneau de `d` (positif = vers le haut) ; faux s'il ne peut pas aller plus loin.
+    function scroll-by(d: length) -> bool {
+        let next = max(0px, min(root.max-scroll, root.offset - d));
+        if next == root.offset {
+            return false;
+        }
+        root.offset = next;
+        true
+    }
+
+    init => {
+        root.measured(root.natural-h);
+    }
+    changed natural-h => {
+        root.measured(root.natural-h);
+    }
+    // Ligne réutilisée pour une autre tuile (ajout, retrait) : sa hauteur est annoncée pour elle.
+    changed instance => {
+        root.offset = 0px;
+        root.measured(root.natural-h);
+    }
+    changed max-scroll => {
+        root.offset = min(root.offset, root.max-scroll);
+    }
+
+    // Cadre des panneaux surgissants, concentrique aux îlots de la barre.
+    border-radius: root.t.island-radius + 3px;
+    background: root.t.popup-bg;
+    border-width: 1px;
+    border-color: root.t.popup-border;
+
+    // Style îlots : contour sombre et filet clair des îlots (`--island-shadow`).
+    if !root.t.graphic: Rectangle {
+        x: -1px;
+        y: -1px;
+        width: root.width + 2px;
+        height: root.height + 2px;
+        border-radius: root.border-radius + 1px;
+        border-width: 1px;
+        border-color: root.t.island-ring;
+    }
+    if !root.t.graphic: Rectangle {
+        x: root.border-radius - 2px;
+        y: 1px;
+        width: root.width - 2 * (root.border-radius - 2px);
+        height: 1px;
+        background: root.t.island-highlight;
+    }
+
+    opacity: root.dragging ? 0.85 : 1;
+
+    // La molette que le panneau ne prend pas (hors d'un curseur…) fait défiler la tuile, puis la
+    // zone quand la tuile est au bout.
+    area := TouchArea {
+        scroll-event(e) => {
+            if root.scroll-by(e.delta-y) {
+                return accept;
+            }
+            reject
+        }
+
+        view := Rectangle {
+            x: root.pad-x + 1px;
+            y: root.pad-y + 1px;
+            width: root.width - 2 * (root.pad-x + 1px);
+            height: root.view-h;
+            clip: true;
+
+            fill := PanelFill {
+                y: -root.offset;
+                width: parent.width;
+                height: self.natural-h;
+                kind: root.kind;
+                instance: root.instance;
+                t: root.t;
+            }
+
+            // Fondu du bord de la zone d'où il reste à défiler (`mask-image` de `.tiles`) : le
+            // contenu s'efface dans le fond de la tuile.
+            if root.more-below && root.view-bottom < root.height: Rectangle {
+                y: root.view-bottom - root.pad-y - 1px - root.fade;
+                height: root.fade;
+                background: @linear-gradient(180deg, root.t.popup-bg.with-alpha(0) 0%, root.t.popup-bg 100%);
+            }
+            if root.more-above && root.view-top > 0: Rectangle {
+                y: root.view-top - root.pad-y - 1px;
+                height: root.fade;
+                background: @linear-gradient(180deg, root.t.popup-bg 0%, root.t.popup-bg.with-alpha(0) 100%);
+            }
+        }
+    }
+
+    // Barre de défilement fine (`scrollbar-width: thin`), seulement quand le panneau dépasse.
+    if root.max-scroll > 0: Rectangle {
+        x: root.width - 7px;
+        y: root.pad-y + 1px + root.offset / fill.natural-h * root.view-h;
+        width: 4px;
+        height: max(16px, root.view-h * root.view-h / fill.natural-h);
+        border-radius: 2px;
+        background: root.t.track;
+    }
+
+    // Nuit (barre non cliquable) : voile noir, comme les îlots (`.dimmable .tile::after`).
+    Rectangle {
+        border-radius: root.border-radius;
+        background: Colors.black.with-alpha(root.dim);
+        animate background { duration: Theme.dur-ambient; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    }
+
+    // Survol seul, information seule, mode édition : rien n'atteint le panneau (`inert`).
+    cover := TouchArea {
+        enabled: root.mode != 2 || root.editing;
+        mouse-cursor: root.editing ? (root.dragging ? MouseCursor.grabbing : MouseCursor.grab) : MouseCursor.default;
+        pointer-event(e) => {
+            if !root.editing {
+                return;
+            }
+            if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
+                root.drag(0, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            } else if e.button == PointerEventButton.left && e.kind == PointerEventKind.up {
+                root.drag(2, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            } else if e.kind == PointerEventKind.cancel {
+                root.drag(3, 0, 0);
+            }
+        }
+        moved => {
+            if root.editing {
+                root.drag(1, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            }
+        }
+        scroll-event(e) => {
+            if root.editing {
+                // La zone défile (la tuile entière se saisit).
+                return reject;
+            }
+            if root.mode == 1 {
+                if root.scroll-by(e.delta-y) {
+                    return accept;
+                }
+                return reject;
+            }
+            accept
+        }
+    }
+}

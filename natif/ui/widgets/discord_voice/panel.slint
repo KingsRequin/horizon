@@ -1,0 +1,221 @@
+// Panneau Discord vocal (app/src/widgets/discord_voice/Panel.svelte) : serveur, salon,
+// participants (qui parle, micro et son coupés), boutons micro et son. Avec le plugin
+// KrispBridge 1.3 et un relais qui transmet ses commandes : quitter le salon, volume local (jusqu'à
+// 200 %) et sourdine locale de chaque participant. Hors appel : « Pas en vocal sur Discord. ».
+// Relié par src/widgets/discord_voice/panel.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { Eyebrow } from "../../gauge.slint";
+import { PanelBase } from "../../panel/base.slint";
+import { PanelButton } from "../../panel/button.slint";
+import { EmptyState } from "../../panel/empty.slint";
+import { PanelScroll } from "../../panel/scroll.slint";
+import { VolumeSlider } from "../../panel/volume.slint";
+import { VoiceAvatar, VoiceAvatarRow } from "widget.slint";
+
+// Un participant du salon.
+export struct DiscordVoicePanelUser {
+    avatar: VoiceAvatarRow,
+    name: string,
+    // C'est soi (« (toi) », pas de volume local).
+    me: bool,
+    mute: bool,
+    deaf: bool,
+    // Volume local réglable (plugin 1.3, relais qui transmet, autre que soi).
+    has-volume: bool,
+    // Volume local, 1 = 100 % (jusqu'à 2).
+    volume: float,
+    local-mute: bool,
+}
+
+export global DiscordVoicePanelData {
+    in-out property <bool> in-call;
+    // Serveur (« Messages privés » à défaut) et salon.
+    in-out property <string> guild;
+    in-out property <string> channel;
+    in-out property <bool> mute;
+    in-out property <bool> deaf;
+    // « Quitter le salon » possible.
+    in-out property <bool> can-leave;
+    in-out property <[DiscordVoicePanelUser]> users;
+    // « mute » ou « deaf » : bascule dans Discord.
+    callback toggle(string);
+    callback leave();
+    // Volume local d'un participant (identifiant, 1 = 100 %) et sourdine locale.
+    callback set-user-volume(string, float);
+    callback set-user-mute(string, bool);
+}
+
+// Bouton de l'en-tête (30 × 28, filet, fond `surface-1`) ; `bad` : coupé, ou « Quitter ».
+component HeadButton inherits PanelButton {
+    in property <bool> bad;
+    in property <bool> danger;
+    width: 30px;
+    height: 28px;
+    padding-x: 0;
+    radius: Theme.r-lg;
+    icon-size: 15px;
+    rest: root.t.surface-1;
+    hover: root.danger ? root.t.bad.with-alpha(0.16) : root.t.hover;
+    fg: root.bad || root.danger ? root.t.bad : root.t.text;
+    border-width: 1px;
+    border-color: root.bad || root.danger ? root.t.bad.with-alpha(0.45) : root.t.line;
+}
+
+export component DiscordVoicePanel inherits PanelBase {
+    width: 286px;
+    spacing: 10px;
+
+    if !DiscordVoicePanelData.in-call: EmptyState {
+        t: root.t;
+        text: "Pas en vocal sur Discord.";
+    }
+
+    if DiscordVoicePanelData.in-call: HorizontalLayout {
+        spacing: 6px;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Eyebrow {
+                t: root.t;
+                label: DiscordVoicePanelData.guild;
+                overflow: elide;
+            }
+            HorizontalLayout {
+                spacing: 5px;
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        source: @image-url("../../../icons/phosphor/speakerHigh.svg");
+                        size: 13px;
+                        color: root.t.text;
+                    }
+                }
+                Text {
+                    text: DiscordVoicePanelData.channel;
+                    horizontal-stretch: 1;
+                    color: root.t.text;
+                    font-family: Theme.font-display;
+                    font-weight: 600;
+                    font-size: Theme.fs-title;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            HeadButton {
+                t: root.t;
+                bad: DiscordVoicePanelData.mute;
+                icon: DiscordVoicePanelData.mute ? @image-url("../../../icons/phosphor/microphoneSlash.svg") : @image-url("../../../icons/phosphor/microphone.svg");
+                tip: "Micro";
+                clicked => {
+                    DiscordVoicePanelData.toggle("mute");
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            HeadButton {
+                t: root.t;
+                bad: DiscordVoicePanelData.deaf;
+                icon: DiscordVoicePanelData.deaf ? @image-url("../../../icons/phosphor/earSlash.svg") : @image-url("../../../icons/phosphor/headphones.svg");
+                tip: "Son";
+                clicked => {
+                    DiscordVoicePanelData.toggle("deaf");
+                }
+            }
+        }
+        if DiscordVoicePanelData.can-leave: VerticalLayout {
+            alignment: center;
+            HeadButton {
+                t: root.t;
+                danger: true;
+                icon: @image-url("../../../icons/phosphor/phoneDisconnect.svg");
+                tip: "Quitter le salon";
+                clicked => {
+                    DiscordVoicePanelData.leave();
+                }
+            }
+        }
+    }
+
+    // Participants : la liste défile pour que le panneau tienne en 330 px (en-tête de 31 px et
+    // écart compris).
+    if DiscordVoicePanelData.in-call: PanelScroll {
+        t: root.t;
+        limit: 330px - 31px - 10px;
+        spacing: 2px;
+        gutter: 0;
+        for u in DiscordVoicePanelData.users: Rectangle {
+            border-radius: Theme.r-lg;
+            background: u.avatar.speaking ? Theme.speaking.with-alpha(0.10) : transparent;
+            HorizontalLayout {
+                padding-top: 4px;
+                padding-bottom: 4px;
+                padding-left: 6px;
+                padding-right: 6px;
+                spacing: 9px;
+                VerticalLayout {
+                    alignment: center;
+                    VoiceAvatar {
+                        t: root.t;
+                        user: u.avatar;
+                        size: 26px;
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 1px;
+                    HorizontalLayout {
+                        spacing: 6px;
+                        HorizontalLayout {
+                            horizontal-stretch: 1;
+                            Text {
+                                text: u.name;
+                                min-width: 0;
+                                color: root.t.text;
+                                font-size: root.t.fs-body;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            if u.me: Text {
+                                text: " (toi)";
+                                color: root.t.text-dim;
+                                font-size: root.t.fs-body;
+                                vertical-alignment: center;
+                            }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                            }
+                        }
+                        if u.deaf || u.mute: VerticalLayout {
+                            alignment: center;
+                            Icon {
+                                source: u.deaf ? @image-url("../../../icons/phosphor/earSlash.svg") : @image-url("../../../icons/phosphor/microphoneSlash.svg");
+                                size: 13px;
+                                color: root.t.bad;
+                            }
+                        }
+                    }
+                    if u.has-volume: VolumeSlider {
+                        t: root.t;
+                        label: u.name;
+                        volume: u.volume;
+                        muted: u.local-mute;
+                        max: 2;
+                        set-volume(v) => {
+                            DiscordVoicePanelData.set-user-volume(u.avatar.id, v);
+                        }
+                        set-mute(m) => {
+                            DiscordVoicePanelData.set-user-mute(u.avatar.id, m);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

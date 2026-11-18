@@ -1,0 +1,76 @@
+// Bulle de molette de la barre (lib/WheelHint.svelte, une par fenêtre) : volume général (zone
+// vide, « 52 % » et sa jauge) ou avance dans la lecture (« +10 s · 2:13 »), centrée sous le
+// pointeur. Posée par Rust (`src/ui/hint.rs`), qui la retire peu après le dernier cran.
+
+import { Theme, StyleTokens } from "theme.slint";
+import { Icon } from "components.slint";
+import { Track } from "gauge.slint";
+
+export global WheelHintState {
+    in-out property <bool> shown;
+    // Abscisse du pointeur dans la fenêtre.
+    in-out property <length> x;
+    in-out property <image> icon;
+    in-out property <string> text;
+    // Jauge de 0 à 1 ; négative : aucune.
+    in-out property <float> value: -1;
+}
+
+export component WheelHint inherits Rectangle {
+    in property <StyleTokens> t;
+    // Hauteur de la bande : la bulle y est centrée.
+    in property <length> band-h;
+    x: WheelHintState.x - self.width / 2;
+    y: (root.band-h - self.height) / 2;
+    width: row.preferred-width;
+    height: row.preferred-height;
+    border-radius: t.island-radius;
+    background: t.popup-bg;
+    border-width: 1px;
+    border-color: t.popup-border;
+    opacity: 0;
+    row := HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        spacing: 6px;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                source: WheelHintState.icon;
+                size: 12px;
+                color: root.t.text;
+            }
+        }
+        if WheelHintState.value >= 0: VerticalLayout {
+            alignment: center;
+            Track {
+                t: root.t;
+                width: 54px;
+                value: WheelHintState.value;
+                smooth: true;
+            }
+        }
+        Text {
+            text: WheelHintState.text;
+            color: root.t.text;
+            font-family: Theme.font-mono;
+            font-weight: 600;
+            font-size: Theme.fs-meta;
+            vertical-alignment: center;
+        }
+    }
+    states [
+        shown when WheelHintState.shown: {
+            opacity: 1;
+            in {
+                animate opacity { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+            }
+            out {
+                animate opacity { duration: Theme.dur-base; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+            }
+        }
+    ]
+}

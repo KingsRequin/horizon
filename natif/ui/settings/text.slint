@@ -1,0 +1,70 @@
+// Textes d'une page de réglages : titre de section (`h2`), sous-titre (`h3`), note ou
+// introduction (`.note`, `.intro`, `.text`), message d'erreur ou de réussite (`.error`, `.ok`).
+// Les marges des feuilles de style Svelte sont des remplissages (`above`, `below`), la page
+// empile ses éléments sans espacement.
+
+import { Theme } from "../theme.slint";
+import { SettingsLayout } from "layout.slint";
+
+// `h2` : Space Grotesk 600, 14 px ; 22 px au-dessus (sauf le premier), 10 px dessous.
+export component SettingsHeading inherits Rectangle {
+    in property <string> text;
+    in property <bool> first;
+    in property <length> below: 10px;
+    VerticalLayout {
+        padding-top: root.first ? 0 : 22px;
+        padding-bottom: root.below;
+        Text {
+            text: root.text;
+            color: SettingsLayout.t.text;
+            font-family: Theme.font-display;
+            font-size: Theme.fs-title;
+            font-weight: 600;
+        }
+    }
+}
+
+// `h3` (nom d'une barre) : Inter 600 estompé, complément `small` en 400.
+export component SettingsSubheading inherits Rectangle {
+    in property <string> text;
+    in property <string> small;
+    HorizontalLayout {
+        padding-bottom: 8px;
+        alignment: start;
+        Text {
+            text: root.text;
+            color: SettingsLayout.t.text-dim;
+            font-weight: 600;
+        }
+        if root.small != "": Text {
+            text: root.small;
+            color: SettingsLayout.t.text-dim;
+        }
+    }
+}
+
+// Paragraphe qui passe à la ligne, à la largeur du contenu (`indent` : retrait à gauche).
+export component SettingsNote inherits Rectangle {
+    in property <string> text;
+    in property <color> tint: SettingsLayout.t.text-dim;
+    in property <length> above;
+    in property <length> below;
+    in property <length> indent;
+    in property <length> font-size: Theme.fs-meta;
+    in property <string> font-family;
+    in property <int> font-weight: 400;
+    VerticalLayout {
+        padding-top: root.above;
+        padding-bottom: root.below;
+        padding-left: root.indent;
+        Text {
+            width: SettingsLayout.content-w - root.indent;
+            text: root.text;
+            color: root.tint;
+            font-size: root.font-size;
+            font-family: root.font-family;
+            font-weight: root.font-weight;
+            wrap: word-wrap;
+        }
+    }
+}

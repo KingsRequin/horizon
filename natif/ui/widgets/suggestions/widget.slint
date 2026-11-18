@@ -1,0 +1,77 @@
+// Suggestions (app/src/widgets/suggestions/Widget.svelte) : visibles seulement sur l'écran au
+// premier plan, et seulement quand une suggestion est assez sûre (calcul : src/widgets/
+// suggestions). Clic = ouvrir ; clic droit = « Ne plus proposer ». L'îlot arrive en glissant.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { WidgetFrame } from "../../widget-frame.slint";
+import { AppButton, AppTray } from "../../app-button.slint";
+
+export struct SuggestionItem {
+    key: string,
+    // « youtube.com — souvent le samedi vers 16:00 ».
+    title: string,
+    site: bool,
+    image: image,
+    has-image: bool,
+}
+
+export global SuggestionsData {
+    in property <[SuggestionItem]> items;
+    callback open(string);
+    callback menu(string);
+}
+
+export component SuggestionsWidget inherits WidgetFrame {
+    property <bool> any: SuggestionsData.items.length > 0;
+    // Arrivée : la rangée vient de 8 px à gauche en apparaissant (fly, `dur-base`).
+    property <bool> entering;
+    changed any => {
+        if (root.any) {
+            root.entering = true;
+        }
+    }
+    empty: !root.any;
+    padding-x: 4px;
+    gap: 2px;
+
+    Timer {
+        interval: 16ms;
+        running: root.entering;
+        triggered => {
+            root.entering = false;
+        }
+    }
+
+    // La rangée glisse dans sa place (hors mise en page : `x` libre).
+    Rectangle {
+        width: tray.width;
+        tray := AppTray {
+            y: (root.t.island-h - self.height) / 2;
+            t: root.t;
+            for s in SuggestionsData.items: AppButton {
+                t: root.t;
+                inactive: !root.clickable;
+                tip: s.title;
+                image: s.has-image ? s.image : s.site ? @image-url("../../../icons/phosphor/globeSimple.svg") : @image-url("../../../icons/phosphor/appWindow.svg");
+                tint-mode: s.has-image ? 0 : 2;
+                icon-size: s.has-image ? (root.t.graphic ? 16px : 17px) : 15px;
+                clicked => {
+                    SuggestionsData.open(s.key);
+                }
+                right-clicked => {
+                    SuggestionsData.menu(s.key);
+                }
+            }
+        }
+    }
+
+    states [
+        entering when root.entering: {
+            tray.x: -8px;
+            tray.opacity: 0;
+            out {
+                animate tray.x, tray.opacity { duration: Theme.dur-base; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+            }
+        }
+    ]
+}

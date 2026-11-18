@@ -1,0 +1,73 @@
+// Batteries (app/src/widgets/batteries/Widget.svelte) : téléphone et montre (envoyées par
+// SharkApp). Une mesure ancienne est atténuée et marquée d'un point creux ; le widget disparaît
+// tant qu'aucune n'est connue. Sous le seuil réglé : couleur d'alerte.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { PanelArea } from "../../panels.slint";
+import { WidgetFrame } from "../../widget-frame.slint";
+
+// Une batterie (src/widgets/batteries.rs).
+export struct BatteryItem {
+    icon: image,
+    // « 82 % ».
+    percent: string,
+    charging: bool,
+    low: bool,
+    stale: bool,
+    // Infobulle : « Téléphone — 82 %, en charge (il y a 4 min) ».
+    tip: string,
+}
+
+export global BatteriesData {
+    in-out property <[BatteryItem]> items;
+}
+
+export component BatteriesWidget inherits WidgetFrame {
+    empty: BatteriesData.items.length == 0;
+
+    for b in BatteriesData.items: Rectangle {
+        property <color> tint: b.low ? root.t.bad : b.charging ? root.t.ok : root.t.text;
+        opacity: b.stale ? Theme.o-stale : 1;
+        PanelArea {
+            tip: b.tip;
+        }
+        HorizontalLayout {
+            spacing: 4px;
+            VerticalLayout {
+                alignment: center;
+                Icon {
+                    source: b.icon;
+                    size: 14px;
+                    color: tint;
+                }
+            }
+            Text {
+                text: b.percent;
+                color: tint;
+                font-family: Theme.font-mono;
+                font-weight: 500;
+                font-size: Theme.fs-meta;
+                vertical-alignment: center;
+            }
+            if b.charging: VerticalLayout {
+                alignment: center;
+                Icon {
+                    source: @image-url("../../../icons/phosphor/lightning.svg");
+                    size: 10px;
+                    color: tint;
+                }
+            }
+            if b.stale: VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 5px;
+                    height: 5px;
+                    border-radius: 2.5px;
+                    border-width: 1px;
+                    border-color: tint;
+                }
+            }
+        }
+    }
+}

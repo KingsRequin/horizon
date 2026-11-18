@@ -1,0 +1,56 @@
+// Essaim (curseur animé) (app/src/widgets/essaim/Widget.svelte) : icône teintée quand il est
+// actif, estompée avec une pastille en pause ou en veille (plein écran) ; sans place quand
+// Essaim ne tourne pas (pas installé, ou fermé). Clic = pause / reprise ; survol = panneau
+// (état et réglages en direct).
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { WidgetFrame, BarButton } from "../../widget-frame.slint";
+
+export global EssaimData {
+    // 0 absent, 1 en pause, 2 en veille (plein écran), 3 actif (`statusOf` d'essaim.ts).
+    in property <int> status;
+    in property <bool> paused;
+    callback set-paused(bool);
+}
+
+export component EssaimWidget inherits WidgetFrame {
+    property <bool> connected: EssaimData.status != 0;
+    panel: root.connected ? "essaim" : "";
+    empty: !root.connected;
+
+    BarButton {
+        y: (root.t.island-h - self.height) / 2;
+        t: root.t;
+        enabled: root.clickable && root.connected;
+        opacity: root.connected ? 1 : Theme.o-off;
+        clicked => {
+            EssaimData.set-paused(!EssaimData.paused);
+        }
+        Rectangle {
+            width: 15px;
+            Icon {
+                y: (parent.height - self.height) / 2;
+                source: @image-url("../../../icons/phosphor/atom.svg");
+                size: 15px;
+                color: EssaimData.status == 3 ? Theme.accent : root.t.text-dim;
+            }
+            // Pastille en bas à droite de l'icône (`right: 2px` du bouton, marge de 6 px).
+            if EssaimData.status == 1 || EssaimData.status == 2: Rectangle {
+                x: parent.width + 4px - self.width;
+                y: parent.height / 2 + 10px - self.height;
+                width: 11px;
+                height: 11px;
+                border-radius: 5.5px;
+                background: root.t.surface-2;
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: EssaimData.status == 1 ? @image-url("../../../icons/phosphor/pause.svg") : @image-url("../../../icons/phosphor/moonFill.svg");
+                    size: 8px;
+                    color: root.t.text;
+                }
+            }
+        }
+    }
+}

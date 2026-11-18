@@ -1,0 +1,126 @@
+// Témoins de la barre principale, au bout de la zone gauche (lib/BarStatus.svelte) : profil
+// actif autre que le premier (« Normal »), et « ! » tant qu'une intégration est en échec.
+// Données : src/ui/bar_status.rs (profil de layout.json, `horizon://health`).
+
+import { Theme, StyleTokens } from "theme.slint";
+import { Icon, Island } from "components.slint";
+import { Tip } from "tooltip.slint";
+
+export global BarStatusData {
+    // Nom du profil actif s'il n'est pas le premier ; vide : pas de témoin.
+    in property <string> profile;
+    // Profil activé par une appli au premier plan.
+    in property <bool> profile-auto;
+    // Intégrations en échec, séparées par « , » ; vide : pas de « ! ».
+    in property <string> failing;
+    // Clic : page des réglages (« profiles », « options:etat »).
+    callback open(string);
+}
+
+// Bouton d'un témoin : couleur estompée, survol (barre cliquable) plus clair sur un fond léger.
+component StatusButton inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <bool> interactive;
+    in property <string> tip;
+    out property <bool> hovered: area.has-hover && root.interactive;
+    callback clicked();
+    border-radius: Theme.r-sm;
+    background: root.hovered ? root.t.text.with-alpha(0.10) : transparent;
+    area := TouchArea {
+        mouse-cursor: root.interactive ? MouseCursor.pointer : MouseCursor.default;
+        changed has-hover => {
+            if self.has-hover {
+                Tip.show(root.tip);
+            } else {
+                Tip.hide();
+            }
+        }
+        clicked => {
+            Tip.hide();
+            if root.interactive {
+                root.clicked();
+            }
+        }
+    }
+    @children
+}
+
+export component BarStatus inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <float> dim;
+    in property <bool> interactive;
+    // Écart avant les témoins (aucun s'ils sont seuls dans la zone).
+    in property <length> lead;
+    out property <bool> shown: BarStatusData.profile != "" || BarStatusData.failing != "";
+    width: root.shown ? root.lead + island.width : 0;
+    visible: root.shown;
+
+    island := Island {
+        x: root.lead;
+        y: (parent.height - self.height) / 2;
+        t: root.t;
+        dim: root.dim;
+        padding-x: 4px;
+        gap: 2px;
+
+        if BarStatusData.profile != "": VerticalLayout {
+            alignment: center;
+            chip := StatusButton {
+                t: root.t;
+                interactive: root.interactive;
+                tip: "Profil « " + BarStatusData.profile + " »" + (BarStatusData.profile-auto ? " (activé par une appli)" : "")
+                    + " — clic : gérer les profils";
+                clicked => { BarStatusData.open("profiles"); }
+                HorizontalLayout {
+                    padding-left: 4px;
+                    padding-right: 4px;
+                    padding-top: 2px;
+                    padding-bottom: 2px;
+                    spacing: 5px;
+                    Icon {
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("../icons/phosphor/users.svg");
+                        size: 12px;
+                        color: chip.hovered ? root.t.text : root.t.text-dim;
+                    }
+                    Text {
+                        text: BarStatusData.profile;
+                        max-width: 90px;
+                        overflow: elide;
+                        color: chip.hovered ? root.t.text : root.t.text-dim;
+                        font-family: Theme.font-ui;
+                        font-size: Theme.fs-meta;
+                        font-weight: 500;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+        if BarStatusData.failing != "": VerticalLayout {
+            alignment: center;
+            warn := StatusButton {
+                width: 16px;
+                height: 16px;
+                border-radius: 8px;
+                t: root.t;
+                interactive: root.interactive;
+                tip: "En échec : " + BarStatusData.failing + " — clic : état d’Horizon";
+                clicked => { BarStatusData.open("options:etat"); }
+                // Rond teinté (`--warn` à 22 %) ; au survol, le fond commun des boutons.
+                Rectangle {
+                    border-radius: 8px;
+                    background: warn.hovered ? transparent : root.t.warn.with-alpha(0.22);
+                }
+                Text {
+                    text: "!";
+                    color: warn.hovered ? root.t.text : root.t.warn;
+                    font-family: Theme.font-ui;
+                    font-size: Theme.fs-label;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

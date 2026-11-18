@@ -1,0 +1,73 @@
+// Accroche des panneaux surgissants (lib/panels.ts ; fenêtre surgissante : phase C) et des
+// réglages des widgets (phase F). Une seule règle pour tous les widgets, comme la version Tauri :
+// - survol = aperçu (`hoverPanel`) : Rust l'ouvre après un délai (300 ms) et le ferme peu après
+//   la sortie ;
+// - clic hors des boutons du widget = panneau épinglé ;
+// - le genre du panneau est celui du widget (« media »), ou propre à un exemplaire
+//   (« weather:<id> », « calendar:<id> », « servers:<id> »).
+// Relié côté Rust par `src/ui/panels.rs` (global propre à chaque fenêtre : chaque barre a le sien).
+
+import { Tip } from "tooltip.slint";
+
+export global Panels {
+    // Survol du widget qui ouvre le panneau `kind` : entrée (`true`) ou sortie, abscisse et
+    // largeur du widget dans la fenêtre (ancre du panneau, sous la bande).
+    callback hover(string, bool, length, length);
+    // Clic : le panneau `kind` s'ouvre épinglé sous le widget (abscisse, largeur).
+    callback pin(string, length, length);
+    // Réglages de l'exemplaire `id` (widget vide ou pas encore réglé : clic).
+    callback settings(string);
+}
+
+// Zone d'un widget qui ouvre un panneau (`use:hoverPanel` / `use:clickPanel`) et montre une
+// infobulle (`title`). Ses enfants sont posés dessus : un bouton intérieur actif (`TouchArea`
+// activée) garde son clic pour lui, comme `onOwnButton` de la version Tauri ; désactivé, son clic
+// passe à la zone. `WidgetFrame` s'en sert ; un widget de forme particulière (Lecture en cours,
+// Notifications) la pose lui-même.
+export component PanelArea inherits TouchArea {
+    // Barre qui n'est pas « Information seule » : le survol ouvre l'aperçu.
+    in property <bool> interactive;
+    // Le widget réagit aux clics (`slot.clickable`).
+    in property <bool> clickable;
+    // Panneau ouvert au survol ; vide : aucun.
+    in property <string> panel;
+    // Panneau épinglé au clic (par défaut celui du survol) ; vide : aucun.
+    in property <string> pin: root.panel;
+    // Infobulle de toute la zone ; vide : aucune.
+    in property <string> tip;
+    // Le clic a une action propre (`activated` : réglages, tout marquer comme lu…) : main au
+    // survol même sans panneau à épingler.
+    in property <bool> has-action;
+    // Clic sur la zone (hors des boutons), avant l'épinglage : action propre du widget.
+    callback activated();
+    // Panneau annoncé à l'entrée (sa sortie est annoncée même si `panel` a changé entre-temps).
+    property <string> announced;
+    mouse-cursor: root.clickable && (root.pin != "" || root.has-action) ? MouseCursor.pointer : MouseCursor.default;
+
+    changed has-hover => {
+        if self.has-hover {
+            if root.interactive && root.panel != "" {
+                root.announced = root.panel;
+                Panels.hover(root.panel, true, self.absolute-position.x, self.width);
+            }
+            if root.tip != "" {
+                Tip.show(root.tip);
+            }
+        } else {
+            if root.announced != "" {
+                Panels.hover(root.announced, false, self.absolute-position.x, self.width);
+                root.announced = "";
+            }
+            Tip.hide();
+        }
+    }
+    clicked => {
+        Tip.hide();
+        if root.clickable {
+            root.activated();
+            if root.pin != "" {
+                Panels.pin(root.pin, self.absolute-position.x, self.width);
+            }
+        }
+    }
+}

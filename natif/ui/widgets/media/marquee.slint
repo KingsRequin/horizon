@@ -1,0 +1,96 @@
+// Texte sur une ligne (Marquee.svelte) : s'il dépasse `limit`, il défile d'un bout à l'autre puis
+// revient (un aller-retour quand le texte change, un autre à chaque survol), puis s'arrête : une
+// animation sans fin redessinerait la barre en continu. Nouveau texte : il monte en fondu.
+//
+// Écart : le fondu des bords (masque en dégradé) n'existe pas en Slint ; le texte est coupé net.
+
+import { Theme } from "../../theme.slint";
+
+export component Marquee inherits Rectangle {
+    in property <string> text;
+    in property <length> limit: 170px;
+    in property <color> text-color;
+    in property <string> family;
+    in property <length> size;
+    in property <int> weight: 600;
+    // La souris est sur le widget (un aller-retour à chaque survol). Tenu par le widget : un
+    // `TouchArea` ici prendrait le survol et le clic à sa zone (panneau).
+    in property <bool> hovered;
+    // Dépassement à faire défiler.
+    property <length> overflow: max(0px, inner.preferred-width - root.limit);
+    // Durée d'un aller (comme `max(6, overflow / 12)` secondes) : 15 % d'attente, 70 % de
+    // trajet, 15 % d'attente.
+    property <duration> time: max(6s, root.overflow / 12px * 1s);
+    property <bool> far;
+    property <bool> entering;
+    width: min(inner.preferred-width, root.limit);
+    height: inner.preferred-height;
+    clip: true;
+
+    // Aller, puis retour au bout d'une durée d'aller.
+    function slide() {
+        if (root.overflow > 0) {
+            root.far = true;
+            back.running = true;
+        }
+    }
+
+    changed text => {
+        root.far = false;
+        back.running = false;
+        root.entering = true;
+        enter.running = true;
+        root.slide();
+    }
+
+    back := Timer {
+        interval: root.time;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.far = false;
+        }
+    }
+    // Fin de l'image d'entrée : le texte monte à sa place.
+    enter := Timer {
+        interval: 16ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.entering = false;
+        }
+    }
+
+    changed hovered => {
+        if (root.hovered && !back.running) {
+            root.slide();
+        }
+    }
+
+    inner := Text {
+        x: root.far ? -root.overflow : 0;
+        text: root.text;
+        color: root.text-color;
+        font-family: root.family;
+        font-size: root.size;
+        font-weight: root.weight;
+        animate x {
+            duration: root.time * 0.7;
+            delay: root.time * 0.15;
+            easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        states [
+            entering when root.entering: {
+                y: 6px;
+                opacity: 0;
+                out {
+                    animate y, opacity { duration: Theme.dur-base; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                }
+            }
+        ]
+    }
+
+    init => {
+        root.slide();
+    }
+}

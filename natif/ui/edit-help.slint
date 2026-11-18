@@ -1,0 +1,116 @@
+// Bande d'aide du mode édition (app/src/popup/EditHelp.svelte), dans la fenêtre surgissante sous
+// le milieu de la barre éditée : les gestes possibles et « Terminé ».
+
+import { Theme, StyleTokens } from "theme.slint";
+
+// Touche (`<kbd>`) : mono, fond `surface-2`.
+component Kbd inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <string> text;
+    width: label.preferred-width + 10px;
+    height: label.preferred-height + 2px;
+    border-radius: Theme.r-sm;
+    background: root.t.surface-2;
+    label := Text {
+        text: root.text;
+        color: root.t.text;
+        font-family: Theme.font-mono;
+        font-size: Theme.fs-label;
+        font-weight: 500;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Un geste : mot en gras (`<b>`) et suite estompée.
+component Gesture inherits HorizontalLayout {
+    in property <StyleTokens> t;
+    in property <string> strong;
+    in property <string> rest;
+    Text {
+        text: root.strong;
+        color: root.t.text;
+        font-size: Theme.fs-meta;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+    Text {
+        text: root.rest;
+        color: root.t.text-dim;
+        font-size: Theme.fs-meta;
+        vertical-alignment: center;
+    }
+}
+
+export component EditHelp inherits HorizontalLayout {
+    in property <StyleTokens> t;
+    // « Terminé ».
+    callback done();
+    spacing: 14px;
+    alignment: start;
+    Gesture {
+        t: root.t;
+        strong: "Glisser";
+        rest: " pour déplacer";
+    }
+    Gesture {
+        t: root.t;
+        strong: "+";
+        rest: " pour ajouter";
+    }
+    Gesture {
+        t: root.t;
+        strong: "Clic droit";
+        rest: " : réglages, retirer, autre écran";
+    }
+    HorizontalLayout {
+        spacing: 0;
+        Kbd {
+            y: (parent.height - self.height) / 2;
+            t: root.t;
+            text: "Ctrl+Z";
+        }
+        Text {
+            text: " annuler · ";
+            color: root.t.text-dim;
+            font-size: Theme.fs-meta;
+            vertical-alignment: center;
+        }
+        Kbd {
+            y: (parent.height - self.height) / 2;
+            t: root.t;
+            text: "Ctrl+Y";
+        }
+        Text {
+            text: " rétablir";
+            color: root.t.text-dim;
+            font-size: Theme.fs-meta;
+            vertical-alignment: center;
+        }
+    }
+    done-btn := Rectangle {
+        width: done-label.preferred-width + 24px + 4px;
+        height: done-label.preferred-height + 10px;
+        Rectangle {
+            x: 4px;
+            width: parent.width - 4px;
+            border-radius: Theme.r-md;
+            background: area.has-hover ? Theme.accent.brighter(0.1) : Theme.accent;
+            done-label := Text {
+                text: "Terminé";
+                color: Theme.on-accent;
+                font-family: Theme.font-ui;
+                font-size: Theme.fs-meta;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            area := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.done();
+                }
+            }
+        }
+    }
+}

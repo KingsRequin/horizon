@@ -1,0 +1,73 @@
+// Ligne de liste sélectionnable d'un panneau (périphériques, fenêtres, sessions…) : survol, état
+// choisi (`on` : contour et fond dans l'accent, `li.on` du panneau Audio), clavier et anneau de
+// focus. Contenu posé en enfants, en ligne.
+
+import { Theme, StyleTokens } from "../theme.slint";
+import { Tip } from "../tooltip.slint";
+import { FocusRing } from "focus.slint";
+
+export component ListRow inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <bool> on;
+    in property <bool> enabled: true;
+    in property <string> tip;
+    in property <length> padding-x: 8px;
+    in property <length> padding-y: 5px;
+    in property <length> gap: 9px;
+    // Rayon des coins (les lignes de fenêtres et de sessions suivent l'îlot : `island-radius - 2px`).
+    in property <length> radius: Theme.r-lg;
+    out property <bool> hovered: area.has-hover;
+    out property <bool> keyboard;
+    callback clicked();
+    border-radius: root.radius;
+    border-width: 1px;
+    border-color: root.on ? Theme.accent.with-alpha(0.6) : transparent;
+    background: root.on ? Theme.accent.with-alpha(0.12) : root.hovered ? root.t.hover : transparent;
+    animate background, border-color { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+    FocusScope {
+        enabled: root.enabled;
+        focus-on-click: false;
+        focus-gained(r) => {
+            root.keyboard = r == FocusReason.tab-navigation;
+        }
+        focus-lost => {
+            root.keyboard = false;
+        }
+        key-pressed(e) => {
+            if e.text == Key.Return || e.text == " " {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+    area := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+        changed has-hover => {
+            if self.has-hover && root.tip != "" {
+                Tip.show(root.tip);
+            } else if !self.has-hover {
+                Tip.hide();
+            }
+        }
+        clicked => {
+            Tip.hide();
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        padding-left: root.padding-x;
+        padding-right: root.padding-x;
+        padding-top: root.padding-y;
+        padding-bottom: root.padding-y;
+        spacing: root.gap;
+        @children
+    }
+    if root.keyboard: FocusRing {
+        width: root.width + 6px;
+        height: root.height + 6px;
+        radius: root.radius;
+    }
+}

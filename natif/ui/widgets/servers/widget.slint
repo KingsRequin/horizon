@@ -1,0 +1,129 @@
+// Serveurs (homelab) (app/src/widgets/servers/Widget.svelte) : une pastille par hôte (vert,
+// orange si lent, rouge hors ligne, vide en attente) et le nombre d'hôtes hors ligne ; au-delà
+// de 8 hôtes, « en ligne / total ». Barre large (6 hôtes au plus) : le nom de chaque hôte à côté
+// de sa pastille. Aucun serveur : clic = réglages. Survol = panneau avec terminal SSH.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { WidgetFrame, BarButton, StatusDot } from "../../widget-frame.slint";
+import { Panels } from "../../panels.slint";
+
+// Un hôte. `status` : 0 en attente, 1 en ligne, 2 lent, 3 hors ligne.
+export struct ServerHostRow {
+    id: string,
+    label: string,
+    status: int,
+}
+
+// Hôtes d'un exemplaire du widget (réglages propres à chacun).
+export struct ServersGroup {
+    hosts: [ServerHostRow],
+    total: int,
+    down: int,
+    // État le plus grave (même codage que `status`).
+    worst: int,
+}
+
+export global ServersData {
+    // Change à chaque relecture : les exemplaires redemandent leurs hôtes.
+    in property <int> revision;
+    // Hôtes de l'exemplaire `id` (révision passée pour suivre les changements).
+    pure callback group(string, int) -> ServersGroup;
+}
+
+component HostDot inherits StatusDot {
+    in property <StyleTokens> t;
+    in property <int> status;
+    fill: root.status == 3 ? t.bad : root.status == 2 ? t.warn : t.ok;
+    glow: root.status == 3 ? 5px : 0;
+    hollow: root.status == 0;
+    ring: t.text-dim;
+    size: 6px;
+    smooth: true;
+}
+
+export component ServersWidget inherits WidgetFrame {
+    property <ServersGroup> g: ServersData.group(root.slot.id, ServersData.revision);
+    property <bool> names: root.wide && root.g.total <= 6;
+    panel: root.g.total > 0 ? "servers:" + root.slot.id : "";
+    gap: 6px;
+
+    if root.g.total == 0: none := BarButton {
+        y: (root.t.island-h - self.height) / 2;
+        t: root.t;
+        enabled: root.clickable;
+        tip: "Aucun serveur : clic pour en ajouter";
+        gap: 6px;
+        clicked => {
+            Panels.settings(root.slot.id);
+        }
+        Icon {
+            y: (parent.height - self.height) / 2;
+            source: @image-url("../../../icons/phosphor/hardDrives.svg");
+            size: 14px;
+            color: none.hovered ? root.t.text : root.t.text-dim;
+        }
+        Text {
+            text: "Serveurs";
+            color: none.hovered ? root.t.text : root.t.text-dim;
+            font-family: root.t.font;
+            font-size: Theme.fs-meta;
+            font-weight: 500;
+            vertical-alignment: center;
+        }
+    }
+    if root.g.total > 0: Icon {
+        y: (root.t.island-h - self.height) / 2;
+        source: @image-url("../../../icons/phosphor/hardDrives.svg");
+        size: 14px;
+        color: root.g.worst == 3 ? root.t.bad : root.t.text-dim;
+    }
+    // Barre large : noms.
+    if root.g.total > 0 && root.names: HorizontalLayout {
+        spacing: 10px;
+        for h in root.g.hosts: HorizontalLayout {
+            spacing: 5px;
+            VerticalLayout {
+                alignment: center;
+                HostDot {
+                    t: root.t;
+                    status: h.status;
+                }
+            }
+            Text {
+                text: h.label;
+                color: h.status == 3 ? root.t.bad : root.t.text;
+                font-family: root.t.font;
+                font-size: Theme.fs-meta;
+                font-weight: 500;
+                vertical-alignment: center;
+            }
+        }
+    }
+    if root.g.total > 0 && !root.names && root.g.total <= 8: HorizontalLayout {
+        spacing: 3px;
+        for h in root.g.hosts: VerticalLayout {
+            alignment: center;
+            HostDot {
+                t: root.t;
+                status: h.status;
+            }
+        }
+    }
+    if root.g.total > 8 && !root.names: Text {
+        text: "\{root.g.total - root.g.down}/\{root.g.total}";
+        color: root.t.text;
+        font-family: Theme.font-mono;
+        font-size: Theme.fs-meta;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+    if root.g.down > 0: Text {
+        text: root.g.down;
+        color: root.t.bad;
+        font-family: Theme.font-mono;
+        font-size: Theme.fs-meta;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+}

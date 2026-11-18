@@ -1,0 +1,323 @@
+// Lecture en cours (app/src/widgets/media/Widget.svelte) : pochette, titre défilant, artiste,
+// commandes, progression. Style îlots : halo qui suit le son et filet dans l'accent pendant la
+// lecture ; style graphique : spectre derrière la zone. Molette = ±10 s (bulle de la barre).
+// Survol = panneau Lecture en cours. Îlot dynamique (style îlots) : une alerte ou un appel
+// remplace un instant le contenu (ui/flash.slint), qui revient ensuite en fondu.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon, Island, Slot } from "../../components.slint";
+import { FlashCard, FlashData, FlashGlow } from "../../flash.slint";
+import { BarButton } from "../../widget-frame.slint";
+import { Eyebrow } from "../../gauge.slint";
+import { PanelArea } from "../../panels.slint";
+import { Marquee } from "marquee.slint";
+import { Spectrum } from "spectrum.slint";
+
+// Lecture en cours d'une barre (src/widgets/media/ui.rs).
+export global MediaData {
+    // Une lecture est connue (molette active).
+    in-out property <bool> has-info;
+    // Rien à montrer (aucune lecture, ou en pause depuis longtemps) : note seule.
+    in-out property <bool> collapsed: true;
+    in-out property <bool> playing;
+    in-out property <string> title;
+    in-out property <string> artist;
+    // Nom lisible de l'appli source.
+    in-out property <string> app;
+    in-out property <image> art;
+    in-out property <bool> has-art;
+    // Change à chaque nouvelle pochette (fondu d'entrée).
+    in-out property <int> art-seq;
+    in-out property <bool> has-duration;
+    // Part lue (0–1), posée chaque seconde pendant la lecture.
+    in-out property <float> progress;
+    // Halo des îlots (opacité), qui suit le niveau du son.
+    in-out property <float> glow: 0.12;
+    // Spectre du style graphique (24 bandes, 0–1).
+    in-out property <[float]> bands;
+    // Masque du halo (dégradé radial), dessiné une fois par Rust.
+    in-out property <image> glow-mask;
+    callback previous();
+    callback play-pause();
+    callback next();
+    // Molette : crans (positif = vers le haut, avancer) et abscisse du pointeur dans la fenêtre.
+    callback wheel(float, length);
+}
+
+// Bouton de commande (`.controls button`) : fond `accent-soft` au survol ; appui : l'icône
+// rétrécit (`scale(0.9)` ; le rendu logiciel ne transforme pas : la taille suit).
+component Control inherits BarButton {
+    in property <image> icon;
+    in property <length> size: 12px;
+    width: self.height;
+    padding-x: 0;
+    hover: Theme.accent-soft;
+    Icon {
+        y: (parent.height - self.height) / 2;
+        size: root.pressed ? root.size * 0.9 : root.size;
+        source: root.icon;
+        color: root.t.text;
+        animate size { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    }
+}
+
+// Forme propre (spectre derrière, halo et progression dans l'îlot) : pas de `WidgetFrame`, mais
+// les mêmes propriétés (passées par `WidgetView`) et la même accroche (`PanelArea`).
+export component MediaWidget inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <Slot> slot;
+    in property <float> dim;
+    in property <bool> interactive;
+    in property <bool> clickable;
+    in property <bool> compact;
+    in property <bool> wide;
+    property <bool> content: !MediaData.collapsed;
+    // Îlot dynamique (style îlots seulement ; en graphique, le widget Notifications le montre).
+    property <bool> flash: !root.t.graphic && FlashData.active;
+    property <bool> fading;
+    property <bool> art-fading;
+    property <length> title-max: root.compact ? 120px : root.t.graphic ? 220px : 170px;
+    property <length> sub-max: root.compact ? 120px : root.t.graphic ? 220px : 170px;
+    // Îlots : l'artiste seul (ou l'appli à défaut) ; graphique : « artiste · appli ».
+    property <string> sub: MediaData.artist == "" ? MediaData.app
+        : root.t.graphic ? MediaData.artist + " · " + MediaData.app : MediaData.artist;
+    property <int> art-seq: MediaData.art-seq;
+    width: island.width;
+
+    // Retour du contenu (au début d'une lecture) et nouvelle pochette : en fondu.
+    changed content => {
+        if (root.content) {
+            root.fading = true;
+            fade.running = true;
+        }
+    }
+    // Retour du contenu après l'îlot dynamique : en fondu.
+    changed flash => {
+        if (!root.flash && root.content) {
+            root.fading = true;
+            fade.running = true;
+        }
+    }
+    changed art-seq => {
+        root.art-fading = true;
+        fade.running = true;
+    }
+    fade := Timer {
+        interval: 16ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.fading = false;
+            root.art-fading = false;
+        }
+    }
+
+    // Molette, survol (panneau) et clic hors des commandes (épinglé) sur toute la zone ; le
+    // contenu y est posé (son survol tient au-dessus des boutons : un `TouchArea` frère placé
+    // au-dessus le lui prendrait).
+    area := PanelArea {
+        interactive: root.interactive;
+        clickable: root.clickable;
+        panel: root.content ? "media" : "";
+        scroll-event(e) => {
+            if (root.clickable && MediaData.has-info && e.delta-y != 0) {
+                MediaData.wheel(e.delta-y / 60px, self.absolute-position.x + self.mouse-x);
+                return accept;
+            }
+            reject
+        }
+
+        if root.t.graphic && MediaData.playing: Spectrum {
+            y: 4px;
+            width: root.width;
+            height: root.height - 8px;
+            t: root.t;
+            bands: MediaData.bands;
+        }
+
+        island := Island {
+            y: (parent.height - self.height) / 2;
+            t: root.t;
+            dim: root.dim;
+            gap: 0;
+
+            // Îlot dynamique : teinte de la gravité sur tout l'îlot (sans largeur dans la rangée),
+            // puis l'alerte.
+            if root.flash: Rectangle {
+                width: 0;
+                FlashGlow {
+                    x: -12px;
+                    width: island.width;
+                    height: island.height;
+                    t: root.t;
+                }
+            }
+            if root.flash: VerticalLayout {
+                alignment: center;
+                FlashCard {
+                    t: root.t;
+                    compact: root.compact;
+                    clickable: root.clickable;
+                }
+            }
+
+            if !root.flash && !root.content: VerticalLayout {
+                alignment: center;
+                Icon {
+                    source: @image-url("../../../icons/phosphor/musicNotes.svg");
+                    size: 14px;
+                    color: root.t.text-dim;
+                    opacity: Theme.o-stale;
+                }
+            }
+
+            // Fond de l'îlot (sans largeur dans la rangée) : halo, filet, progression, coupés à la
+            // forme de l'îlot.
+            if !root.flash && root.content: Rectangle {
+                width: 0;
+                Rectangle {
+                    x: root.t.graphic ? 0 : -12px;
+                    width: island.width;
+                    height: island.height;
+                    border-radius: root.t.island-radius;
+                    clip: true;
+                    // Halo : ellipse de 70 % × 140 % centrée à 18 % du bord gauche, en bas.
+                    if !root.t.graphic: Image {
+                        x: -0.52 * parent.width;
+                        y: -0.4 * parent.height;
+                        width: 1.4 * parent.width;
+                        height: 2.8 * parent.height;
+                        source: MediaData.glow-mask;
+                        image-fit: fill;
+                        colorize: Theme.accent;
+                        opacity: MediaData.glow;
+                    }
+                    // Filet supérieur dans l'accent pendant la lecture.
+                    if !root.t.graphic && MediaData.playing: Rectangle {
+                        x: 12px;
+                        y: 1px;
+                        width: parent.width - 24px;
+                        height: 1px;
+                        background: @linear-gradient(90deg, Theme.accent.with-alpha(0) 0%, Theme.accent 50%, Theme.accent.with-alpha(0) 100%);
+                    }
+                    if MediaData.has-duration: Rectangle {
+                        x: 10px;
+                        y: parent.height - 2px - self.height;
+                        width: parent.width - 20px;
+                        height: 2px;
+                        border-radius: Theme.r-xs;
+                        background: root.t.surface-2;
+                        clip: true;
+                        Rectangle {
+                            x: 0;
+                            width: parent.width * clamp(MediaData.progress, 0, 1);
+                            background: Theme.accent;
+                        }
+                    }
+                }
+            }
+
+            if !root.flash && root.content: Rectangle {
+                states [
+                    fading when root.fading: {
+                        opacity: 0;
+                        out {
+                            animate opacity { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                        }
+                    }
+                ]
+                HorizontalLayout {
+                    spacing: 10px;
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: root.t.graphic ? 28px : 24px;
+                            height: self.width;
+                            border-radius: root.t.inner-radius;
+                            clip: true;
+                            background: MediaData.has-art ? transparent : root.t.surface-2;
+                            if MediaData.has-art: Image {
+                                width: parent.width;
+                                height: parent.height;
+                                source: MediaData.art;
+                                image-fit: cover;
+                                states [
+                                    fading when root.art-fading: {
+                                        opacity: 0;
+                                        out {
+                                            animate opacity { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                                        }
+                                    }
+                                ]
+                            }
+                            if !MediaData.has-art: Icon {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                source: @image-url("../../../icons/phosphor/musicNotes.svg");
+                                size: 13px;
+                                color: root.t.text-dim;
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Marquee {
+                            text: MediaData.title;
+                            limit: root.title-max;
+                            text-color: root.t.text;
+                            family: root.t.graphic ? Theme.font-display : Theme.font-ui;
+                            size: root.t.fs-body;
+                            weight: 600;
+                            hovered: area.has-hover;
+                        }
+                        if !root.t.graphic: Text {
+                            max-width: root.sub-max;
+                            text: root.sub;
+                            color: root.t.text-dim;
+                            font-size: Theme.fs-meta;
+                            overflow: elide;
+                        }
+                        if root.t.graphic: Eyebrow {
+                            max-width: root.sub-max;
+                            t: root.t;
+                            label: root.sub;
+                            overflow: elide;
+                        }
+                    }
+                    if root.clickable: HorizontalLayout {
+                        spacing: 2px;
+                        alignment: center;
+                        VerticalLayout {
+                            alignment: center;
+                            Control {
+                                t: root.t;
+                                tip: "Précédent";
+                                icon: @image-url("../../../icons/phosphor/skipBack.svg");
+                                clicked => { MediaData.previous(); }
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Control {
+                                t: root.t;
+                                size: 14px;
+                                tip: MediaData.playing ? "Pause" : "Lecture";
+                                icon: MediaData.playing ? @image-url("../../../icons/phosphor/pause.svg") : @image-url("../../../icons/phosphor/play.svg");
+                                clicked => { MediaData.play-pause(); }
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Control {
+                                t: root.t;
+                                tip: "Suivant";
+                                icon: @image-url("../../../icons/phosphor/skipForward.svg");
+                                clicked => { MediaData.next(); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

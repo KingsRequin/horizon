@@ -1,0 +1,257 @@
+// Page « Réglages » (apps/prisme/pages/Settings.svelte) : bascule entre les scènes,
+// reconnaissance des applis, fichier de configuration brut. Données : global `PrismeSettings`
+// (src/prisme_window/settings.rs).
+
+import { PrismeTheme } from "theme.slint";
+import { PText, PButton, PField, PSelect, PRange, PRow, PHint, PScroll, PRing } from "controls.slint";
+
+export global PrismeSettings {
+    in property <bool> ready;
+    in property <float> transition;
+    in property <string> transition-text;
+    in property <float> exit-delay;
+    in property <string> exit-text;
+    in property <string> monitor;
+    in property <string> video-apps;
+    in property <string> music-apps;
+    in property <string> browsers;
+    in property <string> ignore-apps;
+    // Fichier brut ouvert, son texte (posé à l'ouverture), son chemin.
+    in property <bool> raw-open;
+    in property <string> raw;
+    in property <string> path;
+    in property <string> raw-error;
+    in property <bool> raw-saved;
+    callback set-transition(float);
+    callback set-exit(float);
+    callback pick-monitor(length, length);
+    // video_apps, music_apps, browsers, ignore_apps
+    callback set-list(string, string);
+    callback open-raw();
+    callback close-raw();
+    callback save-raw(string);
+}
+
+component H2 inherits PText {
+    font-size: PrismeTheme.h2;
+    font-weight: 600;
+}
+
+// Liste d'exécutables saisie comme texte séparé par des virgules (ListInput.svelte).
+component ListRow inherits PRow {
+    in property <string> list;
+    in property <string> key;
+    value: "";
+    PField {
+        value: root.list;
+        committed(t) => {
+            PrismeSettings.set-list(root.key, t);
+        }
+    }
+}
+
+// Zone de texte du fichier brut (`textarea`, 22 lignes, police à chasse fixe).
+component RawArea inherits Rectangle {
+    in property <string> initial;
+    out property <string> text: input.text;
+    height: 22 * 19px + 12px;
+    border-width: 1px;
+    border-radius: PrismeTheme.radius-s;
+    border-color: PrismeTheme.line;
+    background: PrismeTheme.bg;
+    flick := Flickable {
+        x: 9px;
+        y: 5px;
+        width: parent.width - 18px;
+        height: parent.height - 10px;
+        content-width: self.width;
+        content-height: max(self.height, input.preferred-height);
+        interactive: false;
+        input := TextInput {
+            width: flick.width;
+            height: max(flick.height, self.preferred-height);
+            single-line: false;
+            wrap: word-wrap;
+            color: PrismeTheme.text;
+            font-family: PrismeTheme.font-mono;
+            font-size: PrismeTheme.fs-small;
+            selection-background-color: PrismeTheme.live.with-alpha(0.35);
+            selection-foreground-color: PrismeTheme.text;
+            init => {
+                self.text = root.initial;
+            }
+            cursor-position-changed(p) => {
+                if p.y + flick.content-y < 0 {
+                    flick.content-y = -p.y;
+                } else if p.y + 19px + flick.content-y > flick.height {
+                    flick.content-y = flick.height - p.y - 19px;
+                }
+            }
+        }
+    }
+    if input.has-focus: PRing {
+        width: root.width + 8px;
+        height: root.height + 8px;
+        radius: root.border-radius;
+    }
+}
+
+export component SettingsPage inherits Rectangle {
+    if PrismeSettings.ready: PScroll {
+        content-height: page.preferred-height;
+        page := VerticalLayout {
+            width: parent.width;
+            alignment: start;
+            padding-top: 28px;
+            padding-bottom: 40px;
+            padding-left: 32px;
+            padding-right: max(32px, parent.width - 860px + 32px);
+            spacing: 28px;
+            PText {
+                text: "Réglages";
+                font-size: PrismeTheme.h1;
+                font-weight: 600;
+            }
+
+            VerticalLayout {
+                spacing: 6px;
+                H2 {
+                    text: "Bascule entre les scènes";
+                    height: self.preferred-height + 4px;
+                    vertical-alignment: top;
+                }
+                PRow {
+                    label: "Durée du fondu";
+                    value: PrismeSettings.transition-text;
+                    PRange {
+                        value: PrismeSettings.transition;
+                        minimum: 0;
+                        maximum: 3000;
+                        step: 50;
+                        moved(v) => {
+                            PrismeSettings.set-transition(v);
+                        }
+                    }
+                }
+                PRow {
+                    label: "Attente avant de quitter un média";
+                    value: PrismeSettings.exit-text;
+                    PRange {
+                        value: PrismeSettings.exit-delay;
+                        minimum: 0;
+                        maximum: 30;
+                        step: 0.5;
+                        moved(v) => {
+                            PrismeSettings.set-exit(v);
+                        }
+                    }
+                }
+                PHint {
+                    text: "Évite de repasser à l'ambiance entre deux morceaux ou pendant une courte pause.";
+                }
+                PRow {
+                    label: "Écran de l'ambilight par défaut";
+                    value: "";
+                    PSelect {
+                        text: PrismeSettings.monitor;
+                        open(x, y) => {
+                            PrismeSettings.pick-monitor(x, y);
+                        }
+                    }
+                }
+                PHint {
+                    text: "Utilisé quand Prisme ne sait pas où joue la vidéo (ambilight forcé à la main, par exemple).";
+                }
+            }
+
+            VerticalLayout {
+                spacing: 6px;
+                H2 {
+                    text: "Reconnaissance des applis";
+                    height: self.preferred-height + 4px;
+                    vertical-alignment: top;
+                }
+                PText {
+                    text: "Noms d'exécutables séparés par des virgules.";
+                    color: PrismeTheme.muted;
+                }
+                ListRow {
+                    label: "Toujours de la vidéo";
+                    key: "video_apps";
+                    list: PrismeSettings.video-apps;
+                }
+                ListRow {
+                    label: "Toujours de la musique";
+                    key: "music_apps";
+                    list: PrismeSettings.music-apps;
+                }
+                ListRow {
+                    label: "Navigateurs";
+                    key: "browsers";
+                    list: PrismeSettings.browsers;
+                }
+                PHint {
+                    text: "Un navigateur au premier plan ou en plein écran compte comme une vidéo ; en arrière-plan, comme de la musique.";
+                }
+                ListRow {
+                    label: "Jamais pris en compte";
+                    key: "ignore_apps";
+                    list: PrismeSettings.ignore-apps;
+                }
+                PHint {
+                    text: "Vocal, et visualiseurs qui recopient le son (Wallpaper Engine…).";
+                }
+            }
+
+            VerticalLayout {
+                spacing: 6px;
+                H2 {
+                    text: "Fichier de configuration";
+                    height: self.preferred-height + 4px;
+                    vertical-alignment: top;
+                }
+                if !PrismeSettings.raw-open: HorizontalLayout {
+                    alignment: start;
+                    PButton {
+                        text: "Modifier le fichier brut";
+                        clicked => {
+                            PrismeSettings.open-raw();
+                        }
+                    }
+                }
+                if PrismeSettings.raw-open: VerticalLayout {
+                    spacing: 6px;
+                    PHint {
+                        text: PrismeSettings.path;
+                    }
+                    area := RawArea {
+                        initial: PrismeSettings.raw;
+                    }
+                    if PrismeSettings.raw-error != "": PText {
+                        text: PrismeSettings.raw-error;
+                        color: PrismeTheme.danger;
+                        wrap: word-wrap;
+                    }
+                    HorizontalLayout {
+                        alignment: end;
+                        spacing: 8px;
+                        PButton {
+                            kind: 2;
+                            text: "Fermer";
+                            clicked => {
+                                PrismeSettings.close-raw();
+                            }
+                        }
+                        PButton {
+                            kind: 1;
+                            text: PrismeSettings.raw-saved ? "Fichier enregistré" : "Enregistrer le fichier";
+                            clicked => {
+                                PrismeSettings.save-raw(area.text);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

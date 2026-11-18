@@ -1,0 +1,2 @@
+// Exe icon (Explorer, taskbar, Alt+Tab), also used by the windows (platform::window). ASCII only.
+1 ICON "icons/horizon.ico"

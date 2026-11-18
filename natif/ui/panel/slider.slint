@@ -1,0 +1,124 @@
+// Glissière (`<input type="range">` avec `accent-color`) : piste fine, partie remplie et bouton
+// rond dans l'accent. Contrôlée : elle affiche `value` et annonce les gestes (`moved` à chaque
+// pas, `released` à la fin d'un glissement ou d'une touche) ; c'est au panneau de garder sa
+// valeur locale pendant le geste (voir `VolumeSlider`). Souris (clic, glisser), clavier (flèches
+// ±1 pas, Pg préc./suiv. ±10 pas, Début, Fin) avec l'anneau de focus. Pas de molette ici : un
+// curseur de volume la prend sur toute sa ligne (`VolumeSlider`).
+
+import { Theme, StyleTokens } from "../theme.slint";
+import { FocusRing } from "focus.slint";
+
+export component Slider inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <float> value;
+    in property <float> minimum: 0;
+    in property <float> maximum: 1;
+    in property <float> step: 0.01;
+    in property <bool> enabled: true;
+    in property <color> tint: Theme.accent;
+    out property <bool> keyboard;
+    out property <bool> dragging: area.pressed;
+    callback moved(float);
+    callback released(float);
+    property <length> knob: 14px;
+    property <float> frac: root.maximum > root.minimum ? clamp((root.value - root.minimum) / (root.maximum - root.minimum), 0, 1) : 0;
+    // Dernière valeur annoncée (un même pas n'est annoncé qu'une fois).
+    property <float> last: root.value;
+    min-width: 40px;
+    height: 18px;
+    opacity: root.enabled ? 1 : Theme.o-off;
+
+    // Valeur au pas, bornée.
+    function snap(v: float) -> float {
+        clamp(round(v / root.step) * root.step, root.minimum, root.maximum)
+    }
+    // Valeur pour l'abscisse `x` du pointeur.
+    function at(x: length) -> float {
+        root.snap(root.minimum + clamp((x - root.knob / 2) / max(1px, root.width - root.knob), 0, 1) * (root.maximum - root.minimum))
+    }
+    function go(v: float) {
+        if v != root.last {
+            root.last = v;
+            root.moved(v);
+        }
+    }
+
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        height: 4px;
+        border-radius: 2px;
+        background: root.t.track;
+        Rectangle {
+            x: 0;
+            width: root.knob / 2 + root.frac * (parent.width - root.knob);
+            border-radius: 2px;
+            background: root.tint;
+        }
+    }
+    Rectangle {
+        x: root.frac * (root.width - root.knob);
+        y: (parent.height - self.height) / 2;
+        width: root.knob;
+        height: root.knob;
+        border-radius: root.knob / 2;
+        background: root.tint;
+    }
+    FocusScope {
+        enabled: root.enabled;
+        focus-on-click: false;
+        focus-gained(r) => {
+            root.keyboard = r == FocusReason.tab-navigation;
+        }
+        focus-lost => {
+            root.keyboard = false;
+        }
+        key-pressed(e) => {
+            if e.text == Key.LeftArrow || e.text == Key.DownArrow {
+                root.go(root.snap(root.value - root.step));
+            } else if e.text == Key.RightArrow || e.text == Key.UpArrow {
+                root.go(root.snap(root.value + root.step));
+            } else if e.text == Key.PageDown {
+                root.go(root.snap(root.value - 10 * root.step));
+            } else if e.text == Key.PageUp {
+                root.go(root.snap(root.value + 10 * root.step));
+            } else if e.text == Key.Home {
+                root.go(root.minimum);
+            } else if e.text == Key.End {
+                root.go(root.maximum);
+            } else {
+                return reject;
+            }
+            accept
+        }
+        key-released(e) => {
+            if e.text == Key.LeftArrow || e.text == Key.DownArrow || e.text == Key.RightArrow || e.text == Key.UpArrow
+                || e.text == Key.PageDown || e.text == Key.PageUp || e.text == Key.Home || e.text == Key.End {
+                root.released(root.last);
+                return accept;
+            }
+            reject
+        }
+    }
+    area := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+        pointer-event(e) => {
+            if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
+                root.last = root.value;
+                root.go(root.at(self.mouse-x));
+            } else if e.button == PointerEventButton.left && e.kind == PointerEventKind.up {
+                root.released(root.last);
+            }
+        }
+        moved => {
+            if self.pressed {
+                root.go(root.at(self.mouse-x));
+            }
+        }
+    }
+    if root.keyboard: FocusRing {
+        width: root.width + 6px;
+        height: root.height + 6px;
+        radius: 9px;
+    }
+}

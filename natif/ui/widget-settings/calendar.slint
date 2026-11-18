@@ -1,0 +1,162 @@
+// Réglages Agenda (app/src/widgets/calendar/Settings.svelte) : adresses iCal (une par agenda),
+// avec un nom, une couleur gardée et l'état de la dernière lecture (« Tester », lu aussi à
+// l'ouverture de la fenêtre) ; ajout d'une adresse, retrait annulable. L'adresse secrète n'est
+// montrée que masquée. Service : src/ui/widget_settings/calendar.rs.
+
+import { Theme } from "../theme.slint";
+import { SettingsLayout } from "../settings/layout.slint";
+import { SettingsSubheading, SettingsNote } from "../settings/text.slint";
+import { SettingsButton, RemoveButton } from "../settings/button.slint";
+import { InputField } from "../settings/input.slint";
+
+export struct CalendarRow {
+    // Rang de la couleur (`Theme.calendars`).
+    color: int,
+    name: string,
+    // Nom proposé : celui lu dans l'agenda, sinon « Agenda N ».
+    placeholder: string,
+    masked: string,
+    status: string,
+    // 0 en lecture ou pas lu, 1 lu, 2 en échec.
+    state: int,
+    pending: bool,
+    // « l’agenda X » (infobulle de la corbeille).
+    what: string,
+}
+
+export global CalendarSettingsData {
+    in property <[CalendarRow]> rows;
+    in property <bool> duplicate;
+    in property <bool> can-add;
+    // Vide le champ d'ajout (après un ajout).
+    in property <int> cleared;
+    callback draft(string);
+    callback add();
+    callback rename(int, string);
+    callback test(int);
+    callback remove(int);
+}
+
+export component CalendarSettings inherits VerticalLayout {
+    property <int> cleared: CalendarSettingsData.cleared;
+    alignment: start;
+    changed cleared => {
+        field.set-text("");
+    }
+    SettingsSubheading {
+        text: "Agendas";
+    }
+    if CalendarSettingsData.rows.length > 0: VerticalLayout {
+        padding-bottom: 10px;
+        spacing: 6px;
+        for r[i] in CalendarSettingsData.rows: Rectangle {
+            // Colonne du nom : la carte moins la pastille, « Tester », la corbeille, marges et écarts.
+            property <length> col-w: max(80px, SettingsLayout.content-w - 16px - 8px - 3 * 10px - test.width - 28px);
+            border-radius: Theme.r-lg;
+            background: SettingsLayout.t.surface-1;
+            HorizontalLayout {
+                padding-top: 7px;
+                padding-bottom: 7px;
+                padding-left: 10px;
+                padding-right: 6px;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 8px;
+                        height: 8px;
+                        border-radius: 4px;
+                        background: Theme.calendars[Math.mod(r.color, 6)];
+                    }
+                }
+                VerticalLayout {
+                    spacing: 3px;
+                    width: col-w;
+                    InputField {
+                        height: 26px;
+                        padding-x: 6px;
+                        quiet: true;
+                        font-weight: 500;
+                        value: r.name;
+                        placeholder: r.placeholder;
+                        committed(t) => {
+                            CalendarSettingsData.rename(i, t);
+                        }
+                    }
+                    Text {
+                        text: r.masked;
+                        color: SettingsLayout.t.text-dim;
+                        font-family: Theme.font-mono;
+                        font-size: Theme.fs-meta;
+                        font-weight: 500;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: r.status;
+                        color: r.state == 1 ? SettingsLayout.t.ok : (r.state == 2 ? SettingsLayout.t.bad : SettingsLayout.t.text-dim);
+                        font-size: Theme.fs-meta;
+                        width: col-w;
+                        wrap: word-wrap;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    test := SettingsButton {
+                        text: "Tester";
+                        padding-x: 12px;
+                        height: 26px;
+                        enabled: !r.pending;
+                        clicked => {
+                            CalendarSettingsData.test(i);
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    RemoveButton {
+                        what: r.what;
+                        clicked => {
+                            CalendarSettingsData.remove(i);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        field := InputField {
+            height: 33px;
+            padding-x: 10px;
+            radius: Theme.r-lg;
+            horizontal-stretch: 1;
+            placeholder: "https://calendar.google.com/calendar/ical/…/basic.ics";
+            edited(t) => {
+                CalendarSettingsData.draft(t);
+            }
+            accepted => {
+                CalendarSettingsData.add();
+            }
+        }
+        SettingsButton {
+            text: "Ajouter";
+            height: 33px;
+            enabled: CalendarSettingsData.can-add;
+            clicked => {
+                CalendarSettingsData.add();
+            }
+        }
+    }
+    if CalendarSettingsData.duplicate: SettingsNote {
+        text: "Cet agenda est déjà dans la liste.";
+        above: 6px;
+    }
+    SettingsNote {
+        text: "Google Agenda : sur calendar.google.com, ⚙ Paramètres → sous « Paramètres de mes agendas », choisis l’agenda → « Intégrer l’agenda » → copie l’Adresse secrète au format iCal.";
+        above: 14px;
+        below: 6px;
+    }
+    SettingsNote {
+        text: "L’adresse est gardée sur ce PC (layout.json) et sert seulement à lire l’agenda, relu toutes les 10 minutes. Ne la partage pas : elle donne accès à tes événements.";
+    }
+}

@@ -1,0 +1,243 @@
+// Jetons d'Horizon, repris de app/src/app.css. Aucune couleur, taille ou durée en dur dans les
+// composants : tout passe par ici (`Theme` pour ce qui est commun, `Styles` pour les deux styles
+// de barre).
+//
+// Écarts imposés par Slint (voir natif/README.md) : pas de courbe d'accélération stockable dans
+// une propriété (`ease-out` est réécrit dans chaque `animate`), pas de `color-mix` (les mélanges
+// fixes sont précalculés, ceux de l'accent passent par `mix` / `with-alpha`).
+
+// Polices embarquées (licences OFL dans natif/fonts/).
+import "../fonts/Inter-Regular.ttf";
+import "../fonts/Inter-Medium.ttf";
+import "../fonts/Inter-SemiBold.ttf";
+import "../fonts/SpaceGrotesk-Medium.ttf";
+import "../fonts/SpaceGrotesk-SemiBold.ttf";
+import "../fonts/JetBrainsMono-Medium.ttf";
+import "../fonts/JetBrainsMono-SemiBold.ttf";
+
+export global Theme {
+    out property <string> font-ui: "Inter";
+    out property <string> font-display: "Space Grotesk";
+    out property <string> font-mono: "JetBrains Mono";
+
+    // Échelle typographique.
+    out property <length> fs-label: 10px;
+    out property <length> fs-meta: 11px;
+    out property <length> fs-body: 12.5px;
+    out property <length> fs-title: 14px;
+    out property <length> fs-hero: 34px;
+    out property <length> fs-display: 20px;
+
+    // États : donnée périmée / élément absent ou désactivé.
+    out property <float> o-stale: 0.6;
+    out property <float> o-off: 0.4;
+
+    // Mouvement : toute animation est déclenchée par un événement et se termine. Courbe
+    // `ease-out` = cubic-bezier(0.2, 0.8, 0.2, 1), `ease-spring` = cubic-bezier(0.2, 0.9, 0.3, 1.2).
+    // Effets d'animation de Windows coupés (`prefers-reduced-motion` d'app.css) : durées nulles,
+    // posé par `ui::accent::follow`.
+    in-out property <bool> reduced-motion: false;
+    out property <duration> dur-instant: reduced-motion ? 0ms : 80ms;
+    out property <duration> dur-fast: reduced-motion ? 0ms : 120ms;
+    out property <duration> dur-base: reduced-motion ? 0ms : 180ms;
+    out property <duration> dur-slow: reduced-motion ? 0ms : 320ms;
+    out property <duration> dur-color: reduced-motion ? 0ms : 700ms;
+    out property <duration> dur-pulse: reduced-motion ? 0ms : 1600ms;
+    out property <duration> dur-ambient: reduced-motion ? 0ms : 1500ms;
+
+    // Accent : couleur de la pochette en cours (fond d'écran sinon), orange d'origine.
+    in-out property <color> accent: #f97316;
+    out property <color> accent-soft: accent.with-alpha(0.14);
+    out property <color> on-accent: #11111b;
+    out property <color> on-badge: #fff;
+
+    out property <color> shadow: #00000073;
+    out property <color> speaking: #23a55a;
+    out property <color> discord: #5865f2;
+    out property <color> claude: #d97757;
+    out property <color> discord-text: #949cf7;
+
+    // Fenêtre de réglages (opaque).
+    out property <color> page-bg: #181825;
+    out property <color> field-bg: #11111b;
+
+    // Rayons des coins.
+    out property <length> r-xs: 2px;
+    out property <length> r-sm: 4px;
+    out property <length> r-md: 6px;
+    out property <length> r-lg: 8px;
+    out property <length> r-xl: 10px;
+    out property <length> r-2xl: 12px;
+
+    // Couleur de chaque agenda, selon son rang.
+    out property <[color]> calendars: [#89b4fa, #f5c2e7, #a6e3a1, #fab387, #cba6f7, #94e2d5];
+    out property <color> icon-default: #cdd6f4;
+}
+
+// Jetons propres à un style de barre (`.islands` et `.graphic` d'app.css).
+export struct StyleTokens {
+    graphic: bool,
+    font: string,
+    text: color,
+    text-dim: color,
+    island-h: length,
+    island-radius: length,
+    inner-h: length,
+    inner-radius: length,
+    fs-body: length,
+    fs-clock: length,
+    island-bg: color,
+    island-border: color,
+    // Ombre de l'îlot : filet clair en haut, contour sombre autour.
+    island-highlight: color,
+    island-ring: color,
+    bar-bg: color,
+    bar-border: color,
+    popup-bg: color,
+    popup-border: color,
+    cpu: color,
+    gpu: color,
+    ram: color,
+    info: color,
+    ok: color,
+    warn: color,
+    bad: color,
+    badge: color,
+    spectrum-tint: color,
+    hover: color,
+    press: color,
+    surface-1: color,
+    surface-2: color,
+    line: color,
+    divider: color,
+    track: color,
+    // Bande : marge des bords et écart entre widgets.
+    band-pad: length,
+    zone-gap: length,
+    // Tuiles d'une barre haute : marge des bords.
+    tiles-pad: length,
+}
+
+export global Styles {
+    // Style A : îlots flottants (Catppuccin Mocha).
+    out property <StyleTokens> islands: {
+        graphic: false,
+        font: Theme.font-ui,
+        text: #cdd6f4,
+        text-dim: #b4bad6,
+        island-h: 34px,
+        island-radius: 12px,
+        inner-h: 26px,
+        inner-radius: 8px,
+        fs-body: Theme.fs-body,
+        fs-clock: Theme.fs-title,
+        island-bg: #181825d9,
+        island-border: #ffffff12,
+        island-highlight: #ffffff0f,
+        island-ring: #00000059,
+        bar-bg: transparent,
+        bar-border: transparent,
+        popup-bg: #11111bf2,
+        popup-border: #ffffff14,
+        cpu: #89b4fa,
+        gpu: #cba6f7,
+        ram: #a6e3a1,
+        info: #89b4fa,
+        ok: #a6e3a1,
+        warn: #f9e2af,
+        bad: #f38ba8,
+        badge: Theme.discord,
+        spectrum-tint: #cba6f7,
+        hover: #ffffff14,
+        press: #ffffff1f,
+        surface-1: #ffffff0d,
+        surface-2: #ffffff14,
+        line: #ffffff14,
+        divider: #ffffff12,
+        track: #ffffff1f,
+        band-pad: 6px,
+        zone-gap: 6px,
+        tiles-pad: 6px,
+    };
+    // Fenêtres de réglages et palette (`.islands.settings` d'app.css) : couleurs des îlots,
+    // surfaces opaques.
+    out property <StyleTokens> settings: {
+        graphic: false,
+        font: Theme.font-ui,
+        text: #cdd6f4,
+        text-dim: #b4bad6,
+        island-h: 34px,
+        island-radius: 12px,
+        inner-h: 26px,
+        inner-radius: 8px,
+        fs-body: Theme.fs-body,
+        fs-clock: Theme.fs-title,
+        island-bg: #181825d9,
+        island-border: #ffffff12,
+        island-highlight: #ffffff0f,
+        island-ring: #00000059,
+        bar-bg: transparent,
+        bar-border: transparent,
+        popup-bg: #11111bf2,
+        popup-border: #ffffff14,
+        cpu: #89b4fa,
+        gpu: #cba6f7,
+        ram: #a6e3a1,
+        info: #89b4fa,
+        ok: #a6e3a1,
+        warn: #f9e2af,
+        bad: #f38ba8,
+        badge: Theme.discord,
+        spectrum-tint: #cba6f7,
+        hover: #ffffff14,
+        press: #ffffff1f,
+        surface-1: #1e1e2e,
+        surface-2: #313244,
+        line: #ffffff14,
+        divider: #ffffff12,
+        track: #ffffff1f,
+        band-pad: 6px,
+        zone-gap: 6px,
+        tiles-pad: 6px,
+    };
+    // Style C : sombre graphique.
+    out property <StyleTokens> graphic: {
+        graphic: true,
+        font: Theme.font-display,
+        text: #eeeef6,
+        text-dim: #8b8ba7,
+        island-h: 34px,
+        island-radius: 14px,
+        inner-h: 24px,
+        inner-radius: 7px,
+        fs-body: 12px,
+        fs-clock: 15px,
+        island-bg: transparent,
+        island-border: transparent,
+        island-highlight: transparent,
+        island-ring: transparent,
+        bar-bg: #08080ee0,
+        bar-border: #ffffff0f,
+        popup-bg: #08080ef2,
+        popup-border: #ffffff12,
+        cpu: #22d3ee,
+        gpu: #a855f7,
+        ram: #facc15,
+        info: #22d3ee,
+        ok: #4ade80,
+        warn: #facc15,
+        bad: #f87171,
+        badge: Theme.discord,
+        spectrum-tint: #a855f7,
+        hover: #ffffff14,
+        press: #ffffff1f,
+        surface-1: #ffffff0d,
+        surface-2: #ffffff14,
+        line: #ffffff14,
+        divider: #ffffff12,
+        track: #ffffff1f,
+        band-pad: 14px,
+        zone-gap: 14px,
+        tiles-pad: 4px,
+    };
+}

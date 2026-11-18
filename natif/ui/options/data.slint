@@ -1,0 +1,139 @@
+// Données de la fenêtre « Réglages d'Horizon » (posées par src/ui/options.rs, un exemplaire par
+// fenêtre) et ses demandes au service (`src/options.rs`, `src/status.rs`, `src/palette`).
+//
+// Une option se désigne par son chemin dans `settings.toml` (« features.osd »,
+// « alerts.headset_low », « night.start »…) : `toggle`, `number`, `text` et `pick` le passent tel
+// quel au service, qui modifie les réglages en mémoire puis les enregistre (400 ms après la
+// dernière modification, comme la version Tauri).
+
+import { SegmentChoice } from "../settings/segmented.slint";
+
+// Options d'une barre.
+export struct OptionsBar {
+    monitor-id: string,
+    name: string,
+    connected: bool,
+    style: string,
+    interaction: string,
+    // Explication du mode de souris choisi.
+    interaction-hint: string,
+    autohide: bool,
+    height: int,
+    // Choix de hauteur affiché (« 40 », « 240 »… ou « custom »).
+    height-choice: string,
+    height-hint: string,
+}
+
+// Ligne de la page État.
+export struct StatusRow {
+    id: string,
+    label: string,
+    // Détail et fait daté (« · dernier reçu il y a 3 min »).
+    detail: string,
+    // 0 : fonctionne, 1 : à l'arrêt, 2 : en échec.
+    level: int,
+    action-id: string,
+    action-label: string,
+}
+
+export global OptionsData {
+    // Section affichée : barres, alertes, fonctions, nuit, minuteur, palette, general, etat.
+    in-out property <string> section: "barres";
+    in property <bool> loaded;
+    in property <string> load-error;
+    // Erreur d'enregistrement.
+    in property <string> error;
+    // settings.toml illisible (raison) : rien n'est enregistré.
+    in property <string> file-error;
+    in property <bool> locked;
+    // Édition personnelle (Prisme, SharkApp, Discord).
+    in property <bool> personal: true;
+
+    // Barres.
+    in property <[OptionsBar]> bars;
+    in property <string> bars-error;
+    in property <[SegmentChoice]> styles;
+    in property <[SegmentChoice]> modes;
+    in property <[SegmentChoice]> heights;
+    in property <int> reveal-px;
+    in property <int> reveal-ms;
+
+    // Alertes.
+    in property <bool> claude-island;
+    in property <bool> claude-light;
+    in property <bool> dnd-claude;
+    in property <bool> dnd-battery;
+    in property <bool> dnd-discord;
+    in property <bool> dnd-light;
+    in property <string> headset-low;
+    in property <string> devices-low;
+
+    // Fonctions.
+    in property <bool> capture-to-claude;
+    in property <string> fallback-output;
+    in property <bool> fallback-chosen;
+    in property <bool> fallback-missing;
+    in property <bool> headset-switch;
+    in property <bool> osd;
+    in property <bool> osd-track;
+    in property <bool> bar-pulse;
+    in property <bool> wallpaper-accent;
+    in property <bool> windows-accent;
+    in property <bool> game-mode;
+    in property <bool> phone-island;
+    in property <bool> auto-update;
+    // Version publiée (Releases GitHub) : la mise à jour automatique existe.
+    in property <bool> updates;
+
+    // Nuit.
+    in property <string> night-start;
+    in property <string> night-end;
+    in property <int> night-percent;
+    in property <bool> night-dnd;
+
+    // Minuteur.
+    in property <[int]> presets;
+    in property <int> timer-focus;
+    in property <int> timer-rest;
+
+    // Palette.
+    in property <string> hotkey;
+    in-out property <bool> capturing;
+    in-out property <string> hotkey-hint;
+    in property <string> hotkey-error;
+    in property <string> hotkey-saved;
+
+    // Général.
+    in property <bool> autostart;
+    in property <string> autostart-error;
+    in property <string> path;
+
+    // État.
+    in property <bool> status-loaded;
+    in property <string> status-error;
+    in property <[StatusRow]> checks;
+    in property <int> failing;
+    in property <[string]> warnings;
+    in property <string> log-path;
+    in property <string> action-error;
+
+    callback go(string);
+    // Option à cocher, nombre, texte (chemin dans settings.toml, ou « autostart »).
+    callback toggle(string, bool);
+    callback number(string, int);
+    callback text(string, string);
+    // Liste déroulante (chemin, coin bas gauche du champ dans la fenêtre).
+    callback pick(string, length, length);
+    // Option d'une barre : style, interaction, height (choix proposé ou « custom »),
+    // height-typed (hauteur tapée), autohide.
+    callback bar(string, string, string);
+    callback preset-add(string);
+    callback preset-remove(int);
+    // Raccourci : touche tapée pendant la saisie (texte, Ctrl, Alt, Maj, Win) ; vide = aucun.
+    callback hotkey-key(string, bool, bool, bool, bool);
+    callback hotkey-set(string);
+    callback open-profiles();
+    callback status-reload();
+    callback status-action(string);
+    callback open-log();
+}

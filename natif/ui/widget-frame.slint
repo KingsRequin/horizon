@@ -1,0 +1,134 @@
+// Briques communes des widgets compacts : cadre d'un widget dans la bande, bouton intérieur,
+// pastille d'état. Voir natif/README.md, « Ajouter (ou porter) un widget natif ».
+
+import { Theme, StyleTokens } from "theme.slint";
+import { Island, Slot } from "components.slint";
+import { PanelArea } from "panels.slint";
+import { Tip } from "tooltip.slint";
+
+// Cadre d'un widget dans la bande : un widget en hérite (`inherits WidgetFrame`). Îlot (style A)
+// ou simple groupe (style C) centré dans la hauteur de la bande ; vide (`empty` : rien à montrer,
+// comme `.slot:not(:has(*))`), il ne prend aucune place. Masquage, écart avant lui et largeur
+// annoncée : `WidgetView` (ui/widget-view.slint), qui lui passe aussi `t`, `slot`, `dim`,
+// `interactive`, `clickable`, `compact` et `wide`.
+//
+// Panneau (`PanelArea`, ui/panels.slint) : `panel` s'ouvre au survol, `pin` (par défaut le même)
+// s'épingle au clic hors des boutons du widget ; `tip` : infobulle du widget entier.
+//
+// Les éléments du widget sont posés dans la rangée de l'îlot (`padding-x`, `gap`). Centrage
+// vertical : une mise en page Slint place en haut un élément de hauteur fixe, et le `parent` d'un
+// élément écrit dans le widget est le cadre entier (hauteur de la bande, 40 px), pas l'îlot : il
+// se centre avec `y: (root.t.island-h - self.height) / 2` (ou dans un
+// `VerticalLayout { alignment: center; … }`). Plus profond, `parent.height` convient.
+export component WidgetFrame inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <Slot> slot;
+    in property <float> dim;
+    in property <bool> interactive;
+    in property <bool> clickable;
+    in property <bool> compact;
+    in property <bool> wide;
+    in property <bool> empty;
+    in property <string> panel;
+    in property <string> pin: root.panel;
+    in property <string> tip;
+    // Marge intérieure de l'îlot (style A) et écart entre les éléments du widget.
+    in property <length> padding-x: 12px;
+    in property <length> gap: 10px;
+    // Le clic a une action propre (`activated`) : main au survol.
+    in property <bool> has-action;
+    out property <bool> hovered: area.has-hover;
+    // Clic sur le widget hors de ses boutons (avant l'épinglage de `pin`).
+    callback activated();
+
+    width: root.empty ? 0 : island.width;
+    visible: !root.empty;
+
+    area := PanelArea {
+        y: (parent.height - self.height) / 2;
+        width: island.width;
+        height: island.height;
+        interactive: root.interactive;
+        clickable: root.clickable;
+        panel: root.panel;
+        pin: root.pin;
+        tip: root.tip;
+        has-action: root.has-action;
+        activated => {
+            root.activated();
+        }
+        island := Island {
+            t: root.t;
+            dim: root.dim;
+            padding-x: root.padding-x;
+            gap: root.gap;
+            @children
+        }
+    }
+}
+
+// Bouton intérieur d'un widget (hauteur `--inner-h`, coins `--inner-radius`) : fond au survol
+// quand il agit (`enabled`), main au survol, infobulle `tip`. Désactivé, son clic passe au cadre
+// (panneau épinglé). Appui : `pressed` (le rendu logiciel ne fait pas de `scale` : réduire la
+// taille de l'icône).
+export component BarButton inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <bool> enabled: true;
+    in property <string> tip;
+    in property <length> padding-x: 6px;
+    in property <length> gap: 5px;
+    // Fond de repos et fond au survol (transparent / `--hover` par défaut).
+    in property <brush> rest: transparent;
+    in property <brush> hover: t.hover;
+    out property <bool> hovered: area.has-hover && root.enabled;
+    out property <bool> pressed: area.pressed && root.enabled;
+    callback clicked();
+    height: t.inner-h;
+    border-radius: t.inner-radius;
+    background: root.hovered ? root.hover : root.rest;
+    animate background { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    area := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+        changed has-hover => {
+            if self.has-hover && root.tip != "" {
+                Tip.show(root.tip);
+            } else if !self.has-hover {
+                Tip.hide();
+            }
+        }
+        clicked => {
+            Tip.hide();
+            root.clicked();
+        }
+        HorizontalLayout {
+            padding-left: root.padding-x;
+            padding-right: root.padding-x;
+            spacing: root.gap;
+            alignment: center;
+            @children
+        }
+    }
+}
+
+// Pastille d'état (lib/StatusDot.svelte) : couleur pleine avec lueur facultative, ou cercle
+// vide (état inconnu).
+export component StatusDot inherits Rectangle {
+    in property <color> fill;
+    in property <length> size: 7px;
+    in property <length> glow: 0;
+    in property <bool> hollow;
+    // Contour du cercle vide (`--text-dim`).
+    in property <color> ring;
+    // Fondu de la couleur (`smooth`).
+    in property <bool> smooth;
+    width: root.size;
+    height: root.size;
+    border-radius: self.width / 2;
+    background: root.hollow ? transparent : root.fill;
+    border-width: root.hollow ? 1px : 0;
+    border-color: root.ring;
+    drop-shadow-blur: root.hollow ? 0 : root.glow;
+    drop-shadow-color: root.fill;
+    animate background { duration: root.smooth ? Theme.dur-base : 0; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+}

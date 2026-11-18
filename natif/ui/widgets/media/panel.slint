@@ -1,0 +1,265 @@
+// Panneau Lecture en cours (app/src/widgets/media/Panel.svelte) : pochette, appli, titre (deux
+// lignes au plus), artiste ; position dans la piste ; commandes (−10 s, précédent, lecture /
+// pause, suivant, +10 s) ; volume de l'appli qui joue (mixeur, seulement si la lecture a pu être
+// reliée à sa session audio) ; autres lectures en cours (clic : suivre celle-là). Relié par
+// src/widgets/media/panel.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { Eyebrow, Track } from "../../gauge.slint";
+import { PanelBase } from "../../panel/base.slint";
+import { PanelButton } from "../../panel/button.slint";
+import { Divider } from "../../panel/divider.slint";
+import { VolumeSlider } from "../../panel/volume.slint";
+
+// Une autre lecture en cours (session SMTC) : identifiant d'appli, nom lisible, titre.
+export struct MediaPanelSession {
+    id: string,
+    app: string,
+    title: string,
+}
+
+export global MediaPanelData {
+    // Une lecture est connue (sinon le panneau est vide, comme `{#if info}`).
+    in-out property <bool> has-info;
+    // Nom lisible de l'appli source.
+    in-out property <string> app;
+    in-out property <string> title;
+    in-out property <string> artist;
+    in-out property <bool> playing;
+    // Pochette (déjà arrondie : le rendu logiciel ne découpe pas les coins).
+    in-out property <image> art;
+    in-out property <bool> has-art;
+    // Position (« 1:23 »), durée et part lue ; la ligne n'existe que si la durée est connue.
+    in-out property <bool> has-duration;
+    in-out property <string> position;
+    in-out property <string> duration;
+    in-out property <float> progress;
+    // Volume de l'appli qui joue (mixeur).
+    in-out property <bool> has-volume;
+    in-out property <string> volume-label;
+    in-out property <float> volume;
+    in-out property <bool> muted;
+    // Pas des boutons d'avance et de recul, en secondes (`SEEK_MS`).
+    in-out property <int> seek-s: 10;
+    in-out property <[MediaPanelSession]> others;
+    // Avance (+1) ou recul (−1) d'un pas.
+    callback seek(int);
+    callback previous();
+    callback play-pause();
+    callback next();
+    // Suivre cette lecture (identifiant d'appli).
+    callback select(string);
+    callback set-volume(float);
+    callback set-mute(bool);
+}
+
+// Bouton de commande (`.controls button`) : 32 px, fond `surface-1`, `accent-soft` au survol.
+component Control inherits PanelButton {
+    min-width: 32px;
+    height: 32px;
+    padding-x: 6px;
+    radius: Theme.r-xl;
+    rest: root.t.surface-1;
+    hover: Theme.accent-soft;
+}
+
+export component MediaPanel inherits PanelBase {
+    width: MediaPanelData.has-info ? 326px : 0px;
+    spacing: 12px;
+
+    if MediaPanelData.has-info: HorizontalLayout {
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 84px;
+                height: 84px;
+                border-radius: Theme.r-2xl;
+                background: MediaPanelData.has-art ? transparent : root.t.surface-1;
+                if MediaPanelData.has-art: Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: MediaPanelData.art;
+                    image-fit: cover;
+                }
+                if !MediaPanelData.has-art: Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("../../../icons/phosphor/musicNotes.svg");
+                    size: 28px;
+                    color: root.t.text-dim;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            Eyebrow {
+                t: root.t;
+                label: MediaPanelData.app;
+            }
+            Text {
+                text: MediaPanelData.title;
+                color: root.t.text;
+                font-family: Theme.font-display;
+                font-weight: 600;
+                font-size: Theme.fs-title;
+                wrap: word-wrap;
+                overflow: elide;
+                // Deux lignes au plus (`line-clamp: 2`), points de suspension à la fin.
+                max-lines: 2;
+            }
+            if MediaPanelData.artist != "": Text {
+                text: MediaPanelData.artist;
+                color: root.t.text-dim;
+                font-size: root.t.fs-body;
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    if MediaPanelData.has-info && MediaPanelData.has-duration: HorizontalLayout {
+        spacing: 10px;
+        Text {
+            text: MediaPanelData.position;
+            color: root.t.text-dim;
+            font-family: Theme.font-mono;
+            font-weight: 500;
+            font-size: Theme.fs-meta;
+            vertical-alignment: center;
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Track {
+                t: root.t;
+                value: MediaPanelData.progress;
+            }
+        }
+        Text {
+            text: MediaPanelData.duration;
+            color: root.t.text-dim;
+            font-family: Theme.font-mono;
+            font-weight: 500;
+            font-size: Theme.fs-meta;
+            vertical-alignment: center;
+        }
+    }
+
+    if MediaPanelData.has-info: HorizontalLayout {
+        alignment: center;
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            Control {
+                t: root.t;
+                icon: @image-url("../../../icons/phosphor/rewind.svg");
+                icon-size: 14px;
+                tip: "Reculer de " + MediaPanelData.seek-s + " s";
+                clicked => {
+                    MediaPanelData.seek(-1);
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Control {
+                t: root.t;
+                icon: @image-url("../../../icons/phosphor/skipBack.svg");
+                icon-size: 15px;
+                tip: "Précédent";
+                clicked => {
+                    MediaPanelData.previous();
+                }
+            }
+        }
+        PanelButton {
+            t: root.t;
+            width: 42px;
+            height: 42px;
+            padding-x: 0;
+            radius: 21px;
+            rest: Theme.accent;
+            // `filter: brightness(1.2)`.
+            hover: Theme.accent.brighter(0.2);
+            fg: Theme.on-accent;
+            icon: MediaPanelData.playing ? @image-url("../../../icons/phosphor/pause.svg") : @image-url("../../../icons/phosphor/play.svg");
+            icon-size: 18px;
+            tip: MediaPanelData.playing ? "Pause" : "Lecture";
+            clicked => {
+                MediaPanelData.play-pause();
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Control {
+                t: root.t;
+                icon: @image-url("../../../icons/phosphor/skipForward.svg");
+                icon-size: 15px;
+                tip: "Suivant";
+                clicked => {
+                    MediaPanelData.next();
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Control {
+                t: root.t;
+                icon: @image-url("../../../icons/phosphor/fastForward.svg");
+                icon-size: 14px;
+                tip: "Avancer de " + MediaPanelData.seek-s + " s";
+                clicked => {
+                    MediaPanelData.seek(1);
+                }
+            }
+        }
+    }
+
+    if MediaPanelData.has-info && MediaPanelData.has-volume: VolumeSlider {
+        t: root.t;
+        label: MediaPanelData.volume-label;
+        volume: MediaPanelData.volume;
+        muted: MediaPanelData.muted;
+        set-volume(v) => {
+            MediaPanelData.set-volume(v);
+        }
+        set-mute(m) => {
+            MediaPanelData.set-mute(m);
+        }
+    }
+
+    if MediaPanelData.has-info && MediaPanelData.others.length > 0: VerticalLayout {
+        Divider {
+            t: root.t;
+        }
+        VerticalLayout {
+            padding-top: 8px;
+            spacing: 4px;
+            for s in MediaPanelData.others: PanelButton {
+                t: root.t;
+                height: 6px + 1.21 * root.t.fs-body;
+                padding-x: 0;
+                gap: 8px;
+                alignment: start;
+                hover: transparent;
+                clicked => {
+                    MediaPanelData.select(s.id);
+                }
+                Eyebrow {
+                    t: root.t;
+                    label: s.app;
+                }
+                Text {
+                    text: s.title;
+                    horizontal-stretch: 1;
+                    color: root.t.text-dim;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,258 @@
+// Panneau Météo (app/src/widgets/weather/Panel.svelte) : conditions actuelles, prochaines
+// heures, prochains jours (prévision partagée avec les widgets). Un panneau par exemplaire
+// (« weather:<id> ») : son lieu est celui des réglages de l'exemplaire. Textes faits par
+// src/widgets/weather/panel.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { Tip } from "../../tooltip.slint";
+import { PanelBase } from "../../panel/base.slint";
+import { PanelHead } from "../../panel/head.slint";
+import { Divider } from "../../panel/divider.slint";
+import { EmptyState } from "../../panel/empty.slint";
+import { ErrorLine } from "../../panel/error.slint";
+
+// Une heure : « 21:00 », ciel, « 9° », pluie (« 65 % », vide sous 20 %), libellé du ciel.
+export struct WeatherPanelHour {
+    time: string,
+    icon: image,
+    temp: string,
+    rain: string,
+    wet: bool,
+    label: string,
+}
+
+// Un jour : « Auj. », ciel, pluie (vide sous 20 %), minimum et maximum, libellé du ciel.
+export struct WeatherPanelDay {
+    name: string,
+    icon: image,
+    rain: string,
+    wet: bool,
+    min: string,
+    max: string,
+    label: string,
+}
+
+export global WeatherPanelData {
+    // Une prévision est là (sinon l'erreur, ou « Chargement… »).
+    in-out property <bool> has-forecast;
+    in-out property <string> place;
+    in-out property <image> icon;
+    in-out property <string> temp;
+    in-out property <string> label;
+    // « Ressenti 7° · » et « 14 km/h ».
+    in-out property <string> feels;
+    in-out property <string> wind;
+    in-out property <[WeatherPanelHour]> hours;
+    in-out property <[WeatherPanelDay]> days;
+    // Erreur (prévision gardée : « Prévision non mise à jour : … ») ; vide : aucune.
+    in-out property <string> error;
+}
+
+// Zone qui montre l'infobulle `tip` au survol (`title`).
+component Titled inherits TouchArea {
+    in property <string> tip;
+    changed has-hover => {
+        if self.has-hover && root.tip != "" {
+            Tip.show(root.tip);
+        } else {
+            Tip.hide();
+        }
+    }
+}
+
+export component WeatherPanel inherits PanelBase {
+    width: 296px;
+    spacing: 12px;
+
+    if WeatherPanelData.has-forecast: PanelHead {
+        t: root.t;
+        title: "Météo";
+    }
+    if WeatherPanelData.has-forecast: HorizontalLayout {
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                source: WeatherPanelData.icon;
+                size: 34px;
+                color: root.t.text;
+            }
+        }
+        Text {
+            text: WeatherPanelData.temp;
+            color: root.t.text;
+            font-family: Theme.font-display;
+            font-weight: 600;
+            font-size: Theme.fs-hero;
+            letter-spacing: -0.02 * Theme.fs-hero;
+            vertical-alignment: center;
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 1px;
+            horizontal-stretch: 1;
+            Text {
+                text: WeatherPanelData.place;
+                color: root.t.text;
+                font-family: Theme.font-display;
+                font-weight: 600;
+                font-size: Theme.fs-title;
+                overflow: elide;
+            }
+            Text {
+                text: WeatherPanelData.label;
+                color: root.t.text;
+                font-size: root.t.fs-body;
+            }
+            HorizontalLayout {
+                spacing: 3px;
+                alignment: start;
+                Text {
+                    text: WeatherPanelData.feels;
+                    color: root.t.text-dim;
+                    font-size: Theme.fs-meta;
+                    vertical-alignment: center;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        source: @image-url("../../../icons/phosphor/wind.svg");
+                        size: 11px;
+                        color: root.t.text-dim;
+                    }
+                }
+                Text {
+                    text: WeatherPanelData.wind;
+                    color: root.t.text-dim;
+                    font-size: Theme.fs-meta;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+    if WeatherPanelData.has-forecast: VerticalLayout {
+        Divider {
+            t: root.t;
+        }
+        HorizontalLayout {
+            padding-top: 8px;
+            padding-bottom: 8px;
+            for h in WeatherPanelData.hours: Titled {
+                width: (root.width) / max(1, WeatherPanelData.hours.length);
+                tip: h.label;
+                VerticalLayout {
+                    spacing: 3px;
+                    Text {
+                        text: h.time;
+                        color: root.t.text-dim;
+                        font-size: Theme.fs-meta;
+                        horizontal-alignment: center;
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        Icon {
+                            source: h.icon;
+                            size: 16px;
+                            color: root.t.text;
+                        }
+                    }
+                    Text {
+                        text: h.temp;
+                        color: root.t.text;
+                        font-weight: 600;
+                        font-size: Theme.fs-meta;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        min-height: 12px;
+                        text: h.rain;
+                        color: h.wet ? root.t.info : root.t.text-dim;
+                        font-family: Theme.font-mono;
+                        font-weight: 500;
+                        font-size: Theme.fs-label;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+        Divider {
+            t: root.t;
+        }
+    }
+    if WeatherPanelData.has-forecast: VerticalLayout {
+        spacing: 4px;
+        for d in WeatherPanelData.days: Titled {
+            tip: d.label;
+            HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    width: 44px;
+                    text: d.name;
+                    color: root.t.text;
+                    font-size: root.t.fs-body;
+                    vertical-alignment: center;
+                }
+                HorizontalLayout {
+                    width: 20px;
+                    VerticalLayout {
+                        alignment: center;
+                        Icon {
+                            source: d.icon;
+                            size: 15px;
+                            color: root.t.text;
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    alignment: start;
+                    if d.rain != "": VerticalLayout {
+                        alignment: center;
+                        Icon {
+                            source: @image-url("../../../icons/phosphor/drop.svg");
+                            size: 10px;
+                            color: d.wet ? root.t.info : root.t.text-dim;
+                        }
+                    }
+                    Text {
+                        text: d.rain;
+                        color: d.wet ? root.t.info : root.t.text-dim;
+                        font-family: Theme.font-mono;
+                        font-weight: 500;
+                        font-size: Theme.fs-label;
+                        vertical-alignment: center;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 0;
+                    Text {
+                        text: d.min + " ";
+                        color: root.t.text-dim;
+                        font-weight: 600;
+                        font-size: root.t.fs-body;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: d.max;
+                        color: root.t.text;
+                        font-weight: 600;
+                        font-size: root.t.fs-body;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+    // Prévision gardée après un échec : on dit pourquoi elle n'est pas à jour.
+    if WeatherPanelData.error != "": ErrorLine {
+        t: root.t;
+        text: WeatherPanelData.has-forecast ? "Prévision non mise à jour : " + WeatherPanelData.error : WeatherPanelData.error;
+    }
+    if !WeatherPanelData.has-forecast && WeatherPanelData.error == "": EmptyState {
+        t: root.t;
+        text: "Chargement…";
+    }
+}

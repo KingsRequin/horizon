@@ -1,0 +1,16 @@
+// Racine d'un panneau (le `.panel` de chaque `Panel.svelte`) : colonne, et les propriétés que
+// `PanelView` (généré par build.rs) passe à tout panneau. Un panneau `ui/widgets/<id>/panel.slint`
+// s'écrit `export component <Id>Panel inherits PanelBase { width: 326px; … }`.
+
+import { StyleTokens } from "../theme.slint";
+
+export component PanelBase inherits VerticalLayout {
+    // Style de la barre d'où vient le panneau (îlots ou graphique).
+    in property <StyleTokens> t;
+    // Exemplaire du widget pour un panneau qui lui est propre (« w1 » de « weather:w1 »), vide
+    // sinon.
+    in property <string> instance;
+    // Ouvert par un clic : il a le focus (Tab, Échap).
+    in property <bool> pinned;
+    spacing: 12px;
+}

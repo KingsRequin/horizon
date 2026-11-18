@@ -1,0 +1,9 @@
+// Filet de séparation entre deux parties d'un panneau (`border-top: 1px solid var(--divider)`).
+
+import { StyleTokens } from "../theme.slint";
+
+export component Divider inherits Rectangle {
+    in property <StyleTokens> t;
+    height: 1px;
+    background: root.t.divider;
+}

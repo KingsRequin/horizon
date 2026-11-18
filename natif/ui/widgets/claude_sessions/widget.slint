@@ -1,0 +1,170 @@
+// Sessions Claude Code (app/src/widgets/claude_sessions/Widget.svelte). Une session qui attend
+// garde sa pastille « ● deskbar attend · 2 min » tant qu'elle attend (clic = son terminal au
+// premier plan) ; une autorisation demandée l'annonce avec un bouclier (« deskbar demande
+// Bash · 1 min ») ; celles qui travaillent sont listées par leur nom ; les terminées ne sont que
+// dans le panneau, sauf sur une barre large où chaque session montre aussi son état et son
+// message. Barre resserrée : ni message ni sessions terminées. Survol = panneau des sessions.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Tip } from "../../tooltip.slint";
+import { Icon, Slot } from "../../components.slint";
+import { WidgetFrame } from "../../widget-frame.slint";
+
+// Une session, textes déjà faits côté Rust (src/widgets/claude_sessions/ui.rs).
+export struct ClaudeSessionRow {
+    id: string,
+    // « deskbar », « deskbar attend · 2 min », « deskbar demande Bash · 1 min ».
+    label: string,
+    // Barre large : « deskbar travaille », « deskbar terminé » (attente : comme `label`).
+    label-wide: string,
+    // Barre large : détail de l'autorisation (police à chasse fixe) ou dernier message.
+    message: string,
+    mono: bool,
+    working: bool,
+    waiting: bool,
+    done: bool,
+    // Autorisation demandée (bouclier au lieu de la pastille).
+    permission: bool,
+    can-focus: bool,
+}
+
+export global ClaudeSessionsData {
+    // Toutes les sessions, et sans les terminées.
+    in property <[ClaudeSessionRow]> all;
+    in property <[ClaudeSessionRow]> active;
+    // Terminal de la session au premier plan.
+    callback focus(string);
+}
+
+component SessionPill inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <ClaudeSessionRow> s;
+    in property <bool> clickable;
+    in property <bool> wide;
+    in property <bool> compact;
+    property <bool> active: root.clickable && root.s.can-focus;
+    property <bool> hovered: area.has-hover && root.active;
+    // Quelques pulsations à l'arrivée en attente (5 × --dur-pulse), puis la teinte reste fixe.
+    property <int> beats: 0;
+    property <bool> waiting: root.s.waiting;
+    property <bool> show-msg: root.wide && !root.compact && root.s.message != "" && !root.s.done;
+
+    changed waiting => {
+        if self.waiting {
+            root.beats = 10;
+        }
+    }
+    init => {
+        if root.waiting {
+            root.beats = 10;
+        }
+    }
+
+    max-width: 360px;
+    height: row.preferred-height;
+    border-radius: t.inner-radius;
+    background: root.s.waiting
+        ? (root.hovered ? t.warn.with-alpha(0.26) : t.warn.with-alpha(0.18))
+        : (root.hovered ? t.hover : t.surface-1);
+    animate background { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+    // Calque de pulsation, sous le texte.
+    pulse := Rectangle {
+        border-radius: parent.border-radius;
+        background: t.warn.with-alpha(0.16);
+        opacity: root.s.waiting && mod(root.beats, 2) == 1 ? 1 : 0;
+        animate opacity { duration: Theme.dur-pulse / 2; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    }
+    Timer {
+        interval: Theme.dur-pulse / 2;
+        running: root.s.waiting && root.beats > 0;
+        triggered => {
+            root.beats -= 1;
+        }
+    }
+
+    area := TouchArea {
+        enabled: root.active;
+        mouse-cursor: root.active ? MouseCursor.pointer : MouseCursor.default;
+        changed has-hover => {
+            if self.has-hover {
+                Tip.show("Afficher le terminal");
+            } else {
+                Tip.hide();
+            }
+        }
+        clicked => {
+            Tip.hide();
+            ClaudeSessionsData.focus(root.s.id);
+        }
+    }
+
+    row := HorizontalLayout {
+        padding-top: 3px;
+        padding-bottom: 3px;
+        padding-left: 7px;
+        padding-right: 9px;
+        spacing: 6px;
+        alignment: start;
+        if root.s.permission && root.s.waiting: Icon {
+            y: (parent.height - self.height) / 2;
+            source: @image-url("../../../icons/phosphor/shieldWarning.svg");
+            size: 13px;
+            color: t.warn;
+        }
+        if !(root.s.permission && root.s.waiting): VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 7px;
+                height: 7px;
+                border-radius: 3.5px;
+                background: root.s.waiting ? t.warn : root.s.working ? t.cpu : t.text-dim;
+                drop-shadow-blur: root.s.waiting ? 8px : root.s.working ? 6px : 0;
+                drop-shadow-color: self.background;
+            }
+        }
+        Text {
+            horizontal-stretch: 0;
+            text: root.wide ? root.s.label-wide : root.s.label;
+            color: root.s.done ? t.text-dim : t.text;
+            font-family: t.font;
+            font-size: Theme.fs-meta;
+            font-weight: root.s.waiting ? 600 : 500;
+            vertical-alignment: center;
+        }
+        if root.show-msg: Text {
+            horizontal-stretch: 1;
+            min-width: 0;
+            max-width: 170px;
+            text: root.s.message;
+            overflow: elide;
+            color: t.text-dim;
+            font-family: root.s.mono ? Theme.font-mono : t.font;
+            font-size: Theme.fs-meta;
+            font-weight: 500;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component ClaudeSessionsWidget inherits WidgetFrame {
+    property <[ClaudeSessionRow]> list: root.wide && !root.compact ? ClaudeSessionsData.all : ClaudeSessionsData.active;
+    empty: root.list.length == 0;
+    panel: "claude_sessions";
+    gap: 6px;
+
+    Icon {
+        y: (root.t.island-h - self.height) / 2;
+        source: @image-url("../../../icons/phosphor/terminalWindow.svg");
+        size: 14px;
+        color: root.t.text-dim;
+    }
+    for s in root.list: SessionPill {
+        y: (root.t.island-h - self.height) / 2;
+        t: root.t;
+        s: s;
+        clickable: root.clickable;
+        wide: root.wide;
+        compact: root.compact;
+    }
+}

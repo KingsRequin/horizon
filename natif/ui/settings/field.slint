@@ -1,0 +1,190 @@
+// Champs d'une fenêtre de réglages (`input` et `select` stylés par Row.svelte : fond `field-bg`,
+// filet `surface-2`, rayon `r-md`, 6 × 9 px de marge) :
+// - `CommitField` : texte validé à Entrée ou à la sortie du champ (`<input>` avec `onchange` :
+//   heure de la nuit ; Entrée seulement avec `commit-on-blur: false` : durée à ajouter) ; le
+//   service accepte (il change `value`) ou non (le champ reprend `value`) ;
+// - `NumberField` : nombre borné (`<input type="number">`), flèches ↑ ↓ = ± `step` ;
+// - `SelectField` : liste déroulante (`<select>`) ; le choix se fait dans un menu Windows ouvert
+//   par le service sous le champ (`open(x, y)` : coin bas gauche, pixels logiques de la fenêtre).
+
+import { Theme } from "../theme.slint";
+import { FocusRing } from "../panel/focus.slint";
+import { SettingsLayout } from "layout.slint";
+
+// Cadre commun : fond, filet, anneau de focus (un champ de texte le montre aussi à la souris).
+component FieldFrame inherits Rectangle {
+    in property <bool> focused;
+    in property <bool> enabled: true;
+    height: 30px;
+    border-radius: Theme.r-md;
+    border-width: 1px;
+    border-color: SettingsLayout.t.surface-2;
+    background: Theme.field-bg;
+    opacity: root.enabled ? 1 : Theme.o-off;
+    @children
+    if root.focused: FocusRing {
+        width: root.width + 6px;
+        height: root.height + 6px;
+        radius: Theme.r-md;
+    }
+}
+
+export component CommitField inherits FieldFrame {
+    // Valeur en vigueur ; le texte la reprend quand elle change et après un refus.
+    in property <string> value;
+    in property <string> placeholder;
+    in property <string> font-family;
+    // Validé aussi à la sortie du champ (`onchange`) ; faux : Entrée seulement.
+    in property <bool> commit-on-blur: true;
+    callback committed(string);
+    // Texte tapé (à chaque frappe).
+    callback edited(string);
+    // Touche non prise par le champ (flèches ↑ ↓ d'un champ de nombre).
+    callback key(KeyEvent) -> EventResult;
+    out property <string> text: input.text;
+    width: 74px;
+    focused: input.has-focus;
+
+    function commit() {
+        if input.text != root.value {
+            root.committed(input.text);
+            input.text = root.value;
+        }
+    }
+
+    changed value => {
+        input.text = root.value;
+    }
+    if input.text == "": Text {
+        x: 9px;
+        width: root.width - 18px;
+        height: root.height;
+        text: root.placeholder;
+        color: SettingsLayout.t.text-dim;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    FocusScope {
+        x: 0;
+        width: root.width;
+        height: root.height;
+        enabled: root.enabled;
+        capture-key-pressed(e) => {
+            root.key(e)
+        }
+        input := TextInput {
+            x: 9px;
+            width: root.width - 18px;
+            height: root.height;
+            enabled: root.enabled;
+            text: root.value;
+            color: SettingsLayout.t.text;
+            font-family: root.font-family;
+            vertical-alignment: center;
+            single-line: true;
+            selection-background-color: Theme.accent.with-alpha(0.35);
+            edited => {
+                root.edited(self.text);
+            }
+            accepted => {
+                root.commit();
+            }
+            changed has-focus => {
+                if !self.has-focus && root.commit-on-blur {
+                    root.commit();
+                }
+            }
+        }
+    }
+}
+
+export component NumberField inherits Rectangle {
+    in property <int> value;
+    in property <int> minimum;
+    in property <int> maximum: 100;
+    in property <int> step: 1;
+    in property <bool> enabled: true;
+    callback committed(int);
+    width: field.width;
+    height: field.height;
+
+    function clamped(v: float) -> int {
+        clamp(round(v), root.minimum, root.maximum)
+    }
+
+    field := CommitField {
+        value: root.value;
+        enabled: root.enabled;
+        committed(text) => {
+            if text.is-float() {
+                root.committed(root.clamped(text.to-float()));
+            }
+        }
+        key(e) => {
+            if e.text == Key.UpArrow || e.text == Key.DownArrow {
+                root.committed(root.clamped(root.value + (e.text == Key.UpArrow ? root.step : -root.step)));
+                return accept;
+            }
+            reject
+        }
+    }
+}
+
+export component SelectField inherits FieldFrame {
+    in property <string> text;
+    out property <bool> keyboard;
+    callback open(length, length);
+    width: max(110px, row.preferred-width);
+    focused: root.keyboard;
+
+    function pop() {
+        root.open(root.absolute-position.x, root.absolute-position.y + root.height + 2px);
+    }
+
+    FocusScope {
+        enabled: root.enabled;
+        focus-on-click: false;
+        focus-gained(r) => {
+            root.keyboard = r == FocusReason.tab-navigation;
+        }
+        focus-lost => {
+            root.keyboard = false;
+        }
+        key-pressed(e) => {
+            if e.text == " " || e.text == Key.Return || e.text == Key.DownArrow {
+                root.pop();
+                return accept;
+            }
+            reject
+        }
+    }
+    TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+        clicked => {
+            root.pop();
+        }
+    }
+    row := HorizontalLayout {
+        padding-left: 9px;
+        padding-right: 9px;
+        spacing: 10px;
+        Text {
+            text: root.text;
+            color: SettingsLayout.t.text;
+            vertical-alignment: center;
+        }
+        VerticalLayout {
+            alignment: center;
+            Path {
+                width: 9px;
+                height: 5px;
+                viewbox-width: 9;
+                viewbox-height: 5;
+                commands: "M 0.5 0.5 L 4.5 4.5 L 8.5 0.5";
+                stroke: SettingsLayout.t.text-dim;
+                stroke-width: 1.3px;
+            }
+        }
+    }
+}

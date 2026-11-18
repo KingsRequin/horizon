@@ -1,0 +1,73 @@
+[package]
+name = "horizon-sys"
+description = "Accès Windows d'Horizon : écrans, appbar, média, audio, système, notifications"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+horizon-core.workspace = true
+anyhow.workspace = true
+log.workspace = true
+crossbeam-channel.workspace = true
+windows-future = "0.3"
+# La macro #[interface] (IPolicyConfig, panneau audio) produit des chemins ::windows_core.
+windows-core = "0.62"
+serde.workspace = true
+sysinfo = { version = "0.37", default-features = false, features = ["system"] }
+nvml-wrapper = "0.11"
+png = "0.18"
+# Capture et analyse du son, partagées avec Prisme et Essaim (dépôt voisin).
+audio-commun.workspace = true
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+hidapi = { version = "2.6", default-features = false, features = ["windows-native"] }
+
+[dependencies.windows]
+workspace = true
+features = [
+    "Foundation",
+    "Foundation_Collections",
+    "ApplicationModel",
+    "Devices_Bluetooth",
+    "Media_Control",
+    "Storage_Streams",
+    "UI_Notifications",
+    "UI_Notifications_Management",
+    "Win32_Foundation",
+    "Win32_System_Registry",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_SystemInformation",
+    "Win32_System_WinRT",
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_Devices_Display",
+    "Win32_Devices_Properties",
+    "Win32_Graphics_Dwm",
+    "Win32_Storage_FileSystem",
+    "Win32_Storage_Xps",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Controls",
+    "Win32_UI_Shell_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_Devices_FunctionDiscovery",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Accessibility",
+    "Win32_System_Threading",
+    "Win32_System_Power",
+    "Win32_System_Recovery",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_SystemServices",
+    "Win32_Storage_EnhancedStorage",
+    "Win32_Storage_Packaging_Appx",
+]

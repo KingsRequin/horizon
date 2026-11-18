@@ -1,0 +1,60 @@
+# Publishes a Release for every tag "vX.Y.Z" (the workspace version must match). The assets
+# horizon.exe, horizon-hook.exe and SHA256SUMS are what the auto-updater downloads
+# (natif/src/update.rs); the zip is for a first install.
+# Only first-party actions; the build job has read-only rights, a separate job publishes.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Rust stable
+        run: rustup update stable && rustup default stable
+      - name: Tag matches the workspace version
+        shell: pwsh
+        run: |
+          $meta = cargo metadata --format-version 1 --no-deps | ConvertFrom-Json
+          $version = ($meta.packages | Where-Object name -eq 'horizon-natif').version
+          if ("v$version" -ne $env:GITHUB_REF_NAME) { throw "tag $env:GITHUB_REF_NAME, workspace version $version" }
+      - name: Test
+        run: cargo test --workspace
+      - name: Build and package (public edition)
+        shell: pwsh
+        run: ./scripts/package.ps1 -Out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            dist/Horizon-*.zip
+            dist/horizon.exe
+            dist/horizon-hook.exe
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: dist
+      - name: Publish the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/Horizon-*.zip dist/horizon.exe dist/horizon-hook.exe dist/SHA256SUMS \
+            --title "Horizon $GITHUB_REF_NAME" --generate-notes --verify-tag

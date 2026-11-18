@@ -1,0 +1,346 @@
+// Panneau Audio (app/src/widgets/mic_krisp/Panel.svelte) : sortie et micro par défaut (clic =
+// devient le défaut, épingle = favori en tête ; avec des favoris, les autres derrière
+// « N autres »), volume général, volume de chaque appli qui a une session audio. Tout le panneau
+// défile au-delà de 440 px. Relié par src/widgets/mic_krisp/panel.rs (mixeur partagé,
+// `crate::mixer`).
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { Tip } from "../../tooltip.slint";
+import { PanelBase } from "../../panel/base.slint";
+import { PanelHead } from "../../panel/head.slint";
+import { EmptyState } from "../../panel/empty.slint";
+import { PanelButton, LinkButton } from "../../panel/button.slint";
+import { ListRow } from "../../panel/row.slint";
+import { Divider } from "../../panel/divider.slint";
+import { PanelScroll } from "../../panel/scroll.slint";
+import { VolumeSlider } from "../../panel/volume.slint";
+
+// Un périphérique montré : nom découpé (« Haut-parleurs » et « Realtek(R) Audio »), icône
+// (0 haut-parleur, 1 casque, 2 micro), par défaut (`on`), favori.
+export struct MicKrispPanelDevice {
+    id: string,
+    name: string,
+    main: string,
+    detail: string,
+    icon: int,
+    on: bool,
+    pinned: bool,
+}
+
+// Liste d'une sorte de périphériques (sorties ou micros).
+export struct MicKrispPanelDevices {
+    shown: [MicKrispPanelDevice],
+    // Aucun périphérique actif.
+    empty: bool,
+    // Périphériques cachés derrière « N autres ».
+    hidden: int,
+    // Tous montrés (« Favoris seulement »).
+    expanded: bool,
+}
+
+// Une appli qui a une session audio.
+export struct MicKrispPanelApp {
+    key: string,
+    name: string,
+    // Initiale (icône pas encore là ou introuvable).
+    initial: string,
+    icon: image,
+    has-icon: bool,
+    // Joue du son en ce moment.
+    active: bool,
+    volume: float,
+    muted: bool,
+}
+
+export global MicKrispPanelData {
+    in-out property <MicKrispPanelDevices> outputs;
+    in-out property <MicKrispPanelDevices> inputs;
+    in-out property <bool> has-master;
+    in-out property <float> master-volume;
+    in-out property <bool> master-muted;
+    in-out property <[MicKrispPanelApp]> apps;
+    // Ce périphérique devient le défaut.
+    callback set-default(string);
+    // Épingle (`true`) ou retire des favoris.
+    callback pin(string, bool);
+    // Montre tout ou seulement les favoris (`true` : sorties, `false` : micros).
+    callback toggle-expanded(bool);
+    callback set-master(float);
+    callback set-master-mute(bool);
+    callback set-app-volume(string, float);
+    callback set-app-mute(string, bool);
+}
+
+// Ligne d'un périphérique (`li` + `.dev` + `.pin`).
+component DeviceRow inherits ListRow {
+    in property <MicKrispPanelDevice> dev;
+    padding-x: 0;
+    padding-y: 0;
+    gap: 0;
+    on: root.dev.on;
+    tip: root.dev.on ? root.dev.name + " (par défaut)" : "Utiliser " + root.dev.name + " par défaut";
+    clicked => {
+        MicKrispPanelData.set-default(root.dev.id);
+    }
+    HorizontalLayout {
+        horizontal-stretch: 1;
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        spacing: 9px;
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                source: root.dev.icon == 2 ? @image-url("../../../icons/phosphor/microphone.svg")
+                    : root.dev.icon == 1 ? @image-url("../../../icons/phosphor/headphones.svg")
+                    : @image-url("../../../icons/phosphor/speakerHigh.svg");
+                size: 15px;
+                color: root.dev.on ? Theme.accent : root.t.text-dim;
+            }
+        }
+        // Nom et précision alignés sur leur ligne de base (bas des deux textes).
+        HorizontalLayout {
+            horizontal-stretch: 1;
+            spacing: 6px;
+            Text {
+                text: root.dev.main;
+                min-width: min(self.preferred-width, 150px);
+                color: root.t.text;
+                font-size: root.t.fs-body;
+                font-weight: root.dev.on ? 600 : 500;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            if root.dev.detail != "": Text {
+                text: root.dev.detail;
+                horizontal-stretch: 1;
+                min-width: 0;
+                color: root.t.text-dim;
+                font-size: Theme.fs-meta;
+                font-weight: 500;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            if root.dev.detail == "": Rectangle {
+                horizontal-stretch: 1;
+            }
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        padding-right: 3px;
+        pin := PanelButton {
+            t: root.t;
+            width: 24px;
+            height: 24px;
+            padding-x: 0;
+            radius: Theme.r-md;
+            hover: root.t.press;
+            fg: root.dev.pinned ? Theme.accent : root.t.text-dim;
+            icon: root.dev.pinned ? @image-url("../../../icons/phosphor/pushPinFill.svg") : @image-url("../../../icons/phosphor/pushPin.svg");
+            icon-size: 12px;
+            tip: root.dev.pinned ? "Retirer des favoris" : "Épingler en tête (favori)";
+            // Discrète tant que la ligne n'est pas survolée (sauf favori ou focus clavier).
+            opacity: root.hovered || root.dev.pinned || self.keyboard ? 1 : 0;
+            animate opacity { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+            clicked => {
+                MicKrispPanelData.pin(root.dev.id, !root.dev.pinned);
+            }
+        }
+    }
+}
+
+// Section d'une sorte de périphériques : titre, « N autres », lignes.
+component Devices inherits VerticalLayout {
+    in property <StyleTokens> t;
+    in property <string> title;
+    in property <MicKrispPanelDevices> list;
+    callback toggle();
+    spacing: 4px;
+    PanelHead {
+        t: root.t;
+        title: root.title;
+        center: true;
+        if root.list.hidden > 0 || root.list.expanded: VerticalLayout {
+            alignment: center;
+            LinkButton {
+                t: root.t;
+                text: root.list.expanded ? "Favoris seulement" : root.list.hidden + " autre" + (root.list.hidden > 1 ? "s" : "");
+                clicked => {
+                    root.toggle();
+                }
+            }
+        }
+    }
+    if root.list.empty: EmptyState {
+        t: root.t;
+        small: true;
+        text: "Aucun périphérique actif.";
+    }
+    VerticalLayout {
+        spacing: 2px;
+        for dev in root.list.shown: DeviceRow {
+            t: root.t;
+            dev: dev;
+        }
+    }
+}
+
+// Icône d'une appli (lib/AppIcon.svelte, 18 px) : celle de son exe, sinon son initiale.
+component AppIcon inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <MicKrispPanelApp> app;
+    width: 18px;
+    height: 18px;
+    border-radius: Theme.r-sm;
+    background: root.app.has-icon ? transparent : root.t.surface-2;
+    if root.app.has-icon: Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.app.icon;
+        image-fit: contain;
+    }
+    if !root.app.has-icon: Text {
+        text: root.app.initial;
+        color: root.t.text-dim;
+        font-family: Theme.font-display;
+        font-weight: 600;
+        font-size: Theme.fs-label;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+export component MicKrispPanel inherits PanelBase {
+    width: 306px;
+
+    PanelScroll {
+        t: root.t;
+        limit: 440px;
+        spacing: 10px;
+
+        Devices {
+            t: root.t;
+            title: "Sortie";
+            list: MicKrispPanelData.outputs;
+            toggle => {
+                MicKrispPanelData.toggle-expanded(true);
+            }
+        }
+        if MicKrispPanelData.has-master: VolumeSlider {
+            t: root.t;
+            label: "volume général";
+            volume: MicKrispPanelData.master-volume;
+            muted: MicKrispPanelData.master-muted;
+            set-volume(v) => {
+                MicKrispPanelData.set-master(v);
+            }
+            set-mute(m) => {
+                MicKrispPanelData.set-master-mute(m);
+            }
+        }
+        Devices {
+            t: root.t;
+            title: "Micro";
+            list: MicKrispPanelData.inputs;
+            toggle => {
+                MicKrispPanelData.toggle-expanded(false);
+            }
+        }
+        // Applications (`.apps` : filet au-dessus, 8 px d'écart).
+        VerticalLayout {
+            spacing: 4px;
+            Divider {
+                t: root.t;
+            }
+            Rectangle {
+                height: 4px;
+            }
+            PanelHead {
+                t: root.t;
+                title: "Applications";
+                center: true;
+            }
+            if MicKrispPanelData.apps.length == 0: EmptyState {
+                t: root.t;
+                small: true;
+                text: "Aucune appli ne joue de son.";
+            }
+            VerticalLayout {
+                spacing: 2px;
+                for a in MicKrispPanelData.apps: HorizontalLayout {
+                    padding-top: 2px;
+                    padding-bottom: 2px;
+                    padding-left: 6px;
+                    padding-right: 4px;
+                    spacing: 8px;
+                    // Colonnes 20 px | 92 px | reste.
+                    HorizontalLayout {
+                        width: 20px;
+                        alignment: start;
+                        VerticalLayout {
+                            alignment: center;
+                            AppIcon {
+                                t: root.t;
+                                app: a;
+                            }
+                        }
+                    }
+                    Rectangle {
+                        width: 92px;
+                        HorizontalLayout {
+                            spacing: 5px;
+                            Text {
+                                text: a.name;
+                                min-width: 0;
+                                horizontal-stretch: a.active ? 0 : 1;
+                                color: root.t.text;
+                                font-size: root.t.fs-body;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            // Appli qui joue : point fixe (pas d'animation).
+                            if a.active: VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 5px;
+                                    height: 5px;
+                                    border-radius: 2.5px;
+                                    background: root.t.ok;
+                                }
+                            }
+                            if a.active: Rectangle {
+                                horizontal-stretch: 1;
+                            }
+                        }
+                        // Infobulle du nom (`title`).
+                        TouchArea {
+                            changed has-hover => {
+                                if self.has-hover {
+                                    Tip.show(a.name);
+                                } else {
+                                    Tip.hide();
+                                }
+                            }
+                        }
+                    }
+                    VolumeSlider {
+                        horizontal-stretch: 1;
+                        t: root.t;
+                        label: a.name;
+                        volume: a.volume;
+                        muted: a.muted;
+                        set-volume(v) => {
+                            MicKrispPanelData.set-app-volume(a.key, v);
+                        }
+                        set-mute(m) => {
+                            MicKrispPanelData.set-app-mute(a.key, m);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

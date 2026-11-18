@@ -1,0 +1,177 @@
+// Boutons d'une fenêtre de réglages :
+// - `SettingsButton` : bouton à filet `surface-2` (« Gérer les profils… », « Relire », actions
+//   de la page État, « Ajouter ») ; `filled` : fond `field-bg` (bouton du raccourci) ; `small` :
+//   texte `fs-meta` et 4 × 11 px de marge ; `on` : contour et fond dans l'accent ; `mono` :
+//   police à chasse fixe. Survol : fond `surface-2`. Clavier : Tab, Entrée, Espace.
+// - `RemoveButton` (app/src/settings/ui/RemoveButton.svelte) : seule affordance « Retirer » des
+//   réglages, une corbeille au bout de la ligne, rouge au survol, infobulle « Retirer X » (ou la
+//   raison quand elle est désactivée). Le retrait passe par `UndoBar` (annulable).
+
+import { Theme } from "../theme.slint";
+import { Icon } from "../components.slint";
+import { Tip } from "../tooltip.slint";
+import { FocusRing } from "../panel/focus.slint";
+import { SettingsLayout } from "layout.slint";
+
+export component SettingsButton inherits Rectangle {
+    in property <string> text;
+    in property <image> icon;
+    in property <length> icon-size: 13px;
+    in property <bool> enabled: true;
+    in property <bool> small;
+    in property <bool> filled;
+    in property <bool> on;
+    in property <bool> mono;
+    in property <string> tip;
+    // Fond de survol (aucun : `surface-2`).
+    in property <brush> hover: SettingsLayout.t.surface-2;
+    in property <length> padding-x: root.small ? 11px : 12px;
+    out property <bool> keyboard;
+    out property <bool> hovered: area.has-hover && root.enabled;
+    callback clicked();
+    // Touche reçue quand le bouton a le focus (saisie du raccourci) ; `reject` : Entrée et
+    // Espace font cliquer.
+    callback key(KeyEvent) -> EventResult;
+    callback blurred();
+    key(e) => { reject }
+    height: root.small ? 24px : 30px;
+    width: row.preferred-width;
+    border-radius: Theme.r-md;
+    border-width: 1px;
+    border-color: root.on ? Theme.accent : SettingsLayout.t.surface-2;
+    background: root.on ? Theme.accent.mix(Theme.field-bg, 0.14) : (root.hovered ? root.hover : (root.filled ? Theme.field-bg : transparent));
+    opacity: root.enabled ? 1 : Theme.o-off;
+
+    // Donne le focus au bouton (saisie au clavier qui suit un clic).
+    public function grab() {
+        scope.focus();
+    }
+
+    scope := FocusScope {
+        enabled: root.enabled;
+        focus-on-click: false;
+        focus-gained(r) => {
+            root.keyboard = r == FocusReason.tab-navigation;
+        }
+        focus-lost => {
+            root.keyboard = false;
+            root.blurred();
+        }
+        key-pressed(e) => {
+            if root.key(e) == EventResult.accept {
+                return accept;
+            }
+            if e.text == Key.Return || e.text == " " {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+    area := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+        changed has-hover => {
+            if self.has-hover && root.tip != "" {
+                Tip.show(root.tip);
+            } else if !self.has-hover {
+                Tip.hide();
+            }
+        }
+        clicked => {
+            Tip.hide();
+            root.clicked();
+        }
+    }
+    row := HorizontalLayout {
+        padding-left: root.padding-x;
+        padding-right: root.padding-x;
+        spacing: root.small ? 6px : 7px;
+        alignment: center;
+        if root.icon.width > 0: VerticalLayout {
+            alignment: center;
+            Icon {
+                source: root.icon;
+                size: root.icon-size;
+                color: SettingsLayout.t.text;
+            }
+        }
+        if root.text != "": Text {
+            text: root.text;
+            color: SettingsLayout.t.text;
+            font-size: root.small ? Theme.fs-meta : Theme.fs-body;
+            font-family: root.mono ? Theme.font-mono : "";
+            vertical-alignment: center;
+        }
+        @children
+    }
+    if root.keyboard: FocusRing {
+        width: root.width + 6px;
+        height: root.height + 6px;
+        radius: Theme.r-md;
+    }
+}
+
+export component RemoveButton inherits Rectangle {
+    // Ce qui est retiré (« le raccourci Discord ») : infobulle « Retirer … ».
+    in property <string> what;
+    in property <bool> enabled: true;
+    // Raison affichée quand le bouton est désactivé.
+    in property <string> reason;
+    in property <length> size: 28px;
+    in property <length> icon-size: 14px;
+    out property <bool> keyboard;
+    callback clicked();
+    property <bool> hovered: area.has-hover && root.enabled;
+    width: root.size;
+    height: root.size;
+    border-radius: Theme.r-md;
+    background: root.hovered ? SettingsLayout.t.bad.with-alpha(0.12) : transparent;
+    opacity: root.enabled ? 1 : Theme.o-off;
+
+    FocusScope {
+        enabled: root.enabled;
+        focus-on-click: false;
+        focus-gained(r) => {
+            root.keyboard = r == FocusReason.tab-navigation;
+        }
+        focus-lost => {
+            root.keyboard = false;
+        }
+        key-pressed(e) => {
+            if e.text == Key.Return || e.text == " " {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+    area := TouchArea {
+        mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+        changed has-hover => {
+            if self.has-hover {
+                Tip.show(!root.enabled && root.reason != "" ? root.reason : "Retirer " + root.what);
+            } else {
+                Tip.hide();
+            }
+        }
+        clicked => {
+            if root.enabled {
+                Tip.hide();
+                root.clicked();
+            }
+        }
+    }
+    Icon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        source: @image-url("../../icons/phosphor/trash.svg");
+        size: root.icon-size;
+        color: root.hovered ? SettingsLayout.t.bad : SettingsLayout.t.text-dim;
+    }
+    if root.keyboard: FocusRing {
+        width: root.width + 6px;
+        height: root.height + 6px;
+        radius: Theme.r-md;
+    }
+}

@@ -1,0 +1,177 @@
+// Panneau Serveurs (app/src/widgets/servers/Panel.svelte), propre à chaque exemplaire
+// (« servers:<id> ») : état, latence et dernier changement de chaque hôte ; terminal SSH et
+// interface web. L'ouverture relance un sondage (au plus toutes les 5 s) et, panneau ouvert,
+// chaque sondage envoie ses latences. Relié par src/widgets/servers/panel.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { StatusDot } from "../../widget-frame.slint";
+import { PanelBase } from "../../panel/base.slint";
+import { PanelHead } from "../../panel/head.slint";
+import { PanelButton } from "../../panel/button.slint";
+import { EmptyState } from "../../panel/empty.slint";
+import { ErrorLine } from "../../panel/error.slint";
+import { PanelScroll } from "../../panel/scroll.slint";
+
+// Un hôte. `status` : 0 en attente, 1 en ligne, 2 lent, 3 hors ligne.
+export struct ServersPanelHost {
+    id: string,
+    label: string,
+    // « 192.168.1.20 · TCP 22 ».
+    meta: string,
+    status: int,
+    // « 5 ms », ou l'état en clair.
+    latency: string,
+    // « depuis 3 h » ; vide : inconnu.
+    since: string,
+    url: string,
+    ssh: bool,
+}
+
+export global ServersPanelData {
+    // Première réponse reçue (avant : « Chargement… »).
+    in-out property <bool> loaded;
+    in-out property <[ServersPanelHost]> hosts;
+    in-out property <int> total;
+    in-out property <int> online;
+    in-out property <int> down;
+    // Échec d'un terminal SSH ou d'un lien.
+    in-out property <string> error;
+    callback ssh(string);
+    callback web(string);
+}
+
+// Bouton d'action d'un hôte (carré `inner-h`, `accent-soft` pendant l'appui).
+component HostButton inherits PanelButton {
+    width: root.t.inner-h;
+    height: root.t.inner-h;
+    padding-x: 0;
+    radius: root.t.inner-radius;
+    icon-size: 14px;
+    rest: root.pressed ? Theme.accent-soft : transparent;
+    hover: root.pressed ? Theme.accent-soft : root.t.hover;
+}
+
+export component ServersPanel inherits PanelBase {
+    width: 306px;
+    spacing: 8px;
+
+    PanelHead {
+        t: root.t;
+        title: "Serveurs";
+        if ServersPanelData.down > 0 || ServersPanelData.total > 0: Text {
+            text: ServersPanelData.down > 0 ? ServersPanelData.down + " hors ligne"
+                : ServersPanelData.online + " / " + ServersPanelData.total + " en ligne";
+            color: ServersPanelData.down > 0 ? root.t.bad : root.t.text-dim;
+            font-size: Theme.fs-meta;
+            vertical-alignment: center;
+        }
+    }
+
+    // Liste : le panneau tient en 270 px (en-tête, écarts et ligne d'erreur compris).
+    if ServersPanelData.hosts.length > 0: PanelScroll {
+        t: root.t;
+        limit: 270px - 21px - (ServersPanelData.error != "" ? 30px : 0);
+        spacing: 4px;
+        gutter: 0;
+        for h in ServersPanelData.hosts: Rectangle {
+            border-width: 1px;
+            border-color: h.status == 3 ? root.t.bad.with-alpha(0.4) : root.t.line;
+            border-radius: root.t.island-radius - 2px;
+            background: h.status == 3 ? root.t.bad.with-alpha(0.08) : root.t.surface-1;
+            HorizontalLayout {
+                padding-top: 7px;
+                padding-bottom: 7px;
+                padding-left: 10px;
+                padding-right: 8px;
+                spacing: 9px;
+                VerticalLayout {
+                    alignment: center;
+                    StatusDot {
+                        fill: h.status == 3 ? root.t.bad : h.status == 2 ? root.t.warn : root.t.ok;
+                        glow: h.status == 3 ? 6px : 0;
+                        hollow: h.status == 0;
+                        ring: root.t.text-dim;
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    Text {
+                        text: h.label;
+                        min-width: 0;
+                        color: root.t.text;
+                        font-family: Theme.font-display;
+                        font-weight: 600;
+                        font-size: root.t.fs-body;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: h.meta;
+                        min-width: 0;
+                        color: root.t.text-dim;
+                        font-family: Theme.font-mono;
+                        font-weight: 500;
+                        font-size: Theme.fs-label;
+                        overflow: elide;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: h.latency;
+                        horizontal-alignment: right;
+                        color: h.status == 3 ? root.t.bad : h.status == 2 ? root.t.warn : root.t.text;
+                        font-family: Theme.font-mono;
+                        font-size: Theme.fs-meta;
+                    }
+                    if h.since != "": Text {
+                        text: "depuis " + h.since;
+                        horizontal-alignment: right;
+                        color: root.t.text-dim;
+                        font-size: Theme.fs-label;
+                    }
+                }
+                // Place des deux boutons toujours réservée : latences et durées restent alignées.
+                HorizontalLayout {
+                    width: root.t.inner-h * 2 + 2px;
+                    alignment: end;
+                    spacing: 2px;
+                    if h.url != "": VerticalLayout {
+                        alignment: center;
+                        HostButton {
+                            t: root.t;
+                            icon: @image-url("../../../icons/phosphor/globeSimple.svg");
+                            tip: "Ouvrir " + h.url;
+                            clicked => {
+                                ServersPanelData.web(h.id);
+                            }
+                        }
+                    }
+                    if h.ssh: VerticalLayout {
+                        alignment: center;
+                        HostButton {
+                            t: root.t;
+                            icon: @image-url("../../../icons/phosphor/terminalWindow.svg");
+                            tip: "Terminal SSH vers " + h.label;
+                            clicked => {
+                                ServersPanelData.ssh(h.id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if ServersPanelData.hosts.length == 0 && !ServersPanelData.loaded: EmptyState {
+        t: root.t;
+        text: "Chargement…";
+    }
+    if ServersPanelData.hosts.length == 0 && ServersPanelData.loaded: EmptyState {
+        t: root.t;
+        text: "Aucun serveur : ~/.ssh/config est vide, ou tous les hôtes sont masqués (réglages du widget).";
+    }
+    if ServersPanelData.error != "": ErrorLine {
+        t: root.t;
+        text: ServersPanelData.error;
+    }
+}

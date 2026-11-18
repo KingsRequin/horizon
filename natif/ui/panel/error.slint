@@ -1,0 +1,27 @@
+// Ligne d'explication d'une erreur dans un panneau (lib/ErrorLine.svelte) : icône d'alerte
+// (`--warn`) et texte secondaire qui passe à la ligne.
+
+import { Theme, StyleTokens } from "../theme.slint";
+import { Icon } from "../components.slint";
+
+export component ErrorLine inherits HorizontalLayout {
+    in property <StyleTokens> t;
+    in property <string> text;
+    spacing: 6px;
+    VerticalLayout {
+        padding-top: 1px;
+        alignment: start;
+        Icon {
+            source: @image-url("../../icons/phosphor/warning.svg");
+            size: 13px;
+            color: root.t.warn;
+        }
+    }
+    Text {
+        text: root.text;
+        horizontal-stretch: 1;
+        font-size: Theme.fs-meta;
+        color: root.t.text;
+        wrap: word-wrap;
+    }
+}

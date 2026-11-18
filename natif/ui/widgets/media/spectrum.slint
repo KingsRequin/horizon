@@ -1,0 +1,24 @@
+// Spectre en barres (Spectrum.svelte), style graphique, derrière la zone média : 24 bandes
+// posées par Rust au plus 20 fois par seconde (et seulement si elles changent). Couleur =
+// accent, vers la teinte du style en haut.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+
+export component Spectrum inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <[float]> bands;
+    property <int> count: 24;
+    property <length> pad: 6px;
+    property <length> gap: 3px;
+    property <length> bar-w: (self.width - 2 * self.pad - (self.count - 1) * self.gap) / self.count;
+    opacity: 0.28;
+    for v[i] in root.bands: Rectangle {
+        x: root.pad + i * (root.bar-w + root.gap);
+        width: root.bar-w;
+        height: root.height * max(0.04, v);
+        y: root.height - self.height;
+        border-top-left-radius: Theme.r-xs;
+        border-top-right-radius: Theme.r-xs;
+        background: @linear-gradient(0deg, Theme.accent 0%, Theme.accent.mix(root.t.spectrum-tint, 0.4) 100%);
+    }
+}

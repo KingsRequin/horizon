@@ -1,0 +1,108 @@
+// Boutons d'applis des Raccourcis et des Suggestions (lib/IconButton.svelte, lib/AppTray.svelte).
+
+import { Theme, StyleTokens } from "theme.slint";
+import { Tip } from "tooltip.slint";
+
+// Bouton carré à icône : taille et rayon concentriques à l'îlot. `running` : pastille discrète
+// sous l'icône (appli déjà ouverte). `inactive` : barre sans clic (ni survol ni appui).
+export component AppButton inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <bool> inactive;
+    in property <bool> running;
+    in property <string> tip;
+    in property <image> image;
+    // Teinte : 0 aucune (image en couleurs), 1 `tint`, 2 couleur du texte.
+    in property <int> tint-mode;
+    in property <color> tint;
+    // Rien à montrer encore (icône en cours d'extraction) : case estompée.
+    in property <bool> blank;
+    in property <length> icon-size: t.graphic ? 16px : 17px;
+    // Clic gauche (Maj enfoncée ?), clic droit.
+    callback clicked(bool);
+    callback right-clicked();
+
+    property <bool> pressed: ta.pressed && !root.inactive;
+    property <bool> shift;
+    // Appui : l'icône rétrécit (scale(0.92) ; le rendu logiciel ne transforme pas).
+    property <float> k: root.pressed ? 0.92 : 1;
+    animate k { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+    width: t.inner-h;
+    height: t.inner-h;
+    border-radius: t.inner-radius;
+    background: root.pressed ? Theme.accent-soft : ta.has-hover && !root.inactive ? t.hover : transparent;
+    animate background { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+    if root.blank: Rectangle {
+        width: root.icon-size * root.k;
+        height: self.width;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: Theme.r-sm;
+        background: t.text.with-alpha(0.18);
+    }
+    if !root.blank: Image {
+        source: root.image;
+        width: root.icon-size * root.k;
+        height: self.width;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        image-fit: contain;
+        colorize: root.tint-mode == 2 ? t.text : root.tint-mode == 1 ? root.tint : transparent;
+    }
+
+    // Pastille « ouverte » : sous l'icône, dans la marge du bouton.
+    property <float> dot: root.running ? 1 : 0.5;
+    animate dot { duration: Theme.dur-base; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    Rectangle {
+        width: 3px * root.dot;
+        height: self.width;
+        x: (parent.width - self.width) / 2;
+        y: parent.height - 1px - 1.5px - self.height / 2;
+        border-radius: self.width / 2;
+        background: Theme.accent;
+        opacity: root.running ? 0.9 : 0;
+        animate opacity { duration: Theme.dur-base; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    }
+
+    ta := TouchArea {
+        mouse-cursor: root.inactive ? default : pointer;
+        changed has-hover => {
+            if (self.has-hover) {
+                Tip.show(root.tip);
+            } else {
+                Tip.hide();
+            }
+        }
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                Tip.hide();
+                if (e.button == PointerEventButton.left) {
+                    root.shift = e.modifiers.shift;
+                }
+            }
+            if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right && !root.inactive) {
+                root.right-clicked();
+            }
+        }
+        clicked => {
+            if (!root.inactive) {
+                root.clicked(root.shift);
+            }
+        }
+    }
+}
+
+// Rangée de boutons d'applis. Style graphique : posée sur une plaque discrète.
+export component AppTray inherits Rectangle {
+    in property <StyleTokens> t;
+    width: row.preferred-width;
+    height: row.preferred-height;
+    border-radius: t.graphic ? t.inner-radius + 3px : 0;
+    background: t.graphic ? t.surface-1 : transparent;
+    row := HorizontalLayout {
+        padding: t.graphic ? 3px : 0;
+        spacing: t.graphic ? 4px : 2px;
+        @children
+    }
+}

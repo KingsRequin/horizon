@@ -1,0 +1,8 @@
+.superpowers/
+target/
+dist-share/
+dist/
+# Réglages locaux de cargo (dossier de compilation, dépendances voisines par [patch]).
+.cargo/config.toml
+# Consignes personnelles pour Claude Code (chemins de ce PC).
+CLAUDE.local.md

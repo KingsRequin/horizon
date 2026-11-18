@@ -1,0 +1,53 @@
+// Widget dont les réglages sont communs à toutes les barres (app/src/settings/GlobalLink.svelte) :
+// carte avec ce qu'il règle, une explication, et un lien vers la section des « Réglages
+// d'Horizon » qui les tient (`open(section)` : le service ouvre `options:<section>`).
+
+import { Theme } from "../theme.slint";
+import { SettingsLayout } from "layout.slint";
+import { SettingsButton } from "button.slint";
+
+export component GlobalLink inherits Rectangle {
+    // Ce que règle le widget (première ligne).
+    in property <string> what;
+    // Section des réglages d'Horizon (`alertes`…) et son nom affiché (« Alertes »).
+    in property <string> section;
+    in property <string> label;
+    callback open(string);
+    border-radius: Theme.r-lg;
+    background: SettingsLayout.t.surface-1;
+
+    VerticalLayout {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 8px;
+        alignment: start;
+        Text {
+            width: SettingsLayout.content-w - 28px;
+            text: root.what;
+            color: SettingsLayout.t.text;
+            wrap: word-wrap;
+        }
+        Text {
+            width: SettingsLayout.content-w - 28px;
+            text: "Ces réglages valent pour toutes les barres : ils sont dans les réglages d’Horizon.";
+            color: SettingsLayout.t.text-dim;
+            font-size: Theme.fs-meta;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            padding-top: 4px;
+            alignment: start;
+            SettingsButton {
+                text: "Réglages d’Horizon › " + root.label;
+                icon: @image-url("../../icons/phosphor/bellSimple.svg");
+                icon-size: 14px;
+                on: true;
+                clicked => {
+                    root.open(root.section);
+                }
+            }
+        }
+    }
+}

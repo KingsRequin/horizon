@@ -1,0 +1,42 @@
+//! Logique pure d'Horizon, sans dépendance à Windows : testable partout.
+
+pub mod accent;
+pub mod app_windows;
+pub mod apps;
+pub mod autohide;
+pub mod backoff;
+pub mod batteries;
+pub mod calendar;
+pub mod capture;
+pub mod claude_sessions;
+pub mod claude_usage;
+pub mod config;
+pub mod dnd;
+pub mod geometry;
+pub mod git_status;
+pub mod headset;
+pub mod headset_switch;
+pub mod homelab;
+pub mod hotkey;
+pub mod layout;
+pub mod light_signal;
+pub mod low_battery;
+pub mod media;
+pub mod misses;
+pub mod mixer;
+pub mod night;
+pub mod notifs;
+pub mod palette;
+pub mod phone;
+pub mod quota;
+pub mod resume;
+pub mod series;
+pub mod settings;
+pub mod shortcuts;
+pub mod suggest;
+#[cfg(test)]
+pub(crate) mod testdir;
+pub mod time;
+pub mod timer;
+pub mod update;
+pub mod weather;

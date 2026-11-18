@@ -1,0 +1,88 @@
+// Briques de mesure : étiquette « eyebrow » (`.eyebrow` d'app.css), piste de progression
+// (lib/Track.svelte) et jauge horizontale (lib/Gauge.svelte). Remplissage en largeur, sans
+// animation continue (la valeur change par à-coups).
+
+import { Theme, StyleTokens } from "theme.slint";
+
+// Étiquette « eyebrow » : capitales espacées (0,1 em) en Space Grotesk, couleur estompée. Style
+// graphique : petites capitales (`all-small-caps`) d'un texte de `fs-meta`, que Slint n'a pas :
+// capitales plus petites (≈ 0,78 em), à la hauteur des petites capitales.
+export component Eyebrow inherits Text {
+    in property <StyleTokens> t;
+    in property <string> label;
+    text: self.label.to-uppercase();
+    color: t.text-dim;
+    font-family: Theme.font-display;
+    font-weight: 600;
+    font-size: t.graphic ? Theme.fs-meta * 0.78 : Theme.fs-label;
+    letter-spacing: t.graphic ? Theme.fs-meta * 0.1 : Theme.fs-label * 0.1;
+    vertical-alignment: center;
+}
+
+// Piste : fond `track`, remplissage de 0 à 1. `smooth` : transition douce entre deux valeurs
+// (changements ponctuels seulement). `rounded` : bout du remplissage arrondi comme la piste
+// (lib/Track.svelte ; la découpe ignore le rayon dans le rendu logiciel, le remplissage porte
+// donc son propre rayon).
+export component Track inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <float> value;
+    in property <color> tint: Theme.accent;
+    in property <bool> smooth;
+    in property <bool> rounded;
+    height: 4px;
+    border-radius: self.height / 2;
+    background: t.track;
+    clip: true;
+    Rectangle {
+        x: 0;
+        width: parent.width * clamp(root.value, 0, 1);
+        border-radius: root.rounded ? min(self.width, parent.height) / 2 : 0;
+        background: root.tint;
+        animate width {
+            duration: root.smooth ? Theme.dur-fast : 0ms;
+            easing: cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+    }
+}
+
+// Jauge : étiquette, piste de 34 px, valeur chiffrée dans la couleur de la jauge. `value` de 0 à
+// 100 ; négative : inconnue (« — »). Pas de transition : la valeur change souvent, une transition
+// redessinerait la piste en continu.
+export component Gauge inherits HorizontalLayout {
+    in property <StyleTokens> t;
+    in property <string> label;
+    in property <float> value: -1;
+    in property <color> color;
+    spacing: 6px;
+    alignment: center;
+    Eyebrow {
+        t: root.t;
+        label: root.label;
+    }
+    Rectangle {
+        width: 34px;
+        Rectangle {
+            y: (parent.height - self.height) / 2;
+            height: 4px;
+            border-radius: Theme.r-xs;
+            background: root.t.track;
+            clip: true;
+            Rectangle {
+                x: 0;
+                width: parent.width * clamp(root.value, 0, 100) / 100;
+                border-radius: Theme.r-xs;
+                background: root.color;
+            }
+        }
+    }
+    Text {
+        // `min-width: 4ch` : quatre chasses de JetBrains Mono (0,6 em).
+        min-width: Theme.fs-label * 0.6 * 4;
+        text: root.value < 0 ? "—" : round(root.value) + " %";
+        color: root.color;
+        font-family: Theme.font-mono;
+        font-weight: 500;
+        font-size: Theme.fs-label;
+        vertical-alignment: center;
+    }
+}

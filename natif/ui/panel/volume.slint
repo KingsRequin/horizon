@@ -1,0 +1,133 @@
+// Curseur de volume (lib/VolumeSlider.svelte) : bouton muet, glissière, valeur « 52 % » ;
+// molette = ±2 % sur toute la ligne. Pendant un réglage, la valeur locale prime sur l'état reçu
+// (pas de retour en arrière quand un état un peu ancien arrive) et reste affichée 700 ms après
+// le dernier geste ; les envois sont limités à un toutes les 60 ms (le dernier part toujours).
+
+import { Theme, StyleTokens } from "../theme.slint";
+import { PanelButton } from "button.slint";
+import { Slider } from "slider.slint";
+
+export component VolumeSlider inherits Rectangle {
+    in property <StyleTokens> t;
+    // Nom de ce qui est réglé (« Spotify », « volume général ») : infobulle du bouton muet.
+    in property <string> label;
+    in property <float> volume;
+    in property <bool> muted;
+    // Volume maximal (1 = 100 % ; 2 pour le volume local Discord, jusqu'à 200 %).
+    in property <float> max: 1;
+    callback set-volume(float);
+    callback set-mute(bool);
+
+    // Valeur du geste en cours (négative : aucun, l'état reçu est affiché).
+    property <float> local: -1;
+    property <float> shown: root.local >= 0 ? root.local : root.volume;
+    property <int> pct: round(root.shown * 100);
+    // Valeur qui attend la fin de la fenêtre d'envoi ; négative : aucune.
+    property <float> pending: -1;
+
+    function set(v: float) {
+        root.local = v;
+        hold.start();
+        hold.restart();
+        if throttle.running {
+            root.pending = v;
+        } else {
+            root.set-volume(v);
+            throttle.start();
+        }
+    }
+    function flush() {
+        if root.pending >= 0 {
+            root.set-volume(root.pending);
+            root.pending = -1;
+        }
+    }
+
+    hold := Timer {
+        interval: 700ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.local = -1;
+        }
+    }
+    throttle := Timer {
+        interval: 60ms;
+        running: false;
+        triggered => {
+            if root.pending >= 0 {
+                root.flush();
+            } else {
+                self.running = false;
+            }
+        }
+    }
+
+    // Molette sur toute la ligne (`wheelVolume` de lib/mixer.ts : vers le haut = plus fort,
+    // borné, arrondi au pour-cent).
+    TouchArea {
+        scroll-event(e) => {
+            if e.delta-y == 0 {
+                return reject;
+            }
+            root.set(round(clamp(root.shown + (e.delta-y > 0 ? 0.02 : -0.02), 0, root.max) * 100) / 100);
+            accept
+        }
+    }
+    min-width: row.min-width;
+    preferred-width: row.preferred-width;
+    min-height: row.min-height;
+    preferred-height: row.preferred-height;
+    max-height: row.preferred-height;
+    row := HorizontalLayout {
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            PanelButton {
+                t: root.t;
+                width: 26px;
+                height: 24px;
+                padding-x: 0;
+                radius: Theme.r-md;
+                icon: root.muted || root.pct == 0 ? @image-url("../../icons/phosphor/speakerSlash.svg")
+                    : root.pct < 50 * root.max ? @image-url("../../icons/phosphor/speakerLow.svg")
+                    : @image-url("../../icons/phosphor/speakerHigh.svg");
+                icon-size: 14px;
+                fg: root.muted ? root.t.bad : root.t.text-dim;
+                hover-fg: root.muted ? root.t.bad : root.t.text;
+                tip: (root.muted ? "Rétablir le son — " : "Couper le son — ") + root.label;
+                clicked => {
+                    root.set-mute(!root.muted);
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Slider {
+                t: root.t;
+                value: root.shown;
+                maximum: root.max;
+                opacity: root.muted ? Theme.o-off : 1;
+                animate opacity { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                moved(v) => {
+                    root.set(v);
+                }
+                released => {
+                    root.flush();
+                }
+            }
+        }
+        Text {
+            // `width: 5ch` : cinq chasses de JetBrains Mono (0,6 em).
+            width: Theme.fs-meta * 0.6 * 5;
+            text: root.pct + " %";
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            font-family: Theme.font-mono;
+            font-weight: 500;
+            font-size: Theme.fs-meta;
+            color: root.t.text-dim;
+        }
+    }
+}

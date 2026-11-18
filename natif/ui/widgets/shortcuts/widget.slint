@@ -1,0 +1,89 @@
+// Raccourcis (app/src/widgets/shortcuts/Widget.svelte, lib/ShortcutIcon.svelte) : une rangée
+// d'icônes ; pastille sous celles dont l'appli est ouverte ; clic = premier plan ou lancement,
+// Maj+clic = nouvelle fenêtre. Sans raccourci : le nom du widget (clic = ses réglages). Données
+// par exemplaire : src/widgets/shortcuts.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { Panels } from "../../panels.slint";
+import { WidgetFrame } from "../../widget-frame.slint";
+import { AppButton, AppTray } from "../../app-button.slint";
+
+export struct ShortcutItem {
+    image: image,
+    // 0 aucune teinte (image), 1 `tint` (logo), 2 couleur du texte (logo trop sombre).
+    tint-mode: int,
+    tint: color,
+    // Icône pas encore extraite : case estompée.
+    blank: bool,
+    running: bool,
+    title: string,
+}
+
+export global ShortcutsData {
+    // Rangée de l'exemplaire (identifiant du widget) : modèle tenu par Rust.
+    pure callback items(string) -> [ShortcutItem];
+    // Exemplaire, rang, Maj enfoncée.
+    callback open(string, int, bool);
+}
+
+export component ShortcutsWidget inherits WidgetFrame {
+    property <[ShortcutItem]> items: ShortcutsData.items(root.slot.id);
+    property <bool> any: root.items.length > 0;
+    property <color> placeholder-color: root.hovered && root.clickable ? root.t.text : root.t.text-dim;
+    padding-x: root.any ? 4px : 12px;
+    gap: root.any ? 2px : 10px;
+    // Aucun raccourci (lib/WidgetPlaceholder.svelte) : clic = réglages pour en ajouter.
+    has-action: !root.any;
+    tip: root.any ? "" : "Régler « Raccourcis »";
+    activated => {
+        if !root.any {
+            Panels.settings(root.slot.id);
+        }
+    }
+
+    if root.any: AppTray {
+        y: (root.t.island-h - self.height) / 2;
+        t: root.t;
+        for it[i] in root.items: AppButton {
+            t: root.t;
+            inactive: !root.clickable;
+            running: it.running;
+            tip: it.title;
+            image: it.image;
+            tint-mode: it.tint-mode;
+            tint: it.tint;
+            blank: it.blank;
+            clicked(shift) => {
+                ShortcutsData.open(root.slot.id, i, shift);
+            }
+        }
+    }
+    if !root.any: Rectangle {
+        y: (root.t.island-h - self.height) / 2;
+        width: row.preferred-width;
+        height: root.t.inner-h;
+        border-radius: root.t.inner-radius;
+        background: root.hovered && root.clickable ? root.t.hover : transparent;
+        animate background { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+        row := HorizontalLayout {
+            padding-left: root.clickable ? 6px : 0;
+            padding-right: root.clickable ? 6px : 0;
+            spacing: 6px;
+            alignment: center;
+            Icon {
+                y: (parent.height - self.height) / 2;
+                source: @image-url("../../../icons/phosphor/squaresFour.svg");
+                size: 14px;
+                color: root.placeholder-color;
+            }
+            Text {
+                text: "Raccourcis";
+                color: root.placeholder-color;
+                font-family: root.t.font;
+                font-size: Theme.fs-meta;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

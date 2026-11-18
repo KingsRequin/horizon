@@ -1,0 +1,396 @@
+// Panneau des notifications (app/src/widgets/notifications/Panel.svelte) : « Ne pas déranger »,
+// liste récente. Clic sur une notification = son appli (elle devient lue) ; au survol, « Couper
+// l'appli » (ni îlot ni compte dans Horizon) et « Écarter » (retirée aussi de Windows). Les
+// applis coupées se rétablissent en bas du panneau. Relié par src/widgets/notifications/panel.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { Eyebrow } from "../../gauge.slint";
+import { Tip } from "../../tooltip.slint";
+import { PanelBase } from "../../panel/base.slint";
+import { PanelHead } from "../../panel/head.slint";
+import { PanelButton, LinkButton } from "../../panel/button.slint";
+import { EmptyState } from "../../panel/empty.slint";
+import { PanelScroll } from "../../panel/scroll.slint";
+import { FocusRing } from "../../panel/focus.slint";
+
+// Une notification de la liste.
+export struct NotifsPanelItem {
+    id: int,
+    app-id: string,
+    app: string,
+    title: string,
+    body: string,
+    // « il y a 4 min ».
+    when: string,
+    unread: bool,
+    // Son appli est coupée dans Horizon.
+    muted: bool,
+    // Logo Simple Icons de l'appli (sinon une cloche), teinté s'il est lisible sur fond sombre.
+    has-logo: bool,
+    logo: image,
+    logo-tinted: bool,
+    logo-color: color,
+}
+
+// Une appli coupée : identifiant et nom affiché.
+export struct NotifsPanelMuted {
+    id: string,
+    name: string,
+}
+
+export global NotifsPanelData {
+    in-out property <int> unread;
+    in-out property <[NotifsPanelItem]> items;
+    in-out property <[NotifsPanelMuted]> muted;
+    in-out property <bool> access-denied;
+    // Lecture momentanément impossible (identité de paquet absente, reprise automatique).
+    in-out property <bool> unavailable;
+    // « Ne pas déranger » : actif, et pourquoi (« pendant la séance du minuteur », « la nuit »…).
+    in-out property <bool> dnd;
+    in-out property <string> dnd-why;
+    callback mark-read();
+    callback toggle-dnd();
+    callback open(int, string);
+    callback dismiss(int);
+    // Coupe (`true`) ou rétablit une appli.
+    callback mute(string, bool);
+}
+
+// Interrupteur « Ne pas déranger » (`.dnd`, rôle `switch`).
+component DndSwitch inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <bool> on;
+    in property <string> why;
+    out property <bool> keyboard;
+    callback toggled();
+    border-radius: Theme.r-xl;
+    border-width: 1px;
+    border-color: root.on ? Theme.accent.with-alpha(0.4) : root.t.line;
+    background: area.has-hover ? root.t.hover : root.on ? Theme.accent-soft : root.t.surface-1;
+    animate background { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+    FocusScope {
+        focus-on-click: false;
+        focus-gained(r) => {
+            root.keyboard = r == FocusReason.tab-navigation;
+        }
+        focus-lost => {
+            root.keyboard = false;
+        }
+        key-pressed(e) => {
+            if e.text == Key.Return || e.text == " " {
+                root.toggled();
+                return accept;
+            }
+            reject
+        }
+    }
+    area := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        changed has-hover => {
+            if self.has-hover {
+                Tip.show("L’îlot ne montre plus les notifications (Réglages d’Horizon › Alertes pour le reste)");
+            } else {
+                Tip.hide();
+            }
+        }
+        clicked => {
+            Tip.hide();
+            root.toggled();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 7px;
+        padding-bottom: 7px;
+        spacing: 9px;
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                source: root.on ? @image-url("../../../icons/phosphor/moonFill.svg") : @image-url("../../../icons/phosphor/moon.svg");
+                size: 15px;
+                color: root.on ? Theme.accent : root.t.text-dim;
+            }
+        }
+        HorizontalLayout {
+            horizontal-stretch: 1;
+            spacing: 6px;
+            Text {
+                text: "Ne pas déranger";
+                color: root.on ? root.t.text : root.t.text-dim;
+                font-size: root.t.fs-body;
+                vertical-alignment: center;
+            }
+            if root.on: Text {
+                text: root.why;
+                color: root.t.text-dim;
+                font-size: Theme.fs-meta;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 26px;
+                height: 15px;
+                border-radius: Theme.r-lg;
+                background: root.on ? Theme.accent : root.t.track;
+                animate background { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                Rectangle {
+                    x: root.on ? 13px : 2px;
+                    y: 2px;
+                    width: 11px;
+                    height: 11px;
+                    border-radius: 5.5px;
+                    background: root.on ? Theme.on-accent : root.t.text;
+                    animate x { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                }
+            }
+        }
+    }
+    if root.keyboard: FocusRing {
+        width: root.width + 6px;
+        height: root.height + 6px;
+        radius: Theme.r-xl;
+    }
+}
+
+// Petit bouton d'action dans le coin d'une notification (`.acts button`).
+component Act inherits PanelButton {
+    width: 22px;
+    height: 22px;
+    padding-x: 0;
+    radius: Theme.r-sm;
+    icon-size: 13px;
+    fg: root.t.text-dim;
+    hover-fg: root.t.text;
+}
+
+// Une notification (`li`) : bouton d'ouverture, actions au survol (ou au focus clavier).
+component NotifRow inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <NotifsPanelItem> item;
+    property <bool> acts-shown: open.hovered || mute.hovered || dismiss.hovered || open.keyboard || mute.keyboard || dismiss.keyboard;
+
+    open := PanelButton {
+        t: root.t;
+        padding-x: 8px;
+        gap: 10px;
+        radius: Theme.r-xl;
+        // Le contenu prend toute la largeur (ancienneté au bord droit).
+        alignment: stretch;
+        rest: root.item.unread ? root.t.badge.with-alpha(0.12) : transparent;
+        clicked => {
+            NotifsPanelData.open(root.item.id, root.item.app-id);
+        }
+        Rectangle {
+            opacity: root.item.muted ? Theme.o-stale : 1;
+            HorizontalLayout {
+                padding-top: 8px;
+                padding-bottom: 8px;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: start;
+                    Rectangle {
+                        width: 30px;
+                        height: 30px;
+                        border-radius: Theme.r-lg;
+                        background: root.t.surface-1;
+                        if root.item.has-logo: Image {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            width: 16px;
+                            height: 16px;
+                            source: root.item.logo;
+                            image-fit: contain;
+                            colorize: root.item.logo-tinted ? root.item.logo-color : root.t.text;
+                        }
+                        if !root.item.has-logo: Icon {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            source: @image-url("../../../icons/phosphor/bellSimple.svg");
+                            size: 16px;
+                            color: root.t.text;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    spacing: 1px;
+                    horizontal-stretch: 1;
+                    // `justify-content: space-between` : l'ancienneté au bord droit, le titre
+                    // raccourci s'il manque de place.
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: space-between;
+                        Text {
+                            text: root.item.title;
+                            color: root.t.text;
+                            font-weight: 600;
+                            font-size: root.t.fs-body;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: root.item.when;
+                            color: root.t.text-dim;
+                            font-size: Theme.fs-meta;
+                            vertical-alignment: center;
+                        }
+                    }
+                    if root.item.body != "": Text {
+                        text: root.item.body;
+                        color: root.t.text-dim;
+                        font-size: root.t.fs-body;
+                        wrap: word-wrap;
+                        overflow: elide;
+                        // Deux lignes au plus (`line-clamp: 2`).
+                        max-lines: 2;
+                    }
+                    Eyebrow {
+                        t: root.t;
+                        label: root.item.app + (root.item.muted ? " · coupée" : "");
+                    }
+                }
+            }
+        }
+    }
+    // Actions dans le coin, au survol de la notification (`li:hover .acts`, `:focus-within`).
+    Rectangle {
+        x: root.width - self.width - 6px;
+        y: 6px;
+        width: acts.preferred-width;
+        height: acts.preferred-height;
+        border-radius: Theme.r-md;
+        background: root.t.popup-bg;
+        opacity: root.acts-shown ? 1 : 0;
+        animate opacity { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+        acts := HorizontalLayout {
+            padding: 2px;
+            spacing: 2px;
+            mute := Act {
+                t: root.t;
+                visible: !root.item.muted;
+                width: root.item.muted ? 0 : 22px;
+                enabled: !root.item.muted;
+                icon: @image-url("../../../icons/phosphor/bellSlash.svg");
+                tip: "Couper " + root.item.app + " dans Horizon";
+                clicked => {
+                    NotifsPanelData.mute(root.item.app-id, true);
+                }
+            }
+            dismiss := Act {
+                t: root.t;
+                icon: @image-url("../../../icons/phosphor/x.svg");
+                tip: "Écarter";
+                clicked => {
+                    NotifsPanelData.dismiss(root.item.id);
+                }
+            }
+        }
+    }
+}
+
+// Appli coupée, à rétablir (`.chip`).
+component MutedChip inherits PanelButton {
+    padding-x: 8px;
+    gap: 4px;
+    height: 4px + 1.21 * Theme.fs-meta + 2px;
+    radius: Theme.r-lg;
+    border-width: 1px;
+    border-color: root.t.line;
+    rest: root.t.surface-1;
+    fg: root.t.text-dim;
+    hover-fg: root.t.text;
+    font-family: Theme.font-ui;
+    font-weight: 400;
+    font-size: Theme.fs-meta;
+    VerticalLayout {
+        alignment: center;
+        Icon {
+            source: @image-url("../../../icons/phosphor/x.svg");
+            size: 10px;
+            color: root.hovered ? root.hover-fg : root.fg;
+        }
+    }
+}
+
+export component NotificationsPanel inherits PanelBase {
+    width: 326px;
+    spacing: 10px;
+    // `max-height: 390px` du panneau : la liste défile dans ce qui reste.
+    property <length> max-h: 390px;
+    property <length> muted-h: NotifsPanelData.muted.length > 0 ? 4px + 1.21 * Theme.fs-meta + 2px + root.spacing : 0;
+
+    head := PanelHead {
+        t: root.t;
+        title: "Notifications";
+        center: true;
+        if NotifsPanelData.unread > 0: LinkButton {
+            t: root.t;
+            padding-x: 0;
+            fg: Theme.accent;
+            hover-fg: Theme.accent;
+            text: "Tout marquer comme lu";
+            clicked => {
+                NotifsPanelData.mark-read();
+            }
+        }
+    }
+    dnd := DndSwitch {
+        t: root.t;
+        on: NotifsPanelData.dnd;
+        why: NotifsPanelData.dnd-why;
+        toggled => {
+            NotifsPanelData.toggle-dnd();
+        }
+    }
+    if NotifsPanelData.access-denied: Text {
+        text: "Horizon n’a pas accès aux notifications. Ouvre Paramètres Windows › Confidentialité et sécurité › Notifications, et autorise Horizon.";
+        color: root.t.text-dim;
+        font-size: root.t.fs-body;
+        wrap: word-wrap;
+    }
+    if !NotifsPanelData.access-denied && NotifsPanelData.unavailable && NotifsPanelData.items.length == 0: Text {
+        text: "Notifications momentanément indisponibles ; Horizon réessaie tout seul.";
+        color: root.t.text-dim;
+        font-size: root.t.fs-body;
+        wrap: word-wrap;
+    }
+    if !NotifsPanelData.access-denied && !NotifsPanelData.unavailable && NotifsPanelData.items.length == 0: EmptyState {
+        t: root.t;
+        text: "Aucune notification.";
+    }
+    if !NotifsPanelData.access-denied && NotifsPanelData.items.length > 0: PanelScroll {
+        t: root.t;
+        spacing: 4px;
+        gutter: 0;
+        limit: root.max-h - head.preferred-height - dnd.preferred-height - 2 * root.spacing - root.muted-h;
+        for item in NotifsPanelData.items: NotifRow {
+            t: root.t;
+            item: item;
+        }
+    }
+    if NotifsPanelData.muted.length > 0: HorizontalLayout {
+        spacing: 6px;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Eyebrow {
+                t: root.t;
+                label: "Coupées";
+            }
+        }
+        for m in NotifsPanelData.muted: MutedChip {
+            t: root.t;
+            text: m.name;
+            tip: "Rétablir les notifications de " + m.name;
+            clicked => {
+                NotifsPanelData.mute(m.id, false);
+            }
+        }
+    }
+}

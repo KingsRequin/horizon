@@ -1,0 +1,49 @@
+// Éclairage (Prisme) (app/src/widgets/lighting/Widget.svelte) : scène en cours ; survol =
+// scènes, extinction et luminosité ; clic = le même panneau, épinglé (éteindre est une action
+// du panneau, jamais d'un simple clic). Prisme absent : ampoule estompée, sans panneau.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { WidgetFrame } from "../../widget-frame.slint";
+
+export global LightingData {
+    in property <bool> connected;
+    // Scène forcée « off ».
+    in property <bool> off;
+    // Nom affiché de la scène en cours.
+    in property <string> scene;
+}
+
+export component LightingWidget inherits WidgetFrame {
+    property <bool> lit: LightingData.connected && !LightingData.off;
+    property <bool> active: root.clickable && LightingData.connected;
+    panel: LightingData.connected ? "lighting" : "";
+
+    // Le « bouton » est le widget lui-même : son clic épingle le panneau (cadre).
+    Rectangle {
+        height: root.t.inner-h;
+        y: (root.t.island-h - self.height) / 2;
+        border-radius: root.t.inner-radius;
+        background: root.hovered && root.active ? root.t.hover : transparent;
+        opacity: LightingData.connected ? 1 : Theme.o-off;
+        animate background { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+        HorizontalLayout {
+            padding-left: 6px;
+            padding-right: 6px;
+            spacing: 6px;
+            Icon {
+                y: (parent.height - self.height) / 2;
+                source: root.lit ? @image-url("../../../icons/phosphor/lightbulbFill.svg") : @image-url("../../../icons/phosphor/lightbulb.svg");
+                size: 14px;
+                color: root.lit ? Theme.accent : root.t.text-dim;
+            }
+            if root.lit: Text {
+                text: LightingData.scene;
+                color: root.t.text;
+                font-family: root.t.font;
+                font-weight: 500;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

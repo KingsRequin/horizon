@@ -1,0 +1,114 @@
+// Micro et Krisp (app/src/widgets/mic_krisp/Widget.svelte). Le bouton micro coupe le micro par
+// défaut de Windows ; avec l'option « En appel Discord, le bouton coupe le micro de Discord »
+// (réglage `discordMute` de l'exemplaire), il agit sur Discord tant qu'un appel est en cours
+// (logo et teinte de Discord). Krisp passe par le plugin BetterDiscord : absent de l'édition
+// partagée. Survol = panneau Audio.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { WidgetFrame, BarButton } from "../../widget-frame.slint";
+
+export global MicKrispData {
+    // Micro de Windows : -1 aucun micro, 0 ouvert, 1 coupé.
+    in property <int> muted: -1;
+    // Krisp : -1 inconnu (Discord fermé, relais absent), 0 désactivé, 1 activé.
+    in property <int> krisp: -1;
+    // Discord : en appel, micro coupé dans Discord.
+    in property <bool> in-call;
+    in property <bool> voice-mute;
+    // Nom court du micro de Windows (« CABLE Output »), pour l'infobulle.
+    in property <string> device;
+    // Édition personnelle (bouton Krisp).
+    in property <bool> personal: true;
+    // L'exemplaire `id` a l'option « le bouton coupe le micro de Discord ».
+    pure callback discord-mute(string) -> bool;
+    // Bascule le micro (de Discord si `true`, sinon de Windows), Krisp.
+    callback toggle-mic(bool);
+    callback toggle-krisp();
+}
+
+export component MicKrispWidget inherits WidgetFrame {
+    property <bool> via-discord: MicKrispData.discord-mute(root.slot.id) && MicKrispData.in-call;
+    // -1 aucun micro, 0 ouvert, 1 coupé (celui de Discord ou de Windows).
+    property <int> muted: root.via-discord ? (MicKrispData.voice-mute ? 1 : 0) : MicKrispData.muted;
+    property <color> live: root.via-discord ? Theme.discord-text : root.t.ok;
+    panel: "mic_krisp";
+    gap: 0;
+
+    // Style C : les deux boutons dans une pastille.
+    Rectangle {
+        // Hauteur fixe : sans elle, `y` ne la centre pas dans l'îlot.
+        height: root.t.inner-h + (root.t.graphic ? 6px : 0);
+        y: (root.t.island-h - self.height) / 2;
+        border-radius: root.t.graphic ? root.t.inner-radius + 3px : 0;
+        background: root.t.graphic ? root.t.surface-1 : transparent;
+        HorizontalLayout {
+            padding: root.t.graphic ? 3px : 0;
+            spacing: 4px;
+            BarButton {
+                y: (parent.height - self.height) / 2;
+                t: root.t;
+                enabled: root.clickable;
+                tip: root.via-discord ? "Discord : micro " + (root.muted == 1 ? "coupé" : "ouvert")
+                    : MicKrispData.muted == -1 ? "Micro Windows : aucun micro"
+                    : "Micro Windows (" + MicKrispData.device + ") — " + (MicKrispData.muted == 1 ? "coupé" : "ouvert");
+                rest: root.muted == 1 ? root.t.bad.with-alpha(0.18) : transparent;
+                hover: root.muted == 1 ? root.t.bad.with-alpha(0.26) : root.t.hover;
+                opacity: root.muted == -1 ? Theme.o-off : 1;
+                clicked => {
+                    MicKrispData.toggle-mic(root.via-discord);
+                }
+                if root.via-discord: Icon {
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("../../../icons/phosphor/discordLogo.svg");
+                    size: 12px;
+                    color: root.muted == 1 ? root.t.bad : Theme.discord-text;
+                }
+                Icon {
+                    y: (parent.height - self.height) / 2;
+                    source: root.muted == 1 ? @image-url("../../../icons/phosphor/microphoneSlash.svg") : @image-url("../../../icons/phosphor/microphoneFill.svg");
+                    size: 14px;
+                    color: root.muted == 1 ? root.t.bad : root.muted == -1 ? root.t.text-dim : root.live;
+                }
+                // Micro ouvert : point lumineux fixe (pas d'animation).
+                if root.muted == 0: VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 6px;
+                        height: 6px;
+                        border-radius: 3px;
+                        background: root.live;
+                        drop-shadow-blur: 6px;
+                        drop-shadow-color: root.live;
+                    }
+                }
+            }
+            if MicKrispData.personal: BarButton {
+                y: (parent.height - self.height) / 2;
+                t: root.t;
+                enabled: root.clickable;
+                tip: MicKrispData.krisp == -1 ? "Krisp : Discord fermé ou relais absent"
+                    : "Krisp : " + (MicKrispData.krisp == 1 ? "activé" : "désactivé");
+                opacity: MicKrispData.krisp == -1 ? Theme.o-off : 1;
+                clicked => {
+                    MicKrispData.toggle-krisp();
+                }
+                Icon {
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("../../../icons/phosphor/waveform.svg");
+                    size: 13px;
+                    color: MicKrispData.krisp == 1 ? root.t.ok : root.t.text-dim;
+                }
+                if root.t.graphic: Text {
+                    text: "KRISP";
+                    color: MicKrispData.krisp == 1 ? root.t.ok : root.t.text-dim;
+                    font-family: Theme.font-display;
+                    font-size: Theme.fs-label;
+                    font-weight: 600;
+                    letter-spacing: 0.8px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

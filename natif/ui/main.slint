@@ -1,0 +1,70 @@
+// Fenêtres d'Horizon, compilées par build.rs (types Rust dans `crate::ui`), et les globaux
+// lus ou posés par Rust (un exemplaire par fenêtre). Les globaux des panneaux
+// (`ui/widgets/<id>/panel.slint`) sont réexportés par `@panels`, généré par build.rs.
+
+import { Theme } from "theme.slint";
+import { Slot } from "components.slint";
+import { BarWindow } from "bar.slint";
+import { EssaiWindow } from "essai.slint";
+import { PanelWindow } from "popup.slint";
+// Fenêtre de réglages (src/ui/settings_window.rs, src/ui/options.rs) et palette (src/ui/palette.rs).
+import { SettingsWindow } from "settings-window.slint";
+import { SettingsLayout } from "settings/layout.slint";
+import { SegmentChoice } from "settings/segmented.slint";
+import { OptionsData, OptionsBar, StatusRow } from "options/data.slint";
+import { PaletteWindow, PaletteRow, PaletteSeg } from "palette.slint";
+// Réglages d'un widget et profils (src/ui/widget_settings/, src/ui/profiles.rs).
+import { WidgetSettingsData } from "widget-settings/page.slint";
+import { WeatherSettingsData, PlaceRow } from "widget-settings/weather.slint";
+import { SuggestionsSettingsData, BlockedRow } from "widget-settings/suggestions.slint";
+import { CalendarSettingsData, CalendarRow } from "widget-settings/calendar.slint";
+import { ServersSettingsData, ServerRow } from "widget-settings/servers.slint";
+import { ShortcutsSettingsData, ShortcutRow, ShortcutThumb, BrandChoice } from "widget-settings/shortcuts.slint";
+import { ProfilesData, ProfileRow, ProfileApp } from "profiles/page.slint";
+import { Panels } from "panels.slint";
+import { WheelHintState } from "wheel-hint.slint";
+import { Tip } from "tooltip.slint";
+// Îlot dynamique et témoins de la barre principale (src/ui/island.rs, src/ui/bar_status.rs).
+import { FlashData } from "flash.slint";
+import { BarStatusData } from "bar-status.slint";
+import { OsdData } from "osd.slint";
+import { PulseState } from "pulse.slint";
+// Données des widgets portés (globales de chaque fenêtre, posées par src/widgets/<id>).
+import { BatteriesData, BatteryItem } from "widgets/batteries/widget.slint";
+import { CalendarData, CalendarItem } from "widgets/calendar/widget.slint";
+import { ClaudeQuotaData, QuotaGaugeRow } from "widgets/claude_quota/widget.slint";
+import { ClaudeSessionsData, ClaudeSessionRow } from "widgets/claude_sessions/widget.slint";
+import { ClockData } from "widgets/clock/widget.slint";
+import { DiscordVoiceData, VoiceAvatarRow } from "widgets/discord_voice/widget.slint";
+import { EssaimData } from "widgets/essaim/widget.slint";
+import { HeadsetData } from "widgets/headset/widget.slint";
+import { LightingData } from "widgets/lighting/widget.slint";
+import { MediaData } from "widgets/media/widget.slint";
+import { MicKrispData } from "widgets/mic_krisp/widget.slint";
+import { NotifsData } from "widgets/notifications/widget.slint";
+import { ServersData, ServersGroup, ServerHostRow } from "widgets/servers/widget.slint";
+import { ShortcutsData, ShortcutItem } from "widgets/shortcuts/widget.slint";
+import { SuggestionsData, SuggestionItem } from "widgets/suggestions/widget.slint";
+import { Spark, SystemData } from "widgets/system/widget.slint";
+import { WeatherData, WeatherItem, WeatherState } from "widgets/weather/widget.slint";
+import { WindowsData } from "widgets/windows/widget.slint";
+
+export { Theme, Slot, BarWindow, EssaiWindow, PanelWindow, Panels, Tip, WheelHintState }
+export { FlashData, BarStatusData }
+export { OsdData, PulseState }
+export { SettingsWindow, SettingsLayout, SegmentChoice, OptionsData, OptionsBar, StatusRow }
+export { PaletteWindow, PaletteRow, PaletteSeg }
+export { WidgetSettingsData, WeatherSettingsData, PlaceRow, SuggestionsSettingsData, BlockedRow, CalendarSettingsData, CalendarRow }
+export { ServersSettingsData, ServerRow, ShortcutsSettingsData, ShortcutRow, ShortcutThumb, BrandChoice }
+export { ProfilesData, ProfileRow, ProfileApp }
+// Panneaux des widgets (`PanelView` et leurs globaux), générés par build.rs.
+export * from "@panels";
+export { BatteriesData, BatteryItem, CalendarData, CalendarItem, ClaudeQuotaData, QuotaGaugeRow }
+export { ClaudeSessionsData, ClaudeSessionRow, ClockData, DiscordVoiceData, VoiceAvatarRow, EssaimData }
+export { LightingData, MediaData, MicKrispData, ServersData, ServersGroup, ServerHostRow }
+export { Spark, SystemData, WeatherData, WeatherItem, WeatherState }
+// Fenêtre de Prisme (src/prisme_window/) et ses globaux.
+export { PrismeWindow, PrismeShell, PrismeTheme, PrismeCanvas, PrismeLabel, PrismeNow, PrismeMode, PrismeChip } from "prisme/window.slint";
+export { PrismeScenes, PrismeSceneRow, PrismeParam, PrismeOption, PrismeRules, PrismeRule, PrismeSettings } from "prisme/window.slint";
+export { PrismeLayout, PrismeDevice, PrismeZone, PrismeFound } from "prisme/window.slint";
+export { HeadsetData, NotifsData, ShortcutsData, ShortcutItem, SuggestionsData, SuggestionItem, WindowsData }

@@ -1,0 +1,160 @@
+// Discord vocal (app/src/widgets/discord_voice/Widget.svelte) : salon, qui est là et qui parle
+// (ceux qui parlent d'abord, 5 au plus, puis « +N »), micro et son de Discord. Masqué hors
+// appel. Survol = panneau du salon.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { PanelArea } from "../../panels.slint";
+import { Icon } from "../../components.slint";
+import { WidgetFrame, BarButton } from "../../widget-frame.slint";
+
+// Un participant (VoiceAvatar.svelte) : avatar rond (déjà découpé côté Rust) ou initiales.
+export struct VoiceAvatarRow {
+    id: string,
+    initials: string,
+    avatar: image,
+    has-avatar: bool,
+    speaking: bool,
+    // Micro ou son coupé : avatar estompé s'il ne parle pas.
+    muted: bool,
+}
+
+export global DiscordVoiceData {
+    in property <bool> in-call;
+    in property <string> channel;
+    // Serveur du salon (« Discord » à défaut).
+    in property <string> guild: "Discord";
+    in property <[VoiceAvatarRow]> users;
+    // Participants au-delà des 5 montrés.
+    in property <int> more;
+    in property <bool> mute;
+    in property <bool> deaf;
+    // « mute » ou « deaf » : bascule dans Discord (l'état suit au retour du plugin).
+    callback toggle(string);
+}
+
+// Avatar de 20 px : anneau de la couleur des panneaux (il détache les avatars qui se
+// chevauchent), vert quand il parle.
+export component VoiceAvatar inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <VoiceAvatarRow> user;
+    in property <length> size: 20px;
+    width: root.size;
+    height: root.size;
+    // Halo vert (0 0 0 3px, 35 %) quand il parle.
+    if root.user.speaking: Rectangle {
+        x: -3px;
+        y: -3px;
+        width: root.size + 6px;
+        height: root.size + 6px;
+        border-radius: self.width / 2;
+        background: Theme.speaking.with-alpha(0.35);
+    }
+    // Anneau de 1,5 px.
+    Rectangle {
+        x: -1.5px;
+        y: -1.5px;
+        width: root.size + 3px;
+        height: root.size + 3px;
+        border-radius: self.width / 2;
+        background: root.user.speaking ? Theme.speaking : t.popup-bg;
+        animate background { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    }
+    Rectangle {
+        border-radius: root.size / 2;
+        background: Theme.discord;
+        if !root.user.has-avatar: Text {
+            text: root.user.initials;
+            color: Theme.on-badge;
+            font-size: round(root.size * 0.42 / 1px) * 1px;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        if root.user.has-avatar: Image {
+            width: root.size;
+            height: root.size;
+            source: root.user.avatar;
+            image-fit: cover;
+            opacity: root.user.muted && !root.user.speaking ? Theme.o-stale : 1;
+        }
+    }
+}
+
+export component DiscordVoiceWidget inherits WidgetFrame {
+    empty: !DiscordVoiceData.in-call;
+    panel: "discord_voice";
+    gap: 8px;
+
+    // Salon : logo de Discord et nom (130 px au plus en tout) ; infobulle « serveur — salon »
+    // (sa zone garde le clic du cadre : panneau épinglé).
+    Rectangle {
+        max-width: 130px;
+        PanelArea {
+            clickable: root.clickable;
+            pin: "discord_voice";
+            tip: DiscordVoiceData.guild + " — " + DiscordVoiceData.channel;
+        }
+        HorizontalLayout {
+            spacing: 5px;
+            Icon {
+                y: (root.t.island-h - self.height) / 2;
+                source: @image-url("../../../icons/phosphor/discordLogo.svg");
+                size: 14px;
+                color: Theme.discord-text;
+            }
+            Text {
+                min-width: 0;
+                text: DiscordVoiceData.channel;
+                overflow: elide;
+                color: root.t.text;
+                font-family: root.t.font;
+                font-size: Theme.fs-body;
+                font-weight: 500;
+                vertical-alignment: center;
+            }
+        }
+    }
+    // Avatars qui se chevauchent de 5 px.
+    HorizontalLayout {
+        spacing: -5px;
+        for u in DiscordVoiceData.users: VoiceAvatar {
+            y: (root.t.island-h - self.height) / 2;
+            t: root.t;
+            user: u;
+        }
+        // Marge de 4 px après le dernier avatar (au lieu du chevauchement de 5 px).
+        if DiscordVoiceData.more > 0: HorizontalLayout {
+            padding-left: 9px;
+            Text {
+                text: "+\{DiscordVoiceData.more}";
+                color: root.t.text-dim;
+                font-family: Theme.font-mono;
+                font-size: Theme.fs-label;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+    }
+    for what in ["mute", "deaf"]: btn := BarButton {
+        property <bool> on: what == "mute" ? DiscordVoiceData.mute : DiscordVoiceData.deaf;
+        y: (root.t.island-h - self.height) / 2;
+        t: root.t;
+        enabled: root.clickable;
+        tip: what == "mute"
+            ? (btn.on ? "Discord : micro coupé — clic pour le rouvrir" : "Discord : micro ouvert — clic pour le couper")
+            : (btn.on ? "Discord : son coupé — clic pour le rétablir" : "Discord : son ouvert — clic pour le couper");
+        width: root.t.inner-h;
+        padding-x: 0;
+        clicked => {
+            DiscordVoiceData.toggle(what);
+        }
+        Icon {
+            y: (parent.height - self.height) / 2;
+            source: what == "mute"
+                ? (btn.on ? @image-url("../../../icons/phosphor/microphoneSlash.svg") : @image-url("../../../icons/phosphor/microphone.svg"))
+                : (btn.on ? @image-url("../../../icons/phosphor/earSlash.svg") : @image-url("../../../icons/phosphor/headphones.svg"));
+            size: 13px;
+            color: btn.on ? root.t.bad : btn.hovered ? root.t.text : root.t.text-dim;
+        }
+    }
+}

@@ -1,0 +1,170 @@
+// Section « Minuteur » (app/src/settings/options/TimerSection.svelte) : durées proposées par le
+// panneau de l'horloge, pomodoro.
+
+import { Theme } from "../theme.slint";
+import { Icon } from "../components.slint";
+import { Tip } from "../tooltip.slint";
+import { SettingsLayout } from "../settings/layout.slint";
+import { SettingsHeading, SettingsNote } from "../settings/text.slint";
+import { SettingRow } from "../settings/row.slint";
+import { CommitField, NumberField } from "../settings/field.slint";
+import { SettingsButton } from "../settings/button.slint";
+import { OptionsData } from "data.slint";
+
+// Durée proposée : « 25 min » et sa croix.
+component Chip inherits Rectangle {
+    in property <int> minutes;
+    in property <bool> removable;
+    property <bool> hovered: x-area.has-hover && root.removable;
+    height: 28px;
+    width: row.preferred-width;
+    border-radius: Theme.r-lg;
+    background: SettingsLayout.t.surface-1;
+    row := HorizontalLayout {
+        padding-left: 11px;
+        padding-right: 6px;
+        spacing: 6px;
+        Text {
+            text: root.minutes + " min";
+            color: SettingsLayout.t.text;
+            font-family: Theme.font-mono;
+            font-weight: 500;
+            font-size: Theme.fs-meta;
+            vertical-alignment: center;
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 18px;
+                height: 18px;
+                border-radius: Theme.r-sm;
+                background: root.hovered ? SettingsLayout.t.surface-2 : transparent;
+                opacity: root.removable ? 1 : Theme.o-off;
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("../../icons/phosphor/x.svg");
+                    size: 11px;
+                    color: root.hovered ? SettingsLayout.t.text : SettingsLayout.t.text-dim;
+                }
+                x-area := TouchArea {
+                    mouse-cursor: root.removable ? MouseCursor.pointer : MouseCursor.default;
+                    changed has-hover => {
+                        if self.has-hover {
+                            Tip.show("Retirer");
+                        } else {
+                            Tip.hide();
+                        }
+                    }
+                    clicked => {
+                        if root.removable {
+                            Tip.hide();
+                            OptionsData.preset-remove(root.minutes);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Champ « __ min » et bouton « Ajouter ».
+component AddPreset inherits HorizontalLayout {
+    property <string> draft;
+    spacing: 6px;
+    alignment: start;
+    add := CommitField {
+        value: "";
+        width: 72px;
+        placeholder: "__ min";
+        commit-on-blur: false;
+        enabled: !OptionsData.locked;
+        edited(t) => {
+            root.draft = t;
+        }
+        committed(t) => {
+            OptionsData.preset-add(t);
+            root.draft = "";
+        }
+    }
+    SettingsButton {
+        text: "Ajouter";
+        height: 30px;
+        padding-x: 12px;
+        enabled: !OptionsData.locked && root.draft != "";
+        clicked => {
+            OptionsData.preset-add(add.text);
+            root.draft = "";
+        }
+    }
+}
+
+export component TimerSection inherits VerticalLayout {
+    // Le champ d'ajout tient au bout de la rangée (sinon à la ligne, comme `flex-wrap`).
+    property <bool> fits: chips.preferred-width + 6px + 72px + 6px + 80px <= SettingsLayout.content-w;
+    SettingsHeading {
+        text: "Durées proposées";
+        first: true;
+    }
+    HorizontalLayout {
+        spacing: 6px;
+        alignment: start;
+        chips := HorizontalLayout {
+            spacing: 6px;
+            for m in OptionsData.presets: VerticalLayout {
+                alignment: center;
+                Chip {
+                    minutes: m;
+                    removable: !OptionsData.locked && OptionsData.presets.length >= 2;
+                }
+            }
+        }
+        if OptionsData.presets.length < 6 && root.fits: AddPreset { }
+    }
+    if OptionsData.presets.length < 6 && !root.fits: VerticalLayout {
+        padding-top: 6px;
+        AddPreset { }
+    }
+    SettingsNote {
+        text: "Six durées au plus, de 1 à 600 minutes.";
+        above: 6px;
+    }
+
+    SettingsHeading {
+        text: "Pomodoro";
+    }
+    SettingRow {
+        label: "Travail";
+        NumberField {
+            value: OptionsData.timer-focus;
+            minimum: 1;
+            maximum: 600;
+            enabled: !OptionsData.locked;
+            committed(v) => {
+                OptionsData.number("timer.focus", v);
+            }
+        }
+        Text {
+            text: "min";
+            color: SettingsLayout.t.text;
+            vertical-alignment: center;
+        }
+    }
+    SettingRow {
+        label: "Pause";
+        NumberField {
+            value: OptionsData.timer-rest;
+            minimum: 1;
+            maximum: 600;
+            enabled: !OptionsData.locked;
+            committed(v) => {
+                OptionsData.number("timer.rest", v);
+            }
+        }
+        Text {
+            text: "min";
+            color: SettingsLayout.t.text;
+            vertical-alignment: center;
+        }
+    }
+}

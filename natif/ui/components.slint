@@ -1,0 +1,121 @@
+// Briques communes des barres : icône, îlot, emplacement nommé d'un widget.
+
+import { Theme, StyleTokens } from "theme.slint";
+import { PulseLayers } from "pulse.slint";
+
+// Icône Phosphor (SVG embarqué, voir src/ui/icons.rs), de la couleur du texte.
+export component Icon inherits Image {
+    in property <length> size: 16px;
+    in property <color> color;
+    width: self.size;
+    height: self.size;
+    colorize: self.color;
+    image-fit: contain;
+}
+
+// Îlot (lib/Island.svelte) : style A, fond sombre semi-transparent, filet clair en haut et
+// contour sombre ; style C, simple groupe en ligne. `dim` : voile de nuit (0 = aucun).
+export component Island inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <float> dim;
+    in property <length> padding-x: 12px;
+    in property <length> gap: 10px;
+    height: t.island-h;
+    width: row.preferred-width;
+    border-radius: t.island-radius;
+    background: t.island-bg;
+    border-width: t.graphic ? 0 : 1px;
+    border-color: t.island-border;
+
+    // Contour sombre (box-shadow 0 0 0 1px), hors de l'îlot.
+    if !t.graphic: Rectangle {
+        x: -1px;
+        y: -1px;
+        width: parent.width + 2px;
+        height: parent.height + 2px;
+        border-radius: t.island-radius + 1px;
+        border-width: 1px;
+        border-color: t.island-ring;
+    }
+    // Filet clair en haut (inset 0 1px).
+    if !t.graphic: Rectangle {
+        x: t.island-radius - 2px;
+        y: 1px;
+        width: parent.width - 2 * (t.island-radius - 2px);
+        height: 1px;
+        background: t.island-highlight;
+    }
+
+    row := HorizontalLayout {
+        padding-left: t.graphic ? 0 : root.padding-x;
+        padding-right: t.graphic ? 0 : root.padding-x;
+        spacing: root.gap;
+        alignment: center;
+        @children
+    }
+
+    // Pulsation pendant la lecture (ui/pulse.slint) : lueur de la basse, flash du kick, au
+    // bord intérieur de l'îlot.
+    if !t.graphic: PulseLayers {
+        x: 1px;
+        y: 1px;
+        width: parent.width - 2px;
+        height: parent.height - 2px;
+        radius: t.island-radius - 1px;
+    }
+
+    // Nuit (barre non cliquable) : un voile noir assombrit comme brightness(), sans filtre.
+    if !t.graphic: Rectangle {
+        border-radius: t.island-radius;
+        background: Colors.black.with-alpha(root.dim);
+        animate background { duration: Theme.dur-ambient; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    }
+}
+
+// Ce qu'un emplacement de widget montre (`Slot` côté Rust). `hidden` : masqué (barre trop
+// chargée) ; `lead` : écart avant lui (aucun pour le premier affiché de sa zone) ; `data` : rang
+// de l'exemplaire parmi ceux de son genre sur la barre (ses données dans le global du widget) ;
+// `clickable` : il réagit aux clics (barre cliquable, ou `clickableOnHover` sur « Survol seul »).
+export struct Slot {
+    id: string,
+    kind: string,
+    label: string,
+    icon: image,
+    hidden: bool,
+    lead: length,
+    data: int,
+    clickable: bool,
+}
+
+// Emplacement nommé d'un widget pas encore porté (lib/WidgetPlaceholder.svelte) : son icône et
+// son nom, estompés. Toute la hauteur de la bande ; l'îlot est centré dedans. Masquage, écart et
+// largeur annoncée : `WidgetView`.
+export component SlotView inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <Slot> slot;
+    in property <float> dim;
+    width: island.width;
+    island := Island {
+        y: (parent.height - self.height) / 2;
+        t: root.t;
+        dim: root.dim;
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: center;
+            Icon {
+                y: (parent.height - self.height) / 2;
+                source: root.slot.icon;
+                size: 14px;
+                color: root.t.text-dim;
+            }
+            Text {
+                text: root.slot.label;
+                color: root.t.text-dim;
+                font-family: root.t.font;
+                font-size: Theme.fs-meta;
+                font-weight: 500;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

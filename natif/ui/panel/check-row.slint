@@ -1,0 +1,80 @@
+// Case à cocher d'un panneau avec son libellé (`<label><input type="checkbox"> …</label>` :
+// option « Ne pas déranger pendant la séance » du minuteur) : toute la ligne se clique, case
+// dans l'accent quand elle est cochée (`accent-color`), clavier (Tab, Espace, Entrée) et anneau
+// de focus. Contenu du libellé (icône, texte) posé en enfants.
+
+import { Theme, StyleTokens } from "../theme.slint";
+import { Icon } from "../components.slint";
+import { Tip } from "../tooltip.slint";
+import { FocusRing } from "focus.slint";
+
+export component CheckRow inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <bool> checked;
+    in property <string> tip;
+    in property <length> gap: 6px;
+    out property <bool> keyboard;
+    // Nouvel état voulu (la valeur affichée suit `checked`, posée par le service).
+    callback toggled(bool);
+
+    FocusScope {
+        focus-on-click: false;
+        focus-gained(r) => {
+            root.keyboard = r == FocusReason.tab-navigation;
+        }
+        focus-lost => {
+            root.keyboard = false;
+        }
+        key-pressed(e) => {
+            if e.text == Key.Return || e.text == " " {
+                root.toggled(!root.checked);
+                return accept;
+            }
+            reject
+        }
+    }
+    area := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        changed has-hover => {
+            if self.has-hover && root.tip != "" {
+                Tip.show(root.tip);
+            } else if !self.has-hover {
+                Tip.hide();
+            }
+        }
+        clicked => {
+            Tip.hide();
+            root.toggled(!root.checked);
+        }
+    }
+    HorizontalLayout {
+        spacing: root.gap;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            box := Rectangle {
+                width: 13px;
+                height: 13px;
+                border-radius: Theme.r-xs + 1px;
+                border-width: root.checked ? 0 : 1px;
+                border-color: area.has-hover ? root.t.text : root.t.text-dim;
+                background: root.checked ? Theme.accent : transparent;
+                if root.checked: Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("../../icons/phosphor/check.svg");
+                    size: 10px;
+                    color: Theme.on-accent;
+                }
+            }
+        }
+        @children
+    }
+    if root.keyboard: FocusRing {
+        x: box.x - 3px;
+        y: (root.height - box.height) / 2 - 3px;
+        width: box.width + 6px;
+        height: box.height + 6px;
+        radius: Theme.r-xs + 1px;
+    }
+}

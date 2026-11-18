@@ -1,0 +1,184 @@
+// Affichage du volume et du média au centre de la bande de la barre principale (lib/Osd.svelte,
+// src/osd.rs, src/ui/osd.rs) : remplace celui de Windows. Un seul à la fois ; il reste un
+// instant après le dernier changement, et son contenu suit l'état en direct (titre qui arrive
+// après « suivant », lecture/pause). Ne capte pas la souris.
+
+import { Theme, StyleTokens } from "theme.slint";
+import { Icon } from "components.slint";
+import { Track } from "gauge.slint";
+
+// Ce que montre l'affichage de la barre (posé par src/ui/osd.rs, barre principale seulement).
+export global OsdData {
+    // « volume », « media », ou vide (rien depuis le démarrage, ou effacé après le fondu).
+    in-out property <string> kind;
+    // Affiché (sinon en fondu de sortie, puis effacé).
+    in-out property <bool> shown;
+    in-out property <int> level;
+    in-out property <bool> muted;
+    // play_pause, next, previous, stop, track.
+    in-out property <string> action;
+    // Lecture en cours (live.media), suivie en direct.
+    in-out property <string> title;
+    in-out property <string> artist;
+    in-out property <bool> playing;
+    in-out property <bool> has-art;
+    in-out property <image> art;
+}
+
+export component Osd inherits Rectangle {
+    in property <StyleTokens> t;
+    property <bool> media: OsdData.kind == "media";
+    property <bool> silent: OsdData.muted || OsdData.level == 0;
+    property <length> cover-w: t.island-h - 10px;
+
+    height: t.island-h;
+    // Média : 440 px au plus, le titre se raccourcit (« … »).
+    width: root.media ? min(row.preferred-width + 2px, 440px) : row.preferred-width + 2px;
+    border-radius: t.island-radius;
+    background: t.popup-bg;
+    border-width: 1px;
+    border-color: t.popup-border;
+    // Fondu d'entrée (`--dur-fast` ; pas d'agrandissement : le rendu logiciel ne transforme pas)
+    // et de sortie (`--dur-base`).
+    opacity: 0;
+    states [
+        on when OsdData.shown: {
+            opacity: 1;
+            in {
+                animate opacity { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+            }
+            out {
+                animate opacity { duration: Theme.dur-base; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+            }
+        }
+    ]
+
+    // Ombre de l'îlot (style A) : contour sombre et filet clair en haut.
+    if !t.graphic: Rectangle {
+        x: -1px;
+        y: -1px;
+        width: parent.width + 2px;
+        height: parent.height + 2px;
+        border-radius: t.island-radius + 1px;
+        border-width: 1px;
+        border-color: t.island-ring;
+    }
+    if !t.graphic: Rectangle {
+        x: t.island-radius - 2px;
+        y: 1px;
+        width: parent.width - 2 * (t.island-radius - 2px);
+        height: 1px;
+        background: t.island-highlight;
+    }
+
+    row := HorizontalLayout {
+        x: 1px;
+        width: parent.width - 2px;
+        height: parent.height;
+        padding-left: root.media ? 5px : 12px;
+        padding-right: 14px;
+        spacing: 10px;
+        alignment: start;
+
+        if !root.media: VerticalLayout {
+            alignment: center;
+            Icon {
+                size: 15px;
+                color: t.text;
+                source: root.silent ? @image-url("../icons/phosphor/speakerSlash.svg")
+                    : OsdData.level < 34 ? @image-url("../icons/phosphor/speakerLow.svg")
+                    : @image-url("../icons/phosphor/speakerHigh.svg");
+            }
+        }
+        if !root.media: VerticalLayout {
+            alignment: center;
+            Track {
+                t: root.t;
+                width: 132px;
+                height: 5px;
+                rounded: true;
+                smooth: true;
+                value: root.silent ? 0 : OsdData.level / 100;
+            }
+        }
+        if !root.media: Text {
+            // `min-width: 3ch` (JetBrains Mono 11 px), aligné à droite.
+            min-width: 20px;
+            text: root.silent ? "Muet" : OsdData.level;
+            color: root.silent ? t.text-dim : t.text;
+            font-family: root.silent ? Theme.font-ui : Theme.font-mono;
+            font-size: Theme.fs-meta;
+            font-weight: 600;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+
+        if root.media: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: root.cover-w;
+                height: root.cover-w;
+                border-radius: t.inner-radius;
+                clip: true;
+                background: Theme.accent-soft;
+                if OsdData.has-art: Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: OsdData.art;
+                    image-fit: cover;
+                }
+                if !OsdData.has-art: Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("../icons/phosphor/musicNotes.svg");
+                    size: 14px;
+                    color: Theme.accent;
+                }
+            }
+        }
+        if root.media: HorizontalLayout {
+            spacing: 8px;
+            Text {
+                horizontal-stretch: 1;
+                text: OsdData.title != "" ? OsdData.title : "Aucune lecture";
+                color: t.text;
+                font-family: Theme.font-ui;
+                font-size: Theme.fs-body;
+                font-weight: 600;
+                overflow: elide;
+                vertical-alignment: center;
+            }
+            // Aligné sur la ligne de base du titre (plus petit d'un pixel et demi).
+            if OsdData.artist != "": Text {
+                horizontal-stretch: 0;
+                max-width: 160px;
+                y: 1px;
+                text: OsdData.artist;
+                color: t.text-dim;
+                font-size: Theme.fs-meta;
+                overflow: elide;
+                vertical-alignment: center;
+            }
+        }
+        if root.media && OsdData.action != "track": VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 22px;
+                height: 22px;
+                border-radius: 11px;
+                background: Theme.accent;
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    size: 13px;
+                    color: Theme.on-accent;
+                    source: OsdData.action == "next" ? @image-url("../icons/phosphor/skipForward.svg")
+                        : OsdData.action == "previous" ? @image-url("../icons/phosphor/skipBack.svg")
+                        : OsdData.action == "stop" ? @image-url("../icons/phosphor/stop.svg")
+                        : OsdData.playing ? @image-url("../icons/phosphor/play.svg")
+                        : @image-url("../icons/phosphor/pause.svg");
+                }
+            }
+        }
+    }
+}

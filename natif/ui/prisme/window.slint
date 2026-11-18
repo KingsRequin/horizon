@@ -1,0 +1,276 @@
+// Fenêtre « Prisme » : l'interface complète du moteur RGB (apps/prisme/PrismeApp.svelte), ouverte
+// par Horizon (panneau Éclairage, `--prisme`). Navigation à gauche (pages Lumière, Disposition,
+// Effets, Automatique, Réglages), état de l'enregistrement et du moteur en pied ; page « moteur
+// arrêté » quand il ne répond pas. Ctrl+Z annule la dernière modification (sauf dans un champ de
+// saisie, qui garde son propre Ctrl+Z). Liaison : src/prisme_window/.
+
+import { PrismeTheme } from "theme.slint";
+import { PText, PButton, PDot, PRing } from "controls.slint";
+import { PrismeCanvas, PrismeLabel } from "canvas.slint";
+import { NowPage, PrismeNow, PrismeMode, PrismeChip } from "now.slint";
+import { ScenesPage, PrismeScenes, PrismeSceneRow, PrismeParam, PrismeOption } from "scenes.slint";
+import { RulesPage, PrismeRules, PrismeRule } from "rules.slint";
+import { SettingsPage, PrismeSettings } from "settings.slint";
+import { LayoutPage, PrismeLayout, PrismeDevice, PrismeZone, PrismeFound } from "layout.slint";
+import { Theme } from "../theme.slint";
+import { Tip } from "../tooltip.slint";
+
+export { PrismeTheme, PrismeCanvas, PrismeLabel, PrismeNow, PrismeMode, PrismeChip }
+export { PrismeScenes, PrismeSceneRow, PrismeParam, PrismeOption, PrismeRules, PrismeRule, PrismeSettings }
+export { PrismeLayout, PrismeDevice, PrismeZone, PrismeFound }
+
+export global PrismeShell {
+    in property <string> page: "now";
+    in property <bool> connected;
+    in property <bool> starting;
+    in property <string> start-error;
+    // Pied : 0 rien, 1 « Enregistrement… », 2 « Modifications enregistrées », 3 erreur
+    // (`save-error`).
+    in property <int> save-state;
+    in property <string> save-error;
+    in property <bool> can-undo;
+    callback go(string);
+    callback undo();
+    callback start-daemon();
+}
+
+struct NavPage {
+    key: string,
+    label: string,
+}
+
+component NavItem inherits PButton {
+    in property <bool> active;
+    kind: 3;
+    align: left;
+    pad-x: 12px;
+    pad-y: 8px;
+    fg: self.active ? PrismeTheme.text : PrismeTheme.muted;
+    hover-fg: PrismeTheme.text;
+    flat-bg: self.active ? PrismeTheme.live-soft : transparent;
+    horizontal-stretch: 1;
+    if root.active: Rectangle {
+        x: 0;
+        width: 2px;
+        background: PrismeTheme.live;
+    }
+}
+
+// « Annuler la dernière modification » : bouton discret dont le texte passe à la ligne (la
+// colonne de navigation est étroite).
+component UndoButton inherits Rectangle {
+    property <bool> keyboard;
+    height: label.preferred-height + 10px;
+    border-radius: PrismeTheme.radius-s;
+    background: ta.has-hover ? PrismeTheme.raised : transparent;
+    animate background { duration: PrismeTheme.transition; }
+    label := Text {
+        x: 10px;
+        width: root.width - 20px;
+        y: 5px;
+        text: "Annuler la dernière modification";
+        color: ta.has-hover ? PrismeTheme.text : PrismeTheme.muted;
+        font-family: PrismeTheme.font;
+        font-size: PrismeTheme.fs-small;
+        wrap: word-wrap;
+    }
+    fs := FocusScope {
+        focus-gained(r) => {
+            root.keyboard = r == FocusReason.tab-navigation;
+        }
+        focus-lost => {
+            root.keyboard = false;
+        }
+        key-pressed(e) => {
+            if e.text == Key.Return || e.text == " " {
+                PrismeShell.undo();
+                return accept;
+            }
+            reject
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        changed has-hover => {
+            if self.has-hover {
+                Tip.show("Ctrl+Z");
+            } else {
+                Tip.hide();
+            }
+        }
+        clicked => {
+            Tip.hide();
+            fs.focus();
+            root.keyboard = false;
+            PrismeShell.undo();
+        }
+    }
+    if root.keyboard && fs.has-focus: PRing {
+        width: root.width + 8px;
+        height: root.height + 8px;
+        radius: root.border-radius;
+    }
+}
+
+component Offline inherits Rectangle {
+    VerticalLayout {
+        alignment: start;
+        padding-top: root.height * 0.18;
+        HorizontalLayout {
+            alignment: center;
+            VerticalLayout {
+                width: min(520px, root.width - 48px);
+                spacing: 14px;
+                PText {
+                    text: "Le moteur Prisme ne tourne pas";
+                    font-size: PrismeTheme.h1;
+                    font-weight: 600;
+                    wrap: word-wrap;
+                }
+                PText {
+                    text: "Sans lui, les LED ne reçoivent plus rien. L'interface se reconnecte dès qu'il démarre.";
+                    color: PrismeTheme.muted;
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    alignment: start;
+                    PButton {
+                        kind: 1;
+                        text: PrismeShell.starting ? "Démarrage…" : "Démarrer le moteur";
+                        enabled: !PrismeShell.starting;
+                        clicked => {
+                            PrismeShell.start-daemon();
+                        }
+                    }
+                }
+                if PrismeShell.start-error != "": PText {
+                    text: PrismeShell.start-error;
+                    color: PrismeTheme.danger;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}
+
+export component PrismeWindow inherits Window {
+    title: "Prisme";
+    background: PrismeTheme.bg;
+    min-width: 900px;
+    min-height: 600px;
+    preferred-width: 1180px;
+    preferred-height: 760px;
+    default-font-family: PrismeTheme.font;
+    default-font-size: PrismeTheme.fs;
+    forward-focus: keys;
+    // Accent d'Horizon (`ui::accent::follow`) : l'interface de Prisme ne s'en sert pas (sa
+    // couleur est celle des LED), mais la fenêtre suit la règle commune.
+    out property <color> horizon-accent: Theme.accent;
+    property <[NavPage]> pages: [
+        { key: "now", label: "Lumière" },
+        { key: "layout", label: "Disposition" },
+        { key: "scenes", label: "Effets" },
+        { key: "rules", label: "Automatique" },
+        { key: "settings", label: "Réglages" },
+    ];
+
+    keys := FocusScope {
+        key-pressed(e) => {
+            if e.modifiers.control && (e.text == "z" || e.text == "Z") {
+                PrismeShell.undo();
+                return accept;
+            }
+            reject
+        }
+        HorizontalLayout {
+            Rectangle {
+                width: 184px;
+                background: PrismeTheme.panel;
+                Rectangle {
+                    x: parent.width - 1px;
+                    width: 1px;
+                    background: PrismeTheme.line;
+                }
+                VerticalLayout {
+                    padding-top: 20px;
+                    padding-left: 12px;
+                    padding-right: 13px;
+                    padding-bottom: 16px;
+                    spacing: 2px;
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-bottom: 18px;
+                        PText {
+                            text: "Prisme";
+                            font-size: 18px;
+                            font-weight: 600;
+                        }
+                    }
+                    for p in root.pages: NavItem {
+                        text: p.label;
+                        active: PrismeShell.page == p.key;
+                        accessible-role: tab;
+                        clicked => {
+                            PrismeShell.go(p.key);
+                        }
+                    }
+                    Rectangle {
+                        vertical-stretch: 1;
+                    }
+                    VerticalLayout {
+                        spacing: 8px;
+                        vertical-stretch: 0;
+                        if PrismeShell.save-state != 0: Rectangle {
+                            height: save.preferred-height;
+                            save := PText {
+                                x: 10px;
+                                width: parent.width - 20px;
+                                text: PrismeShell.save-state == 1 ? "Enregistrement…" : PrismeShell.save-state == 2 ? "Modifications enregistrées"
+                                    : "Non enregistré : " + PrismeShell.save-error;
+                                color: PrismeShell.save-state == 3 ? PrismeTheme.danger : PrismeTheme.muted;
+                                font-size: PrismeTheme.fs-small;
+                                wrap: word-wrap;
+                            }
+                            TouchArea {
+                                changed has-hover => {
+                                    if self.has-hover && PrismeShell.save-state == 3 {
+                                        Tip.show(PrismeShell.save-error);
+                                    } else {
+                                        Tip.hide();
+                                    }
+                                }
+                            }
+                        }
+                        if PrismeShell.can-undo: UndoButton { }
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 8px;
+                            VerticalLayout {
+                                alignment: center;
+                                PDot {
+                                    state: PrismeShell.connected ? 1 : 2;
+                                }
+                            }
+                            PText {
+                                vertical-alignment: center;
+                                text: PrismeShell.connected ? "Moteur actif" : "Moteur arrêté";
+                                color: PrismeTheme.muted;
+                                font-size: PrismeTheme.fs-small;
+                            }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                if !PrismeShell.connected: Offline { }
+                if PrismeShell.connected && PrismeShell.page == "now": NowPage { }
+                if PrismeShell.connected && PrismeShell.page == "layout": LayoutPage { }
+                if PrismeShell.connected && PrismeShell.page == "scenes": ScenesPage { }
+                if PrismeShell.connected && PrismeShell.page == "rules": RulesPage { }
+                if PrismeShell.connected && PrismeShell.page == "settings": SettingsPage { }
+            }
+        }
+    }
+}

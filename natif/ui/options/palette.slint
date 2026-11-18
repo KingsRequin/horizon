@@ -1,0 +1,79 @@
+// Section « Palette » (app/src/settings/options/PaletteSection.svelte) : raccourci global saisi
+// au clavier, pris à chaud ; un raccourci déjà utilisé par une autre application est signalé et
+// l'ancien reste. La touche tapée est lue par le service (`hotkey-key`, règle de lib/hotkey.ts).
+
+import { Theme } from "../theme.slint";
+import { SettingsLayout } from "../settings/layout.slint";
+import { SettingsHeading, SettingsNote } from "../settings/text.slint";
+import { SettingRow } from "../settings/row.slint";
+import { SettingsButton } from "../settings/button.slint";
+import { OptionsData } from "data.slint";
+
+export component PaletteSection inherits VerticalLayout {
+    SettingsHeading {
+        text: "Palette de commandes";
+        first: true;
+        below: 8px;
+    }
+    SettingsNote {
+        text: "La palette cherche dans tes raccourcis, applis, suggestions, profils, scènes, sorties audio et serveurs. Elle s’ouvre aussi depuis le menu de la barre et l’icône de notification.";
+        below: 14px;
+    }
+    SettingRow {
+        label: "Raccourci";
+        hint: OptionsData.capturing ? (OptionsData.hotkey-hint != "" ? OptionsData.hotkey-hint : "Appuie sur la combinaison voulue (Échap : annuler).") : "";
+        capture := SettingsButton {
+            width: max(170px, self.preferred-width);
+            text: OptionsData.capturing ? "Appuie sur les touches…" : (OptionsData.hotkey != "" ? OptionsData.hotkey : "Aucun");
+            icon: @image-url("../../icons/phosphor/keyboard.svg");
+            icon-size: 14px;
+            padding-x: 11px;
+            filled: true;
+            mono: true;
+            on: OptionsData.capturing;
+            enabled: !OptionsData.locked;
+            clicked => {
+                OptionsData.capturing = !OptionsData.capturing;
+                OptionsData.hotkey-hint = "";
+                if OptionsData.capturing {
+                    self.grab();
+                }
+            }
+            blurred => {
+                OptionsData.capturing = false;
+            }
+            key(e) => {
+                if !OptionsData.capturing {
+                    return reject;
+                }
+                if e.text == Key.Escape && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta {
+                    OptionsData.capturing = false;
+                    OptionsData.hotkey-hint = "";
+                    return accept;
+                }
+                OptionsData.hotkey-key(e.text, e.modifiers.control, e.modifiers.alt, e.modifiers.shift, e.modifiers.meta);
+                accept
+            }
+        }
+        SettingsButton {
+            text: "Aucun";
+            padding-x: 11px;
+            enabled: !OptionsData.locked && OptionsData.hotkey != "";
+            clicked => {
+                OptionsData.hotkey-set("");
+            }
+        }
+    }
+    if OptionsData.hotkey-error != "": SettingsNote {
+        text: OptionsData.hotkey-error;
+        tint: SettingsLayout.t.bad;
+        font-size: Theme.fs-body;
+        above: 6px;
+    }
+    if OptionsData.hotkey-saved != "": SettingsNote {
+        text: OptionsData.hotkey-saved;
+        tint: SettingsLayout.t.ok;
+        font-size: Theme.fs-body;
+        above: 6px;
+    }
+}

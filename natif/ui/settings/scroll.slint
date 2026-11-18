@@ -1,0 +1,68 @@
+// Contenu qui défile d'une fenêtre de réglages (`overflow: auto` de la page) : colonne posée en
+// enfants, à la largeur de la vue moins la gouttière, molette et barre de défilement fine à
+// droite (seulement quand le contenu dépasse ; glissable). `padding-*` : marges du contenu.
+// `scroll-top()` : revient en haut (changement de section).
+
+import { Theme } from "../theme.slint";
+import { SettingsLayout } from "layout.slint";
+
+export component SettingsScroll inherits Rectangle {
+    in property <length> padding-x: 24px;
+    in property <length> padding-y: 22px;
+    // Largeur de la colonne (à poser dans `SettingsLayout.content-w` par la page).
+    out property <length> content-w: root.width - 2 * root.padding-x;
+    property <length> content-h: col.preferred-height;
+    property <bool> overflows: root.content-h > root.height;
+    property <length> bar-h: max(24px, root.height * root.height / max(1px, root.content-h));
+
+    public function scroll-top() {
+        fl.content-y = 0;
+    }
+
+    fl := Flickable {
+        content-width: self.width;
+        content-height: max(self.height, root.content-h);
+        col := VerticalLayout {
+            x: 0;
+            y: 0;
+            width: fl.width;
+            height: max(fl.height, root.content-h);
+            padding-left: root.padding-x;
+            padding-right: root.padding-x;
+            padding-top: root.padding-y;
+            padding-bottom: root.padding-y;
+            alignment: start;
+            @children
+        }
+    }
+    if root.overflows: Rectangle {
+        x: root.width - 12px;
+        width: 12px;
+        height: root.height;
+        Rectangle {
+            x: 3px;
+            y: -fl.content-y / (root.content-h - root.height) * (root.height - root.bar-h);
+            width: 6px;
+            height: root.bar-h;
+            border-radius: 3px;
+            background: drag.has-hover || drag.pressed ? SettingsLayout.t.text-dim.with-alpha(0.5) : SettingsLayout.t.track;
+        }
+        // Glisser la barre : la gouttière entière suit la souris (repère fixe).
+        drag := TouchArea {
+            property <length> start-y;
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.down {
+                    self.start-y = fl.content-y;
+                }
+            }
+            moved => {
+                if self.pressed {
+                    fl.content-y = clamp(
+                        self.start-y - (self.mouse-y - self.pressed-y) * (root.content-h - root.height) / max(1px, root.height - root.bar-h),
+                        root.height - root.content-h,
+                        0);
+                }
+            }
+        }
+    }
+}

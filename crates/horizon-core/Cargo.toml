@@ -1,0 +1,20 @@
+[package]
+name = "horizon-core"
+description = "Logique pure d'Horizon : disposition, config, états des widgets"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+anyhow.workspace = true
+log.workspace = true
+rusqlite = { version = "0.37", features = ["bundled"] }
+rrule = "0.14"
+# Empreintes des fichiers de la mise à jour automatique.
+sha2 = "0.10"
+chrono-tz = "0.10"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }

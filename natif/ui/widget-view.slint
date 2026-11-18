@@ -1,0 +1,322 @@
+// Un emplacement de la bande (le `.slot` d'App.svelte) : le widget de son genre, ou son
+// emplacement nommé (`SlotView`) s'il n'est pas porté. Il garde toute la hauteur de la bande,
+// prend la largeur de son contenu (0 masqué) plus l'écart avant lui (`slot.lead`), et annonce sa
+// largeur naturelle (`measured`, sans l'écart) pour le débordement : 0 = le widget n'affiche
+// rien (Suggestions sans suggestion, casque éteint), la barre ne lui laisse alors aucun écart
+// (src/ui/bar.rs, comme `.slot:not(:has(*))`).
+//
+// Chaque widget reçoit les mêmes propriétés (celles de `WidgetFrame`). Brancher un widget :
+// l'importer, ajouter sa ligne `if kind == "<id>": …` et son genre dans `ported`.
+//
+// Mode édition (`editing`, App.svelte) : le widget n'est plus interactif ; une zone posée
+// dessus prend la souris (main « saisir », glisser annoncé par `drag`), un cadre fixe marque
+// le survol (à la place de l'oscillation de la version Tauri) ; un widget vide garde sa place,
+// nommée dans un cadre en pointillés (`.editing .slot:not(:has(*))::before`). Le survol de
+// l'emplacement est annoncé (`hovered`) pour le menu du clic droit.
+
+import { Theme, StyleTokens } from "theme.slint";
+import { Slot, SlotView } from "components.slint";
+import { DashedBox } from "dashed.slint";
+import { BatteriesWidget } from "widgets/batteries/widget.slint";
+import { CalendarWidget } from "widgets/calendar/widget.slint";
+import { ClaudeQuotaWidget } from "widgets/claude_quota/widget.slint";
+import { ClaudeSessionsWidget } from "widgets/claude_sessions/widget.slint";
+import { ClockWidget } from "widgets/clock/widget.slint";
+import { DiscordVoiceWidget } from "widgets/discord_voice/widget.slint";
+import { EssaimWidget } from "widgets/essaim/widget.slint";
+import { HeadsetWidget } from "widgets/headset/widget.slint";
+import { LightingWidget } from "widgets/lighting/widget.slint";
+import { MediaWidget } from "widgets/media/widget.slint";
+import { MicKrispWidget } from "widgets/mic_krisp/widget.slint";
+import { NotificationsWidget } from "widgets/notifications/widget.slint";
+import { ServersWidget } from "widgets/servers/widget.slint";
+import { ShortcutsWidget } from "widgets/shortcuts/widget.slint";
+import { SuggestionsWidget } from "widgets/suggestions/widget.slint";
+import { SystemWidget } from "widgets/system/widget.slint";
+import { WeatherWidget } from "widgets/weather/widget.slint";
+import { WindowsWidget } from "widgets/windows/widget.slint";
+
+export component WidgetView inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <Slot> slot;
+    in property <float> dim;
+    // Survol = panneaux (barre cliquable ou « Survol seul ») ; barre resserrée ; barre large
+    // (2 200 px logiques et plus). Les clics : `slot.clickable`.
+    in property <bool> interactive;
+    in property <bool> compact;
+    in property <bool> wide;
+    in property <bool> editing;
+    // Glisser en cours de ce widget et son décalage (px logiques).
+    in property <bool> dragging;
+    in property <length> offset-x;
+    in property <length> offset-y;
+    callback measured(length);
+    // Largeur montrée, sans l'écart : le widget, ou en mode édition son nom s'il est vide.
+    out property <length> shown-w: root.editing && root.natural <= 0 ? placeholder-w : root.natural;
+    callback shown(length);
+    // La souris entre sur l'emplacement (`true`) ou en sort.
+    callback hovered(bool);
+    // Glisser du mode édition : 0 appui, 1 déplacement, 2 relâché, 3 annulé ; position dans la
+    // fenêtre.
+    callback drag(int, length, length);
+    property <bool> live-click: root.slot.clickable && !root.editing;
+    property <bool> live: root.interactive && !root.editing;
+    // Emplacement nommé d'un widget vide en mode édition : padding 3 × 8 px.
+    property <length> placeholder-w: placeholder-text.preferred-width + 16px;
+
+    property <string> kind: root.slot.kind;
+    property <bool> ported: kind == "batteries" || kind == "calendar" || kind == "claude_quota" ||
+        kind == "claude_sessions" || kind == "clock" || kind == "discord_voice" ||
+        kind == "essaim" || kind == "headset" || kind == "lighting" || kind == "media" ||
+        kind == "mic_krisp" || kind == "notifications" || kind == "servers" ||
+        kind == "shortcuts" || kind == "suggestions" || kind == "system" || kind == "weather" ||
+        kind == "windows";
+    out property <length> natural: row.preferred-width;
+    init => {
+        root.measured(root.natural);
+        root.shown(root.shown-w);
+    }
+    changed natural => {
+        root.measured(root.natural);
+    }
+    changed shown-w => {
+        root.shown(root.shown-w);
+    }
+    width: root.slot.hidden ? 0 : root.shown-w + root.slot.lead;
+    visible: !root.slot.hidden;
+
+    // Survol passif : un `TouchArea` parent voit la souris même au-dessus des boutons du widget.
+    hover-area := TouchArea {
+        changed has-hover => {
+            root.hovered(self.has-hover);
+        }
+
+    body := Rectangle {
+        x: root.slot.lead + root.offset-x;
+        y: root.offset-y;
+        width: root.natural;
+        height: parent.height;
+        opacity: root.dragging ? 0.85 : 1;
+    row := HorizontalLayout {
+        width: root.natural;
+        height: parent.height;
+        if kind == "batteries": BatteriesWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "calendar": CalendarWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "claude_quota": ClaudeQuotaWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "claude_sessions": ClaudeSessionsWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "clock": ClockWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "discord_voice": DiscordVoiceWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "essaim": EssaimWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "headset": HeadsetWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "lighting": LightingWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "media": MediaWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "mic_krisp": MicKrispWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "notifications": NotificationsWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "servers": ServersWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "shortcuts": ShortcutsWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "suggestions": SuggestionsWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "system": SystemWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "weather": WeatherWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "windows": WindowsWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if !root.ported: SlotView {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+        }
+    }
+    }
+
+    // Toujours là (sa largeur est lue même caché), montré seulement en mode édition.
+    DashedBox {
+        visible: root.editing && root.natural <= 0;
+        x: root.slot.lead + root.offset-x;
+        y: (parent.height - self.height) / 2 + root.offset-y;
+        width: root.placeholder-w;
+        height: placeholder-text.preferred-height + 6px;
+        ink: root.t.text.with-alpha(0.45);
+        radius: Theme.r-md;
+        opacity: root.dragging ? 0.85 : 1;
+        placeholder-text := Text {
+            text: root.slot.label;
+            color: root.t.text-dim;
+            font-family: Theme.font-ui;
+            font-size: Theme.fs-meta;
+            font-weight: 500;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    // Mode édition : la souris est au glisser (aucun clic n'atteint le widget).
+    if root.editing: TouchArea {
+        mouse-cursor: root.dragging ? MouseCursor.grabbing : MouseCursor.grab;
+        pointer-event(e) => {
+            if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
+                root.drag(0, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            } else if e.button == PointerEventButton.left && e.kind == PointerEventKind.up {
+                root.drag(2, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+            } else if e.kind == PointerEventKind.cancel {
+                root.drag(3, 0, 0);
+            }
+        }
+        moved => {
+            root.drag(1, self.absolute-position.x + self.mouse-x, self.absolute-position.y + self.mouse-y);
+        }
+        // Survol : cadre fixe autour du widget.
+        Rectangle {
+            x: root.slot.lead - 3px;
+            y: 3px;
+            width: root.shown-w + 6px;
+            height: parent.height - 6px;
+            border-radius: Theme.r-lg;
+            border-width: 1px;
+            border-color: root.t.text.with-alpha(0.3);
+            visible: parent.has-hover && !root.dragging;
+        }
+    }
+    }
+}

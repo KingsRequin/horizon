@@ -1,0 +1,16 @@
+// Mise en page d'une fenêtre de réglages (un exemplaire par fenêtre).
+//
+// `content-w` : largeur du contenu de la page qui défile. La page la pose (largeur de la fenêtre
+// moins sa navigation et ses marges) ; les briques (`SettingRow`, `SettingCheck`, `SettingsNote`…)
+// en tirent la largeur de leurs textes qui passent à la ligne : dans une vue qui défile, un texte
+// dont la largeur ne vient que de la mise en page est mesuré sur une seule ligne (voir
+// natif/README.md, pièges des panneaux).
+//
+// `t` : couleurs des réglages (`Styles.settings`, surfaces opaques de `.islands.settings`).
+
+import { StyleTokens, Styles } from "../theme.slint";
+
+export global SettingsLayout {
+    in-out property <length> content-w: 480px;
+    out property <StyleTokens> t: Styles.settings;
+}

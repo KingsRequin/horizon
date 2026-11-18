@@ -1,0 +1,52 @@
+// Pulsation des barres pendant la lecture (lib/Pulse.svelte, `.pulse-glow` / `.pulse-flash`
+// d'app.css) : deux couches au bord de chaque îlot (style A) ou de la bande (style C). Lueur =
+// basse, flash = grosse caisse ; seules leurs intensités changent (src/ui/pulse.rs, 20 fois par
+// seconde au plus et seulement quand elles changent), sans transition. Nulles, les couches ne
+// sont pas construites.
+//
+// Le rendu logiciel ne dessine pas d'ombre intérieure (`inset box-shadow`) : la lueur floue est
+// imitée par des filets concentriques de plus en plus transparents.
+
+import { Theme } from "theme.slint";
+
+// Intensités de la barre (opacités des couches, 0–1).
+export global PulseState {
+    in-out property <float> glow;
+    in-out property <float> flash;
+}
+
+// Filet concentrique : `inset` depuis le bord de la boîte `box-w` × `box-h`, épaisseur `w`,
+// couleur `c` (la racine d'un composant ne voit pas `parent`).
+component Ring inherits Rectangle {
+    in property <length> box-w;
+    in property <length> box-h;
+    in property <length> inset;
+    in property <length> w;
+    in property <length> radius;
+    in property <color> c;
+    x: root.inset;
+    y: root.inset;
+    width: root.box-w - 2 * root.inset;
+    height: root.box-h - 2 * root.inset;
+    border-radius: max(0px, root.radius - root.inset);
+    border-width: root.w;
+    border-color: root.c;
+}
+
+// Couches d'un îlot ou de la bande ; occupe la boîte qu'on lui donne (`radius` : ses coins).
+export component PulseLayers inherits Rectangle {
+    in property <length> radius;
+    // `inset 0 0 0 1px accent, inset 0 0 14px -6px accent`.
+    if PulseState.glow > 0: Rectangle {
+        Ring { box-w: root.width; box-h: root.height; radius: root.radius; inset: 0; w: 1px; c: Theme.accent.with-alpha(PulseState.glow); }
+        Ring { box-w: root.width; box-h: root.height; radius: root.radius; inset: 1px; w: 2px; c: Theme.accent.with-alpha(PulseState.glow * 0.22); }
+        Ring { box-w: root.width; box-h: root.height; radius: root.radius; inset: 3px; w: 3px; c: Theme.accent.with-alpha(PulseState.glow * 0.08); }
+    }
+    // Plus clair que l'accent : `inset 0 0 0 1.5px mix(accent 55 %, blanc),
+    // inset 0 0 22px -4px mix(accent 70 %, blanc)`.
+    if PulseState.flash > 0: Rectangle {
+        Ring { box-w: root.width; box-h: root.height; radius: root.radius; inset: 0; w: 1.5px; c: Theme.accent.mix(Colors.white, 0.55).with-alpha(PulseState.flash); }
+        Ring { box-w: root.width; box-h: root.height; radius: root.radius; inset: 1.5px; w: 3px; c: Theme.accent.mix(Colors.white, 0.7).with-alpha(PulseState.flash * 0.3); }
+        Ring { box-w: root.width; box-h: root.height; radius: root.radius; inset: 4.5px; w: 4px; c: Theme.accent.mix(Colors.white, 0.7).with-alpha(PulseState.flash * 0.12); }
+    }
+}

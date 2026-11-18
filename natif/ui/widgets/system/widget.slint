@@ -1,0 +1,97 @@
+// Système (app/src/widgets/system/Widget.svelte) : style îlots, une courbe de 60 s par mesure
+// (CPU, GPU, RAM) ; style graphique, trois jauges. Survol = panneau Système.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { WidgetFrame } from "../../widget-frame.slint";
+import { Eyebrow, Gauge } from "../../gauge.slint";
+
+// Tracé d'une courbe (src/widgets/system.rs, `spark_paths`) : ligne et zone remplie, en
+// coordonnées de la courbe (38 × 16).
+export struct Spark {
+    line: string,
+    area: string,
+}
+
+// Mesures d'une barre (src/widgets/system.rs). Valeur négative : inconnue.
+export global SystemData {
+    in-out property <float> cpu: -1;
+    in-out property <float> gpu: -1;
+    in-out property <float> ram: -1;
+    in-out property <Spark> cpu-spark;
+    in-out property <Spark> gpu-spark;
+    in-out property <Spark> ram-spark;
+}
+
+// Courbe (Sparkline.svelte) : zone en dégradé vers le bas, ligne de 1,4 px. Le tracé est en
+// coordonnées de la courbe (sa taille en px logiques : 38 × 16 dans la barre, 64 × 18 dans le
+// panneau).
+export component Sparkline inherits Rectangle {
+    in property <Spark> spark;
+    in property <color> tint;
+    width: 38px;
+    height: 16px;
+    if root.spark.area != "": Path {
+        width: root.width;
+        height: root.height;
+        viewbox-width: root.width / 1px;
+        viewbox-height: root.height / 1px;
+        commands: root.spark.area;
+        fill: @linear-gradient(180deg, root.tint.with-alpha(0.45) 0%, root.tint.with-alpha(0) 100%);
+    }
+    if root.spark.line != "": Path {
+        width: root.width;
+        height: root.height;
+        viewbox-width: root.width / 1px;
+        viewbox-height: root.height / 1px;
+        commands: root.spark.line;
+        stroke: root.tint;
+        stroke-width: 1.4px;
+    }
+}
+
+export component SystemWidget inherits WidgetFrame {
+    panel: "system";
+
+    if !root.t.graphic: HorizontalLayout {
+        spacing: 10px;
+        for m in [
+            { label: "CPU", spark: SystemData.cpu-spark, color: root.t.cpu },
+            { label: "GPU", spark: SystemData.gpu-spark, color: root.t.gpu },
+            { label: "RAM", spark: SystemData.ram-spark, color: root.t.ram },
+        ]: HorizontalLayout {
+            spacing: 6px;
+            Eyebrow {
+                t: root.t;
+                label: m.label;
+            }
+            VerticalLayout {
+                alignment: center;
+                Sparkline {
+                    spark: m.spark;
+                    tint: m.color;
+                }
+            }
+        }
+    }
+    if root.t.graphic: HorizontalLayout {
+        spacing: 10px;
+        Gauge {
+            t: root.t;
+            label: "CPU";
+            value: SystemData.cpu;
+            color: root.t.cpu;
+        }
+        Gauge {
+            t: root.t;
+            label: "GPU";
+            value: SystemData.gpu;
+            color: root.t.gpu;
+        }
+        Gauge {
+            t: root.t;
+            label: "RAM";
+            value: SystemData.ram;
+            color: root.t.ram;
+        }
+    }
+}

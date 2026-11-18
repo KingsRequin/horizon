@@ -1,0 +1,106 @@
+// Champ de saisie libre d'une fenêtre de réglages (`<input>` des pages de réglages des widgets
+// et des profils) : fond `field-bg`, filet `surface-2` (`bad`/`warn` si `invalid`), rayon
+// `radius`, marges `padding-x`. Le texte appartient au champ : `value` le remplace quand il
+// change (ou par `set-text`), sans toucher à ce qui est tapé quand c'est le même. Le service est
+// prévenu à chaque frappe (`edited`, `oninput`), à Entrée (`accepted`), et à Entrée ou à la
+// sortie du champ si le texte a changé depuis (`committed` : `onchange`).
+// `quiet` : sans fond ni filet tant qu'il n'est ni survolé ni en saisie (nom d'un agenda).
+
+import { Theme } from "../theme.slint";
+import { FocusRing } from "../panel/focus.slint";
+import { SettingsLayout } from "layout.slint";
+
+export component InputField inherits Rectangle {
+    in property <string> value;
+    in property <string> placeholder;
+    in property <bool> enabled: true;
+    in property <bool> invalid;
+    // Couleur du filet d'un champ invalide (`bad` par défaut, `warn` pour une cible manquante).
+    in property <color> invalid-color: SettingsLayout.t.bad;
+    in property <bool> quiet;
+    in property <bool> mono;
+    in property <int> font-weight: 400;
+    in property <length> font-size: Theme.fs-body;
+    in property <length> padding-x: 9px;
+    in property <length> radius: Theme.r-md;
+    out property <string> text: input.text;
+    out property <bool> has-focus: input.has-focus;
+    callback edited(string);
+    callback accepted(string);
+    callback committed(string);
+    // Texte à l'entrée dans le champ (pour `committed`).
+    property <string> entry;
+    property <bool> lit: !root.quiet || area.has-hover || input.has-focus;
+    height: 30px;
+    border-radius: root.radius;
+    border-width: 1px;
+    border-color: root.invalid ? root.invalid-color : (root.lit ? SettingsLayout.t.surface-2 : transparent);
+    background: root.lit ? Theme.field-bg : transparent;
+    opacity: root.enabled ? 1 : Theme.o-off;
+
+    // Remplace le texte (champ vidé après un choix, valeur venue du service).
+    public function set-text(t: string) {
+        input.text = t;
+    }
+
+    changed value => {
+        if input.text != root.value {
+            input.text = root.value;
+        }
+    }
+    area := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: MouseCursor.text;
+        clicked => {
+            input.focus();
+        }
+    }
+    if input.text == "": Text {
+        x: root.padding-x;
+        width: root.width - 2 * root.padding-x;
+        height: root.height;
+        text: root.placeholder;
+        color: SettingsLayout.t.text-dim;
+        font-size: root.font-size;
+        font-family: root.mono ? Theme.font-mono : "";
+        font-weight: root.font-weight;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    input := TextInput {
+        x: root.padding-x;
+        width: root.width - 2 * root.padding-x;
+        height: root.height;
+        enabled: root.enabled;
+        text: root.value;
+        color: SettingsLayout.t.text;
+        font-size: root.font-size;
+        font-family: root.mono ? Theme.font-mono : "";
+        font-weight: root.font-weight;
+        vertical-alignment: center;
+        single-line: true;
+        selection-background-color: Theme.accent.with-alpha(0.35);
+        edited => {
+            root.edited(self.text);
+        }
+        accepted => {
+            root.accepted(self.text);
+            if self.text != root.entry {
+                root.entry = self.text;
+                root.committed(self.text);
+            }
+        }
+        changed has-focus => {
+            if self.has-focus {
+                root.entry = self.text;
+            } else if self.text != root.entry {
+                root.committed(self.text);
+            }
+        }
+    }
+    if input.has-focus: FocusRing {
+        width: root.width + 6px;
+        height: root.height + 6px;
+        radius: root.radius;
+    }
+}

@@ -1,0 +1,48 @@
+// Fenêtres (app/src/widgets/windows/Widget.svelte) : nombre de fenêtres d'application ouvertes ;
+// survol = fenêtres par écran (panneau, phase C) ; cliquable même sur une barre « Survol seul »
+// (widget.json : clickableOnHover). Données : src/widgets/windows.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { WidgetFrame } from "../../widget-frame.slint";
+
+export global WindowsData {
+    in property <int> count;
+    // « 7 fenêtres » (nom accessible du bouton).
+    in property <string> title;
+}
+
+export component WindowsWidget inherits WidgetFrame {
+    panel: "windows";
+    accessible-role: button;
+    accessible-label: WindowsData.title;
+
+    Rectangle {
+        y: (root.t.island-h - self.height) / 2;
+        width: row.preferred-width;
+        height: root.t.inner-h;
+        border-radius: root.t.inner-radius;
+        background: root.hovered && root.clickable ? root.t.hover : transparent;
+        animate background { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+        row := HorizontalLayout {
+            padding-left: 6px;
+            padding-right: 6px;
+            spacing: 5px;
+            alignment: center;
+            Icon {
+                y: (parent.height - self.height) / 2;
+                source: @image-url("../../../icons/phosphor/browsers.svg");
+                size: 14px;
+                color: root.t.text;
+            }
+            Text {
+                text: WindowsData.count;
+                color: root.t.text;
+                font-family: Theme.font-mono;
+                font-size: Theme.fs-meta;
+                font-weight: 500;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

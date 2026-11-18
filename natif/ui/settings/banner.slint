@@ -1,0 +1,41 @@
+// Bandeau d'avertissement en haut d'une page de réglages (`.banner` : settings.toml illisible) :
+// icône d'alerte et texte qui passe à la ligne, fond teinté `warn`.
+
+import { Theme } from "../theme.slint";
+import { Icon } from "../components.slint";
+import { SettingsLayout } from "layout.slint";
+
+export component SettingsBanner inherits Rectangle {
+    in property <string> text;
+    VerticalLayout {
+        padding-bottom: 14px;
+        Rectangle {
+            border-radius: Theme.r-lg;
+            background: SettingsLayout.t.warn.mix(SettingsLayout.t.surface-1, 0.12);
+            HorizontalLayout {
+                padding-top: 9px;
+                padding-bottom: 9px;
+                padding-left: 11px;
+                padding-right: 11px;
+                spacing: 8px;
+                alignment: start;
+                VerticalLayout {
+                    padding-top: 1px;
+                    alignment: start;
+                    Icon {
+                        source: @image-url("../../icons/phosphor/warning.svg");
+                        size: 14px;
+                        color: SettingsLayout.t.warn;
+                    }
+                }
+                Text {
+                    width: SettingsLayout.content-w - 22px - 14px - 8px;
+                    text: root.text;
+                    color: SettingsLayout.t.text;
+                    font-size: Theme.fs-meta;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}

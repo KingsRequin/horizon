@@ -1,0 +1,97 @@
+// Choix exclusif en boutons accolés (app/src/settings/ui/Segmented.svelte : style de barre, mode
+// d'interaction, hauteur…). Bouton choisi : contour et fond dans l'accent ; survol : contour
+// teinté ; infobulle d'un choix (`hint`). Clavier : Tab d'un bouton à l'autre, Espace ou Entrée
+// choisit. Contrôlé : il annonce `selected(valeur)`, seulement pour un autre choix.
+
+import { Theme } from "../theme.slint";
+import { Tip } from "../tooltip.slint";
+import { FocusRing } from "../panel/focus.slint";
+import { SettingsLayout } from "layout.slint";
+
+export struct SegmentChoice {
+    value: string,
+    label: string,
+    hint: string,
+}
+
+component Segment inherits Rectangle {
+    in property <SegmentChoice> choice;
+    in property <bool> on;
+    in property <bool> enabled: true;
+    out property <bool> keyboard;
+    callback picked();
+    property <color> line: SettingsLayout.t.surface-2;
+    height: 26px;
+    width: label.preferred-width + 22px;
+    border-radius: Theme.r-lg;
+    border-width: 1px;
+    border-color: root.on ? Theme.accent : (area.has-hover && root.enabled ? Theme.accent.mix(root.line, 0.45) : root.line);
+    background: root.on ? Theme.accent.mix(Theme.field-bg, 0.14) : Theme.field-bg;
+    opacity: root.enabled ? 1 : Theme.o-off;
+
+    FocusScope {
+        enabled: root.enabled;
+        focus-on-click: false;
+        focus-gained(r) => {
+            root.keyboard = r == FocusReason.tab-navigation;
+        }
+        focus-lost => {
+            root.keyboard = false;
+        }
+        key-pressed(e) => {
+            if e.text == " " || e.text == Key.Return {
+                root.picked();
+                return accept;
+            }
+            reject
+        }
+    }
+    area := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+        changed has-hover => {
+            if self.has-hover && root.choice.hint != "" {
+                Tip.show(root.choice.hint);
+            } else if !self.has-hover {
+                Tip.hide();
+            }
+        }
+        clicked => {
+            Tip.hide();
+            root.picked();
+        }
+    }
+    label := Text {
+        text: root.choice.label;
+        color: SettingsLayout.t.text;
+        font-size: Theme.fs-meta;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    if root.keyboard: FocusRing {
+        width: root.width + 6px;
+        height: root.height + 6px;
+        radius: Theme.r-lg;
+    }
+}
+
+export component Segmented inherits Rectangle {
+    in property <string> value;
+    in property <[SegmentChoice]> choices;
+    in property <bool> enabled: true;
+    callback selected(string);
+    HorizontalLayout {
+        spacing: 4px;
+        alignment: end;
+        for c in root.choices: Segment {
+            choice: c;
+            on: c.value == root.value;
+            enabled: root.enabled;
+            picked => {
+                if c.value != root.value {
+                    root.selected(c.value);
+                }
+            }
+        }
+    }
+}

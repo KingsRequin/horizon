@@ -1,0 +1,36 @@
+//! Accès aux API Windows pour Horizon.
+
+pub mod app_windows;
+pub mod appbar;
+pub mod appcommand;
+pub mod art;
+pub mod audio;
+pub mod autostart;
+pub mod bluetooth_battery;
+pub mod capture;
+pub mod com;
+pub mod exeicon;
+pub mod foreground;
+pub mod headset;
+pub mod hotkey;
+pub mod fullscreen;
+pub mod git;
+pub mod launch;
+pub mod media;
+pub mod mic;
+pub mod mixer;
+pub mod monitors;
+pub mod notifications;
+pub mod osd_native;
+pub mod power;
+pub mod presence;
+pub mod restart;
+pub mod shell;
+pub mod startmenu;
+pub mod system;
+pub mod vivaldi;
+pub mod volume;
+pub mod wallpaper;
+pub mod win_accent;
+pub mod window_focus;
+mod win32;

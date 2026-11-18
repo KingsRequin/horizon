@@ -1,0 +1,257 @@
+// Îlot dynamique (lib/live.svelte.ts, partie affichage des widgets media et notifications) :
+// alerte qui remplace un instant le contenu d'un widget (notification qui arrive, « Claude
+// attend », batterie faible, serveur, minuteur, retour d'une action, capture proposée), ou appel
+// du téléphone tant qu'il dure. Une seule alerte à la fois, la même dans toutes les barres ;
+// durée, fondu de sortie et clic : src/ui/island.rs.
+//
+// Deux présentations : `FlashCard` (dans l'îlot de Lecture en cours, style îlots) et `FlashLine`
+// (widget Notifications : style graphique, ou îlots sans Lecture en cours sur la barre).
+// Le rendu logiciel ne fait ni `scale` ni découpe arrondie : l'entrée (`scale(0.96)` + opacité)
+// n'anime que l'opacité, la miniature d'une capture arrive déjà arrondie.
+
+import { Theme, StyleTokens } from "theme.slint";
+import { Icon } from "components.slint";
+import { Tip } from "tooltip.slint";
+
+// Alerte montrée (un exemplaire par fenêtre, posé par src/ui/island.rs).
+export global FlashData {
+    // Une alerte (ou un appel) est montrée.
+    in property <bool> active;
+    // Change à chaque nouvelle alerte : l'entrée est rejouée (pas à chaque seconde d'un appel).
+    in property <int> seq;
+    // Fondu de sortie, avant le retour du contenu habituel.
+    in property <bool> out;
+    // Gravité (teinte `--sev`) : 0 information (accent), 1 attention, 2 alerte.
+    in property <int> severity;
+    // Ce qui est à gauche : 0 icône d'Horizon, 1 logo d'appli, 2 appli sans logo (cloche),
+    // 3 miniature d'une capture.
+    in property <int> mark;
+    // Icône (0) ou logo (1), et couleur lisible du logo (sinon couleur du texte).
+    in property <image> icon;
+    in property <bool> logo-tinted;
+    in property <color> logo-color;
+    // Miniatures d'une capture : îlot (40 × 24) et ligne (32 × 20).
+    in property <image> thumb;
+    in property <image> thumb-line;
+    in property <string> title;
+    in property <string> body;
+    // « Claude attend » : fond du logo dans la couleur de Claude.
+    in property <bool> claude;
+    // Infobulle de l'action d'un clic (terminal, mode édition, coller le chemin) ; vide : aucune.
+    in property <string> action-tip;
+    // Appel qui sonne : l'icône pulse quelques fois.
+    in property <bool> ringing;
+    // Cette barre a un widget Lecture en cours en style îlots : c'est lui qui montre l'alerte.
+    in property <bool> media-host;
+    // Clic sur une alerte qui a une action.
+    callback run();
+}
+
+// Teinte d'une gravité (`[data-severity]` d'app.css).
+export component FlashTint {
+    in property <StyleTokens> t;
+    out property <color> sev: FlashData.severity == 2 ? t.bad : FlashData.severity == 1 ? t.warn : Theme.accent;
+}
+
+// Entrée rejouée à chaque alerte et fondu de sortie : opacité de l'alerte.
+component FlashFade inherits Rectangle {
+    property <int> seq: FlashData.seq;
+    property <bool> entering;
+    init => {
+        root.entering = true;
+        settle.running = true;
+    }
+    changed seq => {
+        root.entering = true;
+        settle.running = true;
+    }
+    settle := Timer {
+        interval: 16ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.entering = false;
+        }
+    }
+    states [
+        leaving when FlashData.out: {
+            opacity: 0;
+            in {
+                animate opacity { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+            }
+        }
+        entering when root.entering: {
+            opacity: 0;
+            out {
+                animate opacity { duration: Theme.dur-base; easing: cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+            }
+        }
+    ]
+}
+
+// Action d'un clic : main, infobulle, clic (au-dessus de l'alerte, qui ne s'épingle pas).
+component FlashAction inherits TouchArea {
+    mouse-cursor: MouseCursor.pointer;
+    changed has-hover => {
+        if self.has-hover {
+            Tip.show(FlashData.action-tip);
+        } else {
+            Tip.hide();
+        }
+    }
+    clicked => {
+        Tip.hide();
+        FlashData.run();
+    }
+}
+
+// Pulsation de la sonnerie : six fois (`--dur-pulse`), puis fixe.
+component RingPulse {
+    out property <bool> big;
+    property <int> left;
+    property <bool> ringing: FlashData.ringing;
+    init => {
+        if root.ringing {
+            root.left = 12;
+        }
+    }
+    changed ringing => {
+        root.left = root.ringing ? 12 : 0;
+        root.big = false;
+    }
+    Timer {
+        interval: Theme.dur-pulse / 2;
+        running: root.left > 0;
+        triggered => {
+            root.left -= 1;
+            root.big = !root.big && root.left > 0;
+        }
+    }
+}
+
+// Alerte dans l'îlot de Lecture en cours (`.flash` de widgets/media/Widget.svelte) : logo ou
+// icône dans une pastille de 24 px, titre et texte, 260 à 380 px de large.
+export component FlashCard inherits FlashFade {
+    in property <StyleTokens> t;
+    in property <bool> compact;
+    in property <bool> clickable;
+    tint := FlashTint { t: root.t; }
+    pulse := RingPulse { }
+    width: clamp(row.preferred-width, 260px, 380px);
+    height: row.preferred-height;
+
+    row := HorizontalLayout {
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            if FlashData.mark == 3: Image {
+                width: 40px;
+                height: 24px;
+                source: FlashData.thumb;
+                image-fit: fill;
+            }
+            if FlashData.mark != 3: Rectangle {
+                width: 24px;
+                height: 24px;
+                border-radius: root.t.inner-radius;
+                background: FlashData.mark == 0 ? tint.sev.with-alpha(0.20)
+                    : FlashData.claude ? Theme.claude.with-alpha(0.22) : root.t.surface-2;
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    size: pulse.big ? 16.8px : 15px;
+                    source: FlashData.mark == 2 ? @image-url("../icons/phosphor/bellSimple.svg") : FlashData.icon;
+                    color: FlashData.mark == 0 ? tint.sev : FlashData.mark == 1 && FlashData.logo-tinted ? FlashData.logo-color : root.t.text;
+                    animate size { duration: Theme.dur-pulse / 2; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: FlashData.title;
+                color: root.t.text;
+                font-size: root.t.fs-body;
+                font-weight: 600;
+                overflow: elide;
+            }
+            Text {
+                // `.sub` : 170 px au plus (120 sur une barre resserrée).
+                max-width: root.compact ? 120px : 170px;
+                text: FlashData.body;
+                color: root.t.text-dim;
+                font-size: Theme.fs-meta;
+                overflow: elide;
+            }
+        }
+    }
+
+    if root.clickable && FlashData.action-tip != "": FlashAction { }
+}
+
+// Teinte de l'îlot pendant une alerte (`.flash::before`, gravité à 12 %), à poser sous le
+// contenu, à la taille de l'îlot.
+export component FlashGlow inherits Rectangle {
+    in property <StyleTokens> t;
+    tint := FlashTint { t: root.t; }
+    border-radius: root.t.island-radius;
+    background: tint.sev.with-alpha(0.12);
+}
+
+// Alerte en ligne dans le widget Notifications (`.line.fresh`) : fond de la gravité à 22 %,
+// logo de 13 px, titre et texte.
+export component FlashLine inherits FlashFade {
+    in property <StyleTokens> t;
+    in property <bool> compact;
+    in property <bool> clickable;
+    tint := FlashTint { t: root.t; }
+    width: min(row.preferred-width, root.compact ? 240px : 380px);
+    height: row.preferred-height;
+    border-radius: root.t.inner-radius;
+    background: tint.sev.with-alpha(0.22);
+    clip: true;
+
+    row := HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        spacing: 7px;
+        VerticalLayout {
+            alignment: center;
+            if FlashData.mark == 3: Image {
+                width: 32px;
+                height: 20px;
+                source: FlashData.thumb-line;
+                image-fit: fill;
+            }
+            if FlashData.mark != 3: Icon {
+                size: 13px;
+                source: FlashData.mark == 2 ? @image-url("../icons/phosphor/bellSimple.svg") : FlashData.icon;
+                color: FlashData.mark == 0 ? tint.sev : FlashData.mark == 1 && FlashData.logo-tinted ? FlashData.logo-color : root.t.text;
+            }
+        }
+        Text {
+            text: FlashData.title;
+            color: root.t.text;
+            font-family: root.t.font;
+            font-size: Theme.fs-meta;
+            font-weight: 600;
+            max-width: 140px;
+            overflow: elide;
+            vertical-alignment: center;
+        }
+        Text {
+            text: FlashData.body;
+            color: root.t.text-dim;
+            font-family: root.t.font;
+            font-size: Theme.fs-meta;
+            overflow: elide;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+    }
+
+    if root.clickable && FlashData.action-tip != "": FlashAction { }
+}

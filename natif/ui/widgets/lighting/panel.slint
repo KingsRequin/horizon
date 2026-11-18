@@ -1,0 +1,184 @@
+// Panneau Éclairage (app/src/widgets/lighting/Panel.svelte) : scène (automatique ou forcée),
+// extinction, luminosité (Prisme n'est prévenu qu'au relâchement du curseur), et accès à
+// l'interface complète de Prisme. Relié par src/widgets/lighting/panel.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { PanelBase } from "../../panel/base.slint";
+import { PanelHead } from "../../panel/head.slint";
+import { PanelButton } from "../../panel/button.slint";
+import { Slider } from "../../panel/slider.slint";
+
+// Un bouton de scène : « Automatique » (avec la scène qu'il applique en dessous) ou une scène
+// à forcer.
+export struct LightingPanelScene {
+    // Clé de la scène ; vide : « Automatique ».
+    key: string,
+    name: string,
+    // Précision sous le nom (scène appliquée par l'automatique).
+    sub: string,
+    on: bool,
+}
+
+// Une rangée de la grille de deux colonnes.
+export struct LightingPanelPair {
+    left: LightingPanelScene,
+    right: LightingPanelScene,
+    has-right: bool,
+}
+
+export global LightingPanelData {
+    // Scène forcée « off ».
+    in-out property <bool> off;
+    in-out property <[LightingPanelPair]> scenes;
+    // Luminosité de 0 à 1.
+    in-out property <float> brightness: 1;
+    // Clé de la scène à forcer ; vide : retour aux règles automatiques.
+    callback set-scene(string);
+    callback toggle();
+    callback set-brightness(float);
+    callback open-prisme();
+}
+
+// Bouton du panneau (filet, fond `surface-1`, survol `hover`).
+component LightButton inherits PanelButton {
+    in property <bool> on;
+    radius: Theme.r-lg;
+    rest: root.on ? Theme.accent.with-alpha(0.14) : root.t.surface-1;
+    hover: root.on ? Theme.accent.with-alpha(0.14) : root.t.hover;
+    border-width: 1px;
+    border-color: root.t.line;
+}
+
+component SceneButton inherits LightButton {
+    in property <LightingPanelScene> scene;
+    on: root.scene.on;
+    padding-x: 10px;
+    alignment: start;
+    border-color: root.scene.on ? Theme.accent.with-alpha(0.7) : root.t.line;
+    clicked => {
+        LightingPanelData.set-scene(root.scene.key);
+    }
+    VerticalLayout {
+        padding-top: 8px;
+        padding-bottom: 8px;
+        spacing: 1px;
+        alignment: center;
+        Text {
+            text: root.scene.name;
+            color: root.t.text;
+            font-size: root.t.fs-body;
+            overflow: elide;
+        }
+        if root.scene.sub != "": Text {
+            text: root.scene.sub;
+            color: root.t.text-dim;
+            font-size: Theme.fs-meta;
+            overflow: elide;
+        }
+    }
+}
+
+export component LightingPanel inherits PanelBase {
+    width: 266px;
+    spacing: 14px;
+    // Valeur du curseur pendant qu'on le déplace (négative : aucun geste).
+    property <float> dragging: -1;
+    property <int> pct: round((root.dragging >= 0 ? root.dragging : LightingPanelData.brightness) * 100);
+
+    PanelHead {
+        t: root.t;
+        title: "Éclairage";
+        center: true;
+        VerticalLayout {
+            alignment: center;
+            LightButton {
+                t: root.t;
+                height: 6px * 2 + 1.21 * root.t.fs-body;
+                padding-x: 10px;
+                icon: @image-url("../../../icons/phosphor/power.svg");
+                icon-size: 13px;
+                text: LightingPanelData.off ? "Rallumer" : "Éteindre";
+                fg: LightingPanelData.off ? Theme.accent : root.t.text;
+                border-color: LightingPanelData.off ? Theme.accent.with-alpha(0.5) : root.t.line;
+                clicked => {
+                    LightingPanelData.toggle();
+                }
+            }
+        }
+    }
+
+    VerticalLayout {
+        spacing: 6px;
+        for p in LightingPanelData.scenes: HorizontalLayout {
+            spacing: 6px;
+            SceneButton {
+                horizontal-stretch: 1;
+                t: root.t;
+                scene: p.left;
+            }
+            if p.has-right: SceneButton {
+                horizontal-stretch: 1;
+                t: root.t;
+                scene: p.right;
+            }
+            if !p.has-right: Rectangle {
+                horizontal-stretch: 1;
+            }
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                source: @image-url("../../../icons/phosphor/sun.svg");
+                size: 14px;
+                color: root.t.text-dim;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Slider {
+                t: root.t;
+                value: root.dragging >= 0 ? root.dragging : LightingPanelData.brightness;
+                minimum: 0.05;
+                maximum: 1;
+                step: 0.01;
+                enabled: !LightingPanelData.off;
+                moved(v) => {
+                    root.dragging = v;
+                }
+                released(v) => {
+                    root.dragging = -1;
+                    LightingPanelData.set-brightness(v);
+                }
+            }
+        }
+        Text {
+            width: 38px;
+            text: root.pct + " %";
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            color: root.t.text;
+            font-family: Theme.font-mono;
+            font-weight: 500;
+            font-size: Theme.fs-meta;
+        }
+    }
+
+    LightButton {
+        t: root.t;
+        height: 6px * 2 + 1.21 * root.t.fs-body;
+        padding-x: 10px;
+        icon: @image-url("../../../icons/phosphor/gearSix.svg");
+        icon-size: 14px;
+        text: "Ouvrir Prisme";
+        fg: root.t.text-dim;
+        clicked => {
+            LightingPanelData.open-prisme();
+        }
+    }
+}

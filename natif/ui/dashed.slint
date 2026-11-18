@@ -1,0 +1,119 @@
+// Contour en pointillés de 1 px (CSS `outline: 1px dashed`, que Slint n'a pas) : traits de 3 px
+// séparés de 3 px le long des côtés, coins arrondis en trait plein. Brique du mode édition
+// (zones de la barre, emplacement d'un widget vide) ; la taille vient de l'élément qui la pose.
+
+// Quart de cercle d'un coin, de (x1, y1) à (x2, y2), dans un carré de `r` px.
+component Corner inherits Path {
+    in property <float> r;
+    in property <float> x1;
+    in property <float> y1;
+    in property <float> x2;
+    in property <float> y2;
+    viewbox-x: 0;
+    viewbox-y: 0;
+    viewbox-width: self.r;
+    viewbox-height: self.r;
+    stroke-width: 1px;
+    MoveTo {
+        x: root.x1;
+        y: root.y1;
+    }
+    ArcTo {
+        x: root.x2;
+        y: root.y2;
+        radius-x: root.r - 0.5;
+        radius-y: root.r - 0.5;
+        sweep: true;
+    }
+}
+
+export component DashedBox inherits Rectangle {
+    in property <color> ink;
+    in property <length> radius;
+    in property <length> dash: 3px;
+    in property <length> gap: 3px;
+    property <length> r: min(root.radius, min(root.width, root.height) / 2);
+    property <float> rf: self.r / 1px;
+    // Nombre de traits par côté, centrés entre les coins.
+    property <int> nh: max(0, floor((root.width - 2 * self.r + root.gap) / (root.dash + root.gap)));
+    property <int> nv: max(0, floor((root.height - 2 * self.r + root.gap) / (root.dash + root.gap)));
+    property <length> oh: self.r + (root.width - 2 * self.r - (self.nh * (root.dash + root.gap) - root.gap)) / 2;
+    property <length> ov: self.r + (root.height - 2 * self.r - (self.nv * (root.dash + root.gap) - root.gap)) / 2;
+
+    for i in root.nh: Rectangle {
+        x: root.oh + i * (root.dash + root.gap);
+        y: 0;
+        width: root.dash;
+        height: 1px;
+        background: root.ink;
+    }
+    for i in root.nh: Rectangle {
+        x: root.oh + i * (root.dash + root.gap);
+        y: root.height - 1px;
+        width: root.dash;
+        height: 1px;
+        background: root.ink;
+    }
+    for i in root.nv: Rectangle {
+        x: 0;
+        y: root.ov + i * (root.dash + root.gap);
+        width: 1px;
+        height: root.dash;
+        background: root.ink;
+    }
+    for i in root.nv: Rectangle {
+        x: root.width - 1px;
+        y: root.ov + i * (root.dash + root.gap);
+        width: 1px;
+        height: root.dash;
+        background: root.ink;
+    }
+    if root.rf >= 1: Corner {
+        x: 0;
+        y: 0;
+        width: root.r;
+        height: root.r;
+        stroke: root.ink;
+        r: root.rf;
+        x1: 0.5;
+        y1: root.rf;
+        x2: root.rf;
+        y2: 0.5;
+    }
+    if root.rf >= 1: Corner {
+        x: root.width - root.r;
+        y: 0;
+        width: root.r;
+        height: root.r;
+        stroke: root.ink;
+        r: root.rf;
+        x1: 0;
+        y1: 0.5;
+        x2: root.rf - 0.5;
+        y2: root.rf;
+    }
+    if root.rf >= 1: Corner {
+        x: root.width - root.r;
+        y: root.height - root.r;
+        width: root.r;
+        height: root.r;
+        stroke: root.ink;
+        r: root.rf;
+        x1: root.rf - 0.5;
+        y1: 0;
+        x2: 0;
+        y2: root.rf - 0.5;
+    }
+    if root.rf >= 1: Corner {
+        x: 0;
+        y: root.height - root.r;
+        width: root.r;
+        height: root.r;
+        stroke: root.ink;
+        r: root.rf;
+        x1: root.rf;
+        y1: root.rf - 0.5;
+        x2: 0.5;
+        y2: 0;
+    }
+}

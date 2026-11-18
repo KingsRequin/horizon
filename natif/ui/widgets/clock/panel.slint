@@ -1,0 +1,276 @@
+// Panneau du minuteur (app/src/widgets/clock/Panel.svelte), clic sur l'horloge : préréglages,
+// durée libre et pomodoro, ou minuteur en cours (pause, +5 min, arrêt) ; option « Ne pas
+// déranger pendant la séance ». L'état est au cœur (src/timer.rs), partagé par toutes les
+// barres ; les préréglages et le pomodoro se règlent dans Réglages d'Horizon › Minuteur
+// (« Régler », phase F). Relié par src/widgets/clock/panel.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { Track } from "../../gauge.slint";
+import { PanelBase } from "../../panel/base.slint";
+import { PanelHead } from "../../panel/head.slint";
+import { PanelButton, LinkButton } from "../../panel/button.slint";
+import { TextField } from "../../panel/field.slint";
+import { CheckRow } from "../../panel/check-row.slint";
+import { Divider } from "../../panel/divider.slint";
+
+export global ClockPanelData {
+    // Un minuteur existe (en marche ou en pause).
+    in-out property <bool> running;
+    // « Minuteur », « Pomodoro · séance 2 · en pause »…
+    in-out property <string> title;
+    // Compte à rebours (« 24:59 »), part écoulée.
+    in-out property <string> countdown;
+    in-out property <float> progress;
+    // Pomodoro en pause (vert), minuteur en pause (estompé).
+    in-out property <bool> rest;
+    in-out property <bool> paused;
+    // Durées proposées (minutes) et pomodoro (travail, pause).
+    in-out property <[int]> presets: [5, 15, 25, 50];
+    in-out property <int> focus-min: 25;
+    in-out property <int> rest-min: 5;
+    // Option « Ne pas déranger pendant la séance ».
+    in-out property <bool> dnd;
+    callback start(int);
+    callback pomodoro();
+    // Pause (`true`) ou reprise.
+    callback pause(bool);
+    callback extend();
+    callback stop();
+    callback set-dnd(bool);
+    // « Régler » : Réglages d'Horizon › Minuteur (phase F).
+    callback settings();
+    // Durée libre saisie, en minutes ; 0 : illisible.
+    pure callback parse(string) -> int;
+}
+
+// Bouton du panneau (`button` du Panel.svelte) : 32 px, contour, fond `surface-1`.
+component Btn inherits PanelButton {
+    in property <bool> primary;
+    padding-x: 10px;
+    radius: Theme.r-lg;
+    border-width: 1px;
+    border-color: root.primary ? Theme.accent.with-alpha(0.45) : root.t.line;
+    rest: root.primary ? Theme.accent-soft : root.t.surface-1;
+    hover: root.pressed ? root.t.press : root.t.hover;
+    opacity: root.enabled ? 1 : Theme.o-off;
+}
+
+// Colonne d'une rangée à parts égales (`grid-auto-columns: 1fr`).
+component Cell inherits Btn {
+    height: 32px;
+    horizontal-stretch: 1;
+    min-width: 0;
+    preferred-width: 0;
+}
+
+export component ClockPanel inherits PanelBase {
+    width: 266px;
+    spacing: 10px;
+    // Durée libre saisie et sa valeur en minutes (0 : illisible).
+    property <string> free-text;
+    property <int> free: ClockPanelData.parse(root.free-text);
+
+    if ClockPanelData.running: PanelHead {
+        t: root.t;
+        title: ClockPanelData.title;
+    }
+    if ClockPanelData.running: Text {
+        text: ClockPanelData.countdown;
+        color: ClockPanelData.rest ? root.t.ok : root.t.text;
+        opacity: ClockPanelData.paused ? Theme.o-stale : 1;
+        font-family: Theme.font-mono;
+        font-weight: 600;
+        font-size: Theme.fs-hero;
+        height: Theme.fs-hero * 1.0;
+        vertical-alignment: center;
+    }
+    if ClockPanelData.running: Track {
+        t: root.t;
+        value: ClockPanelData.progress;
+        tint: ClockPanelData.rest ? root.t.ok : Theme.accent;
+    }
+    if ClockPanelData.running: HorizontalLayout {
+        spacing: 6px;
+        if ClockPanelData.paused: Cell {
+            t: root.t;
+            primary: true;
+            icon: @image-url("../../../icons/phosphor/play.svg");
+            icon-size: 13px;
+            text: "Reprendre";
+            clicked => {
+                ClockPanelData.pause(false);
+            }
+        }
+        if !ClockPanelData.paused: Cell {
+            t: root.t;
+            icon: @image-url("../../../icons/phosphor/pause.svg");
+            icon-size: 13px;
+            text: "Pause";
+            clicked => {
+                ClockPanelData.pause(true);
+            }
+        }
+        Cell {
+            t: root.t;
+            icon: @image-url("../../../icons/phosphor/plus.svg");
+            icon-size: 12px;
+            text: "5 min";
+            tip: "Prolonger la phase en cours";
+            clicked => {
+                ClockPanelData.extend();
+            }
+        }
+        Cell {
+            t: root.t;
+            icon: @image-url("../../../icons/phosphor/stop.svg");
+            icon-size: 12px;
+            text: "Arrêter";
+            clicked => {
+                ClockPanelData.stop();
+            }
+        }
+    }
+
+    if !ClockPanelData.running: PanelHead {
+        t: root.t;
+        title: "Minuteur";
+        LinkButton {
+            t: root.t;
+            padding-x: 0;
+            fg: Theme.accent;
+            hover-fg: Theme.accent;
+            text: "Régler";
+            clicked => {
+                ClockPanelData.settings();
+            }
+        }
+    }
+    if !ClockPanelData.running: HorizontalLayout {
+        spacing: 6px;
+        for m in ClockPanelData.presets: Cell {
+            t: root.t;
+            gap: 3px;
+            clicked => {
+                ClockPanelData.start(m);
+            }
+            Text {
+                text: m;
+                color: root.t.text;
+                font-family: Theme.font-mono;
+                font-weight: 600;
+                font-size: Theme.fs-title;
+                vertical-alignment: center;
+            }
+            Text {
+                text: "min";
+                color: root.t.text-dim;
+                font-size: root.t.fs-body;
+                vertical-alignment: center;
+            }
+        }
+    }
+    // Durée libre : « 12 », « 1 h 30 »… puis Entrée (saisie gardée tant que le panneau existe).
+    if !ClockPanelData.running: HorizontalLayout {
+        spacing: 6px;
+        TextField {
+            t: root.t;
+            horizontal-stretch: 1;
+            text <=> root.free-text;
+            placeholder: "Durée libre : 12, 1 h 30…";
+            invalid: self.text != "" && root.free == 0;
+            accepted => {
+                root.submit();
+            }
+        }
+        Text {
+            text: "min";
+            color: root.t.text-dim;
+            font-size: Theme.fs-meta;
+            vertical-alignment: center;
+        }
+        Btn {
+            t: root.t;
+            width: 32px;
+            height: 30px;
+            padding-x: 0;
+            enabled: root.free > 0;
+            text: "⏎";
+            tip: "Démarrer (Entrée)";
+            clicked => {
+                root.submit();
+            }
+        }
+    }
+    if !ClockPanelData.running: Btn {
+        t: root.t;
+        alignment: start;
+        clicked => {
+            ClockPanelData.pomodoro();
+        }
+        VerticalLayout {
+            padding-top: 8px;
+            padding-bottom: 8px;
+            alignment: center;
+            Icon {
+                source: @image-url("../../../icons/phosphor/timer.svg");
+                size: 15px;
+                color: Theme.accent;
+            }
+        }
+        VerticalLayout {
+            padding-top: 8px;
+            padding-bottom: 8px;
+            spacing: 1px;
+            horizontal-stretch: 1;
+            Text {
+                text: "Pomodoro";
+                color: root.t.text;
+                font-size: root.t.fs-body;
+            }
+            Text {
+                // Largeur posée : la hauteur d'un texte qui passe à la ligne se calcule sur elle
+                // (sinon la mesure du panneau compte une seule ligne et le haut est rogné).
+                width: root.width - 2 * 10px - 15px - 6px;
+                text: ClockPanelData.focus-min + " min de travail, " + ClockPanelData.rest-min + " min de pause, en boucle";
+                color: root.t.text-dim;
+                font-size: Theme.fs-meta;
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    // `margin-top: auto; padding-top: 10px; border-top`.
+    Divider {
+        t: root.t;
+    }
+    CheckRow {
+        t: root.t;
+        height: 16px;
+        checked: ClockPanelData.dnd;
+        toggled(on) => {
+            ClockPanelData.set-dnd(on);
+        }
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                source: @image-url("../../../icons/phosphor/moon.svg");
+                size: 13px;
+                color: root.t.text-dim;
+            }
+        }
+        Text {
+            text: "Ne pas déranger pendant la séance";
+            color: root.t.text-dim;
+            font-size: Theme.fs-meta;
+            vertical-alignment: center;
+        }
+    }
+
+    function submit() {
+        if root.free > 0 {
+            ClockPanelData.start(root.free);
+            root.free-text = "";
+        }
+    }
+}

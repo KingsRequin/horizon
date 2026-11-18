@@ -1,0 +1,45 @@
+// Partie d'un panneau qui défile au-delà d'une hauteur (`max-height` + `overflow-y: auto` des
+// panneaux Audio, Notifications, Sessions…) : colonne posée en enfants, molette, barre de
+// défilement fine à droite (seulement quand le contenu dépasse) dans une gouttière réservée
+// (`scrollbar-gutter: stable` : le contenu ne bouge pas quand la barre apparaît).
+
+import { Theme, StyleTokens } from "../theme.slint";
+
+export component PanelScroll inherits Rectangle {
+    in property <StyleTokens> t;
+    // Hauteur au-delà de laquelle le contenu défile.
+    in property <length> limit: 440px;
+    in property <length> spacing: 10px;
+    // Place réservée à droite (barre et marge).
+    in property <length> gutter: 12px;
+    property <length> content-h: col.preferred-height;
+    property <bool> overflows: root.content-h > root.limit;
+    min-height: min(root.content-h, root.limit);
+    preferred-height: self.min-height;
+    max-height: self.min-height;
+    min-width: col.min-width + root.gutter;
+    preferred-width: col.preferred-width + root.gutter;
+
+    fl := Flickable {
+        content-width: self.width;
+        content-height: root.content-h;
+        col := VerticalLayout {
+            // En haut à gauche de la vue (un élément de taille fixe hors mise en page serait
+            // centré : le haut et le bas du contenu étaient coupés) et à sa hauteur naturelle.
+            x: 0;
+            y: 0;
+            width: fl.width - root.gutter;
+            height: root.content-h;
+            spacing: root.spacing;
+            @children
+        }
+    }
+    if root.overflows: Rectangle {
+        x: root.width - 6px;
+        y: -fl.content-y / root.content-h * root.height;
+        width: 4px;
+        height: max(16px, root.height * root.height / root.content-h);
+        border-radius: 2px;
+        background: root.t.track;
+    }
+}

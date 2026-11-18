@@ -1,0 +1,297 @@
+// Palette de commandes (app/src/palette/PaletteApp.svelte, src/ui/palette.rs) : fenêtre sans
+// cadre transparente (620 × 470), créée au démarrage et seulement cachée ensuite. Boîte en haut :
+// champ de recherche, jusqu'à 8 résultats classés par le service (titre surligné, sous-titre,
+// actions de la ligne choisie), pied d'aide. ↑↓ choisir, Entrée exécuter, Tab action suivante
+// (Maj+Tab précédente), Échap fermer ; la souris choisit au survol et exécute au clic. Le reste
+// de la fenêtre est transparent : un clic à côté va à la fenêtre de dessous, et la palette se
+// ferme en perdant le premier plan.
+
+import { Theme, Styles } from "theme.slint";
+import { Icon } from "components.slint";
+
+// Morceau du titre (surligné ou non).
+export struct PaletteSeg {
+    text: string,
+    hit: bool,
+}
+
+export struct PaletteRow {
+    id: string,
+    segs: [PaletteSeg],
+    subtitle: string,
+    // Icône : image (vide en attendant) et teinte (0 : aucune, 1 : `tint`, 2 : couleur du texte).
+    icon: image,
+    tint-mode: int,
+    tint: color,
+    actions: [string],
+}
+
+component Kbd inherits Rectangle {
+    in property <string> text;
+    height: 15px;
+    width: max(14px, label.preferred-width + 8px);
+    border-radius: Theme.r-sm;
+    background: Styles.islands.surface-2;
+    label := Text {
+        text: root.text;
+        color: Styles.islands.text;
+        font-size: Theme.fs-label;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+component Hint inherits HorizontalLayout {
+    in property <[string]> keys;
+    in property <string> text;
+    spacing: 3px;
+    for k in root.keys: VerticalLayout {
+        alignment: center;
+        Kbd {
+            text: k;
+        }
+    }
+    Text {
+        text: root.text;
+        color: Styles.islands.text-dim;
+        font-size: Theme.fs-label;
+        vertical-alignment: center;
+    }
+}
+
+export component PaletteWindow inherits Window {
+    property <length> radius: Styles.islands.island-radius + 6px;
+    in property <bool> open;
+    // Lecture d'un nouvel affichage : fondu et glissement d'entrée.
+    in property <bool> entering;
+    in-out property <string> query;
+    in property <[PaletteRow]> items;
+    in property <int> sel;
+    in property <int> act;
+    // Message sans résultat (« Aucun résultat pour « x » »).
+    in property <string> empty-text: "Aucun résultat";
+    callback search(string);
+    callback run(int, int);
+    callback select(int);
+    // Touche de navigation : « down », « up », « tab », « backtab », « enter », « escape ».
+    callback nav(string);
+
+    title: "Horizon — palette";
+    background: transparent;
+    default-font-family: Theme.font-ui;
+    default-font-size: Theme.fs-body;
+
+    // Donne le clavier au champ (à chaque ouverture).
+    public function focus-input() {
+        input.focus();
+        input.select-all();
+    }
+
+    box := Rectangle {
+        x: 14px;
+        y: 12px + (root.entering ? -8px : 0);
+        width: root.width - 28px;
+        height: col.preferred-height;
+        opacity: root.open && !root.entering ? 1 : 0;
+        animate y, opacity { duration: Theme.dur-base; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+        border-radius: root.radius;
+        background: Styles.islands.popup-bg;
+        border-width: 1px;
+        border-color: Styles.islands.popup-border;
+
+        // Clavier : ↑ ↓ Tab Entrée Échap avant le champ de saisie.
+        keys := FocusScope {
+            capture-key-pressed(e) => {
+                if e.text == Key.DownArrow { root.nav("down"); return accept; }
+                if e.text == Key.UpArrow { root.nav("up"); return accept; }
+                if e.text == Key.Tab { root.nav(e.modifiers.shift ? "backtab" : "tab"); return accept; }
+                if e.text == Key.Backtab { root.nav("backtab"); return accept; }
+                if e.text == Key.Return { root.nav("enter"); return accept; }
+                if e.text == Key.Escape { root.nav("escape"); return accept; }
+                reject
+            }
+            col := VerticalLayout {
+                // Champ de recherche.
+                Rectangle {
+                    height: 50px;
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 10px;
+                        VerticalLayout {
+                            alignment: center;
+                            Icon {
+                                source: @image-url("../icons/phosphor/magnifyingGlass.svg");
+                                size: 18px;
+                                color: Styles.islands.text-dim;
+                            }
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            if root.query == "": Text {
+                                width: parent.width;
+                                height: parent.height;
+                                text: "Appli, raccourci, action, profil, serveur…";
+                                color: Styles.islands.text-dim;
+                                font-size: Theme.fs-title;
+                                font-weight: 500;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            input := TextInput {
+                                width: parent.width;
+                                height: parent.height;
+                                text <=> root.query;
+                                color: Styles.islands.text;
+                                font-size: Theme.fs-title;
+                                font-weight: 500;
+                                vertical-alignment: center;
+                                single-line: true;
+                                selection-background-color: Theme.accent.with-alpha(0.35);
+                                edited => {
+                                    root.search(self.text);
+                                }
+                            }
+                        }
+                    }
+                    Rectangle {
+                        y: parent.height - 1px;
+                        height: 1px;
+                        background: Styles.islands.divider;
+                    }
+                }
+                // Résultats.
+                if root.items.length > 0: VerticalLayout {
+                    padding: 6px;
+                    for it[i] in root.items: Rectangle {
+                        height: 44px;
+                        border-radius: Styles.islands.island-radius - 2px;
+                        background: i == root.sel ? Theme.accent-soft : transparent;
+                        animate background { duration: Theme.dur-instant; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            moved => {
+                                root.select(i);
+                            }
+                            changed has-hover => {
+                                if self.has-hover {
+                                    root.select(i);
+                                }
+                            }
+                            clicked => {
+                                root.run(i, 0);
+                            }
+                        }
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 12px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 20px;
+                                    height: 20px;
+                                    Image {
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        width: it.tint-mode == 0 ? 20px : 18px;
+                                        height: self.width;
+                                        source: it.icon;
+                                        image-fit: contain;
+                                        colorize: it.tint-mode == 1 ? it.tint : it.tint-mode == 2 ? Styles.islands.text : transparent;
+                                    }
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 1px;
+                                horizontal-stretch: 1;
+                                Rectangle {
+                                    height: title.preferred-height;
+                                    clip: true;
+                                    title := HorizontalLayout {
+                                        alignment: start;
+                                        for s in it.segs: Text {
+                                            text: s.text;
+                                            color: s.hit ? Theme.accent : Styles.islands.text;
+                                            font-weight: s.hit ? 600 : 500;
+                                        }
+                                    }
+                                }
+                                Text {
+                                    text: it.subtitle;
+                                    color: Styles.islands.text-dim;
+                                    font-size: Theme.fs-meta;
+                                    overflow: elide;
+                                }
+                            }
+                            if i == root.sel: HorizontalLayout {
+                                spacing: 4px;
+                                for a[k] in it.actions: VerticalLayout {
+                                    alignment: center;
+                                    Rectangle {
+                                        height: 20px;
+                                        width: action.preferred-width + 16px;
+                                        border-radius: Theme.r-md;
+                                        border-width: 1px;
+                                        border-color: k == root.act ? Theme.accent.with-alpha(0.6) : Styles.islands.line;
+                                        action := Text {
+                                            text: a;
+                                            color: k == root.act ? Styles.islands.text : Styles.islands.text-dim;
+                                            font-size: Theme.fs-meta;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if root.items.length == 0: HorizontalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-top: 18px;
+                    padding-bottom: 18px;
+                    Text {
+                        text: root.empty-text;
+                        color: Styles.islands.text-dim;
+                        overflow: elide;
+                    }
+                }
+                // Aide.
+                Rectangle {
+                    height: 29px;
+                    Rectangle {
+                        y: 0;
+                        height: 1px;
+                        background: Styles.islands.divider;
+                    }
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 14px;
+                        alignment: start;
+                        Hint {
+                            keys: ["↑", "↓"];
+                            text: "choisir";
+                        }
+                        Hint {
+                            keys: ["Entrée"];
+                            text: "exécuter";
+                        }
+                        Hint {
+                            keys: ["Tab"];
+                            text: "autre action";
+                        }
+                        Hint {
+                            keys: ["Échap"];
+                            text: "fermer";
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

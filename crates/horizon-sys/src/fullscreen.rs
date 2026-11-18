@@ -1,0 +1,59 @@
+//! Fenêtres de premier niveau dans l'ordre Z (dessus d'abord), pour détecter le plein écran.
+
+use crate::win32::{class_name, frame_bounds, is_cloaked};
+use horizon_core::geometry::WinInfo;
+use windows::Win32::Foundation::{HWND, LPARAM, POINT};
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, GWL_EXSTYLE, GetCursorPos, GetWindowLongPtrW, IsIconic, IsWindowVisible,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+};
+use windows::core::BOOL;
+
+/// Classes du bureau et de la barre des tâches : jamais du plein écran.
+const SHELL_CLASSES: [&str; 4] = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"];
+
+struct Ctx<'a> {
+    own: &'a [isize],
+    out: Vec<WinInfo>,
+}
+
+unsafe extern "system" fn callback(h: HWND, data: LPARAM) -> BOOL {
+    // SAFETY : `data` pointe vers le Ctx de `windows_z_order`, vivant pendant l'énumération.
+    let ctx = unsafe { &mut *(data.0 as *mut Ctx) };
+    // SAFETY : simples lectures d'état sur un HWND fourni par EnumWindows.
+    let (visible, iconic, ex) = unsafe {
+        (
+            IsWindowVisible(h).as_bool(),
+            IsIconic(h).as_bool(),
+            GetWindowLongPtrW(h, GWL_EXSTYLE) as u32,
+        )
+    };
+    if !visible || iconic || is_cloaked(h) {
+        return true.into();
+    }
+    let Some(rect) = frame_bounds(h) else { return true.into() };
+    if rect.w <= 0 || rect.h <= 0 {
+        return true.into();
+    }
+    let overlay = ex & (WS_EX_TRANSPARENT.0 | WS_EX_NOACTIVATE.0 | WS_EX_TOOLWINDOW.0) != 0;
+    let ignorable = overlay
+        || ctx.own.contains(&(h.0 as isize))
+        || SHELL_CLASSES.contains(&class_name(h).as_str());
+    ctx.out.push(WinInfo { rect, ignorable });
+    true.into()
+}
+
+/// Fenêtres visibles, dessus d'abord ; `own` = fenêtres d'Horizon (ignorées).
+pub fn windows_z_order(own: &[isize]) -> Vec<WinInfo> {
+    let mut ctx = Ctx { own, out: Vec::new() };
+    // SAFETY : énumération synchrone, le pointeur sur `ctx` reste valide pendant l'appel.
+    let _ = unsafe { EnumWindows(Some(callback), LPARAM(&mut ctx as *mut _ as isize)) };
+    ctx.out
+}
+
+/// Position du curseur en pixels physiques.
+pub fn cursor() -> Option<(i32, i32)> {
+    let mut p = POINT::default();
+    // SAFETY : sortie POINT valide.
+    unsafe { GetCursorPos(&mut p) }.ok().map(|_| (p.x, p.y))
+}

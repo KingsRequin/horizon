@@ -1,0 +1,425 @@
+// Réglages Raccourcis (app/src/widgets/shortcuts/Settings.svelte) : liste des raccourcis
+// (glisser pour réordonner, choisir, retrait annulable, ajout), et détails du raccourci choisi :
+// nom, cible (« Parcourir… »), icône libre — logo Simple Icons cherché par nom avec sa couleur,
+// image choisie, ou icône de l'appli. Service : src/ui/widget_settings/shortcuts.rs.
+
+import { Theme } from "../theme.slint";
+import { Icon } from "../components.slint";
+import { DashedBox } from "../dashed.slint";
+import { SettingsLayout } from "../settings/layout.slint";
+import { SettingsButton, RemoveButton } from "../settings/button.slint";
+import { InputField } from "../settings/input.slint";
+import { Tip } from "../tooltip.slint";
+
+// Icône d'un raccourci (lib/ShortcutIcon.svelte) : image, teinte (0 aucune, 1 `tint`, 2 couleur
+// du texte), case vide en attendant l'extraction.
+export struct ShortcutThumb {
+    image: image,
+    tint-mode: int,
+    tint: color,
+    blank: bool,
+}
+
+export struct ShortcutRow {
+    label: string,
+    target: string,
+    thumb: ShortcutThumb,
+}
+
+export struct BrandChoice {
+    slug: string,
+    title: string,
+    thumb: ShortcutThumb,
+}
+
+export global ShortcutsSettingsData {
+    in property <[ShortcutRow]> rows;
+    in property <int> selected;
+    // Raccourci choisi.
+    in property <string> label;
+    in property <string> target;
+    // « simple », « file » ou « exe ».
+    in property <string> icon-kind;
+    in property <string> icon-path;
+    in property <color> color;
+    in property <bool> has-color;
+    in property <[BrandChoice]> brands;
+    in property <string> query;
+    in property <string> current-slug;
+    callback select(int);
+    callback move(int, int);
+    callback add();
+    callback remove(int);
+    callback set-label(string);
+    callback set-target(string);
+    callback browse-target();
+    callback browse-image();
+    callback icon(string);
+    callback search(string);
+    callback brand(string);
+    callback pick-color();
+    callback brand-color();
+}
+
+component Thumb inherits Image {
+    in property <ShortcutThumb> thumb;
+    width: 20px;
+    height: 20px;
+    source: root.thumb.image;
+    image-fit: contain;
+    colorize: root.thumb.tint-mode == 2 ? SettingsLayout.t.text : (root.thumb.tint-mode == 1 ? root.thumb.tint : transparent);
+}
+
+component Label inherits Text {
+    color: SettingsLayout.t.text-dim;
+    font-size: Theme.fs-meta;
+}
+
+component IconChoice inherits SettingsButton {
+    filled: true;
+    height: 30px;
+    border-radius: Theme.r-lg;
+}
+
+export component ShortcutsSettings inherits VerticalLayout {
+    // Hauteur d'une ligne de la liste et écart (glisser-déposer).
+    property <length> row-h: 48px;
+    property <length> row-gap: 4px;
+    property <int> drag-from: -1;
+    property <int> drag-over: -1;
+    property <bool> dropped;
+    property <bool> has-current: ShortcutsSettingsData.selected >= 0 && ShortcutsSettingsData.selected < ShortcutsSettingsData.rows.length;
+    property <length> w: SettingsLayout.content-w;
+    // Grille des logos : colonnes d'au moins 38 px, écart 6 px.
+    property <int> brand-cols: max(1, floor((root.w - 32px + 6px) / 44px));
+    property <length> brand-w: (root.w - 32px - (root.brand-cols - 1) * 6px) / root.brand-cols;
+    property <int> brand-rows: ceil(ShortcutsSettingsData.brands.length / root.brand-cols);
+    alignment: start;
+    spacing: 10px;
+
+    // Liste.
+    Rectangle {
+        height: max(0px, ShortcutsSettingsData.rows.length * (root.row-h + root.row-gap) - root.row-gap);
+        for s[i] in ShortcutsSettingsData.rows: Rectangle {
+            y: i * (root.row-h + root.row-gap);
+            height: root.row-h;
+            border-radius: Theme.r-xl;
+            border-width: 1px;
+            background: SettingsLayout.t.surface-1;
+            border-color: root.drag-from >= 0 && root.drag-over == i && root.drag-from != i ? Theme.accent
+                : (i == ShortcutsSettingsData.selected ? Theme.accent.with-alpha(0.6) : transparent);
+            row := TouchArea {
+                width: parent.width - 34px;
+                mouse-cursor: pointer;
+                clicked => {
+                    // Un glisser-déposer qui se termine ne choisit pas la ligne de départ.
+                    if root.drag-from < 0 && !root.dropped {
+                        ShortcutsSettingsData.select(i);
+                    }
+                }
+                pointer-event(e) => {
+                    if e.kind == PointerEventKind.down {
+                        root.dropped = false;
+                    } else if e.kind == PointerEventKind.up {
+                        if root.drag-from >= 0 {
+                            root.dropped = true;
+                            if root.drag-over >= 0 && root.drag-over != root.drag-from {
+                                ShortcutsSettingsData.move(root.drag-from, root.drag-over);
+                            }
+                        }
+                        root.drag-from = -1;
+                        root.drag-over = -1;
+                    }
+                }
+                moved => {
+                    if self.pressed && (abs(self.mouse-y - self.pressed-y) > 4px || root.drag-from >= 0) {
+                        root.drag-from = i;
+                        root.drag-over = clamp(floor((i * (root.row-h + root.row-gap) + self.mouse-y) / (root.row-h + root.row-gap)), 0, ShortcutsSettingsData.rows.length - 1);
+                    }
+                }
+            }
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 6px;
+                spacing: 10px;
+                Text {
+                    text: "⋮⋮";
+                    color: SettingsLayout.t.text-dim;
+                    letter-spacing: -2px;
+                    vertical-alignment: center;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 30px;
+                        height: 30px;
+                        border-radius: Theme.r-lg;
+                        background: Theme.field-bg;
+                        if !s.thumb.blank: Thumb {
+                            thumb: s.thumb;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: s.label;
+                        color: SettingsLayout.t.text;
+                        font-weight: 500;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: s.target != "" ? s.target : "aucune cible : pas affiché";
+                        color: s.target != "" ? SettingsLayout.t.text-dim : SettingsLayout.t.warn;
+                        font-size: Theme.fs-meta;
+                        overflow: elide;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    RemoveButton {
+                        what: "le raccourci « " + s.label + " »";
+                        clicked => {
+                            ShortcutsSettingsData.remove(i);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // « Ajouter un raccourci » (contour pointillé, accent au survol).
+    HorizontalLayout {
+        alignment: start;
+        Rectangle {
+            width: add-row.preferred-width;
+            height: 31px;
+            DashedBox {
+                ink: add.has-hover ? Theme.accent : SettingsLayout.t.surface-2;
+                radius: Theme.r-lg;
+            }
+            add := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    ShortcutsSettingsData.add();
+                }
+            }
+            add-row := HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 6px;
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        source: @image-url("../../icons/phosphor/plus.svg");
+                        size: 13px;
+                        color: SettingsLayout.t.text;
+                    }
+                }
+                Text {
+                    text: "Ajouter un raccourci";
+                    color: SettingsLayout.t.text;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+
+    // Détails du raccourci choisi.
+    if root.has-current: Rectangle {
+        border-radius: Theme.r-2xl;
+        background: SettingsLayout.t.surface-1;
+        VerticalLayout {
+            padding: 16px;
+            padding-top: 16px;
+            spacing: 14px;
+            VerticalLayout {
+                spacing: 6px;
+                Label {
+                    text: "Nom";
+                }
+                InputField {
+                    height: 32px;
+                    padding-x: 10px;
+                    radius: Theme.r-lg;
+                    value: ShortcutsSettingsData.label;
+                    edited(t) => {
+                        ShortcutsSettingsData.set-label(t);
+                    }
+                }
+            }
+            VerticalLayout {
+                spacing: 6px;
+                Label {
+                    text: "Cible (fichier, raccourci, dossier ou adresse web)";
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    InputField {
+                        height: 32px;
+                        padding-x: 10px;
+                        radius: Theme.r-lg;
+                        horizontal-stretch: 1;
+                        value: ShortcutsSettingsData.target;
+                        placeholder: "https://… ou C:\\…";
+                        invalid: ShortcutsSettingsData.target == "";
+                        invalid-color: SettingsLayout.t.warn;
+                        edited(t) => {
+                            ShortcutsSettingsData.set-target(t);
+                        }
+                    }
+                    IconChoice {
+                        text: "Parcourir…";
+                        height: 32px;
+                        clicked => {
+                            ShortcutsSettingsData.browse-target();
+                        }
+                    }
+                }
+                if ShortcutsSettingsData.target == "": Text {
+                    width: root.w - 32px;
+                    text: "Cible obligatoire : sans elle, le raccourci n’apparaît pas dans la barre.";
+                    color: SettingsLayout.t.warn;
+                    font-size: Theme.fs-meta;
+                    wrap: word-wrap;
+                }
+            }
+            VerticalLayout {
+                spacing: 6px;
+                Label {
+                    text: "Icône";
+                }
+                HorizontalLayout {
+                    spacing: 4px;
+                    alignment: start;
+                    IconChoice {
+                        text: "Logo";
+                        on: ShortcutsSettingsData.icon-kind == "simple";
+                        clicked => {
+                            ShortcutsSettingsData.icon("simple");
+                        }
+                    }
+                    IconChoice {
+                        text: "Image…";
+                        on: ShortcutsSettingsData.icon-kind == "file";
+                        clicked => {
+                            ShortcutsSettingsData.browse-image();
+                        }
+                    }
+                    IconChoice {
+                        text: "Icône de l’appli";
+                        on: ShortcutsSettingsData.icon-kind == "exe";
+                        clicked => {
+                            ShortcutsSettingsData.icon("exe");
+                        }
+                    }
+                }
+            }
+            if ShortcutsSettingsData.icon-kind == "simple": VerticalLayout {
+                spacing: 14px;
+                InputField {
+                    height: 32px;
+                    padding-x: 10px;
+                    radius: Theme.r-lg;
+                    value: ShortcutsSettingsData.query;
+                    placeholder: "Chercher un logo (YouTube, Steam, Spotify…)";
+                    edited(t) => {
+                        ShortcutsSettingsData.search(t);
+                    }
+                }
+                if ShortcutsSettingsData.brands.length == 0: Text {
+                    width: root.w - 32px;
+                    text: ShortcutsSettingsData.query != "" ? "Aucun logo trouvé." : "Tape un nom de marque pour voir les logos.";
+                    color: SettingsLayout.t.text-dim;
+                    font-size: Theme.fs-meta;
+                    wrap: word-wrap;
+                }
+                if ShortcutsSettingsData.brands.length > 0: Flickable {
+                    height: min(132px, root.brand-rows * 44px - 6px);
+                    content-height: root.brand-rows * 44px - 6px;
+                    for b[i] in ShortcutsSettingsData.brands: Rectangle {
+                        x: Math.mod(i, root.brand-cols) * (root.brand-w + 6px);
+                        y: floor(i / root.brand-cols) * 44px;
+                        width: root.brand-w;
+                        height: 38px;
+                        border-radius: Theme.r-lg;
+                        border-width: 1px;
+                        border-color: b.slug == ShortcutsSettingsData.current-slug || area.has-hover ? Theme.accent : transparent;
+                        background: Theme.field-bg;
+                        area := TouchArea {
+                            mouse-cursor: pointer;
+                            changed has-hover => {
+                                if self.has-hover {
+                                    Tip.show(b.title);
+                                } else {
+                                    Tip.hide();
+                                }
+                            }
+                            clicked => {
+                                ShortcutsSettingsData.brand(b.slug);
+                            }
+                        }
+                        Thumb {
+                            thumb: b.thumb;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    spacing: 6px;
+                    Label {
+                        text: "Couleur";
+                    }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+                        Rectangle {
+                            width: 44px;
+                            height: 32px;
+                            border-radius: Theme.r-lg;
+                            border-width: 1px;
+                            border-color: swatch.has-hover ? Theme.accent : SettingsLayout.t.surface-2;
+                            background: Theme.field-bg;
+                            Rectangle {
+                                x: 4px;
+                                y: 4px;
+                                width: parent.width - 8px;
+                                height: parent.height - 8px;
+                                border-radius: 3px;
+                                background: ShortcutsSettingsData.color;
+                            }
+                            swatch := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    ShortcutsSettingsData.pick-color();
+                                }
+                            }
+                        }
+                        IconChoice {
+                            text: "Couleur de la marque";
+                            height: 32px;
+                            enabled: ShortcutsSettingsData.has-color;
+                            clicked => {
+                                ShortcutsSettingsData.brand-color();
+                            }
+                        }
+                    }
+                }
+            }
+            if ShortcutsSettingsData.icon-kind == "file": Text {
+                width: root.w - 32px;
+                text: ShortcutsSettingsData.icon-path;
+                color: SettingsLayout.t.text-dim;
+                font-size: Theme.fs-meta;
+                wrap: char-wrap;
+            }
+            if ShortcutsSettingsData.icon-kind == "exe": Text {
+                width: root.w - 32px;
+                text: "L’icône de la cible est utilisée, sans flèche de raccourci.";
+                color: SettingsLayout.t.text-dim;
+                font-size: Theme.fs-meta;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

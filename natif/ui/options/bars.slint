@@ -1,0 +1,145 @@
+// Section « Barres » (app/src/settings/options/BarsSection.svelte) : style, interaction, hauteur
+// et masquage en plein écran de chaque barre (layout.json, appliqués aussitôt et annulables par
+// Ctrl+Z en mode édition), puis réapparition au-dessus d'un plein écran.
+
+import { Theme } from "../theme.slint";
+import { SettingsLayout } from "../settings/layout.slint";
+import { SettingsHeading, SettingsSubheading, SettingsNote } from "../settings/text.slint";
+import { SettingRow } from "../settings/row.slint";
+import { SettingCheck } from "../settings/check.slint";
+import { Segmented } from "../settings/segmented.slint";
+import { NumberField } from "../settings/field.slint";
+import { OptionsData } from "data.slint";
+
+export component BarsSection inherits VerticalLayout {
+    SettingsHeading {
+        text: "Barres";
+        first: true;
+        below: 8px;
+    }
+    SettingsNote {
+        text: "Chaque écran a sa barre. Le style se change aussi par clic droit sur la barre.";
+        below: 14px;
+    }
+    for b[i] in OptionsData.bars: VerticalLayout {
+        padding-top: i == 0 ? 0 : 16px;
+        Rectangle {
+            opacity: b.connected ? 1 : Theme.o-stale;
+            VerticalLayout {
+                SettingsSubheading {
+                    text: b.name;
+                    small: b.connected ? "" : " · écran débranché";
+                }
+                SettingRow {
+                    label: "Style";
+                    Segmented {
+                        value: b.style;
+                        choices: OptionsData.styles;
+                        selected(v) => {
+                            OptionsData.bar(b.monitor-id, "style", v);
+                        }
+                    }
+                }
+                SettingRow {
+                    label: "Souris";
+                    hint: b.interaction-hint;
+                    Segmented {
+                        value: b.interaction;
+                        choices: OptionsData.modes;
+                        selected(v) => {
+                            OptionsData.bar(b.monitor-id, "interaction", v);
+                        }
+                    }
+                }
+                SettingRow {
+                    label: "Hauteur";
+                    hint: b.height-hint;
+                    VerticalLayout {
+                        spacing: 6px;
+                        alignment: center;
+                        Segmented {
+                            value: b.height-choice;
+                            choices: OptionsData.heights;
+                            selected(v) => {
+                                OptionsData.bar(b.monitor-id, "height", v);
+                            }
+                        }
+                        if b.height-choice == "custom": HorizontalLayout {
+                            alignment: end;
+                            spacing: 4px;
+                            NumberField {
+                                value: b.height;
+                                minimum: 40;
+                                maximum: 900;
+                                step: 10;
+                                committed(v) => {
+                                    OptionsData.bar(b.monitor-id, "height-typed", v);
+                                }
+                            }
+                            Text {
+                                text: "px";
+                                color: SettingsLayout.t.text-dim;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+                SettingCheck {
+                    checked: b.autohide;
+                    label: "Masquer au-dessus d’une appli en plein écran";
+                    hint: "La barre revient quand la souris s’arrête en haut de l’écran.";
+                    toggled(v) => {
+                        OptionsData.bar(b.monitor-id, "autohide", v ? "true" : "false");
+                    }
+                }
+            }
+        }
+    }
+    if OptionsData.bars-error != "": SettingsNote {
+        text: OptionsData.bars-error;
+        tint: SettingsLayout.t.bad;
+        font-size: Theme.fs-body;
+    }
+
+    SettingsHeading {
+        text: "Réapparition au-dessus d’un plein écran";
+        below: 8px;
+    }
+    SettingRow {
+        label: "Hauteur de la bande du haut";
+        hint: "Où la souris fait revenir une barre masquée.";
+        NumberField {
+            value: OptionsData.reveal-px;
+            minimum: 0;
+            maximum: 200;
+            enabled: !OptionsData.locked;
+            committed(v) => {
+                OptionsData.number("autohide.reveal_px", v);
+            }
+        }
+        Text {
+            text: "px";
+            color: SettingsLayout.t.text;
+            vertical-alignment: center;
+        }
+    }
+    SettingRow {
+        label: "Temps d’arrêt de la souris";
+        hint: "La traverser pour changer d’écran ne fait rien revenir.";
+        NumberField {
+            value: OptionsData.reveal-ms;
+            minimum: 0;
+            maximum: 5000;
+            step: 50;
+            enabled: !OptionsData.locked;
+            committed(v) => {
+                OptionsData.number("autohide.reveal_ms", v);
+            }
+        }
+        Text {
+            text: "ms";
+            color: SettingsLayout.t.text;
+            vertical-alignment: center;
+        }
+    }
+}

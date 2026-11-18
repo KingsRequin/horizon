@@ -1,0 +1,60 @@
+// Section « Général » (app/src/settings/options/GeneralSection.svelte) : démarrage avec
+// Windows, profils, fichier des réglages.
+
+import { Theme } from "../theme.slint";
+import { SettingsLayout } from "../settings/layout.slint";
+import { SettingsHeading, SettingsNote } from "../settings/text.slint";
+import { SettingCheck } from "../settings/check.slint";
+import { SettingsButton } from "../settings/button.slint";
+import { OptionsData } from "data.slint";
+
+export component GeneralSection inherits VerticalLayout {
+    SettingsHeading {
+        text: "Général";
+        first: true;
+    }
+    SettingCheck {
+        checked: OptionsData.autostart;
+        label: "Démarrer avec Windows";
+        hint: "Horizon se lance à l’ouverture de la session.";
+        toggled(v) => {
+            OptionsData.toggle("autostart", v);
+        }
+    }
+    if OptionsData.autostart-error != "": SettingsNote {
+        text: OptionsData.autostart-error;
+        tint: SettingsLayout.t.bad;
+        font-size: Theme.fs-body;
+    }
+
+    SettingsHeading {
+        text: "Profils";
+    }
+    SettingsNote {
+        text: "Chaque profil garde sa propre disposition des barres, et peut s’activer tout seul quand une appli est au premier plan.";
+        below: 10px;
+    }
+    HorizontalLayout {
+        alignment: start;
+        SettingsButton {
+            text: "Gérer les profils…";
+            clicked => {
+                OptionsData.open-profiles();
+            }
+        }
+    }
+
+    SettingsHeading {
+        text: "Fichier";
+    }
+    SettingsNote {
+        text: "Ces réglages sont enregistrés dans le fichier ci-dessous, modifiable à la main (chaque option y est commentée). Enregistrer depuis cette fenêtre réécrit le fichier ; un fichier illisible n’est jamais écrasé.";
+    }
+    SettingsNote {
+        text: OptionsData.path;
+        tint: SettingsLayout.t.text;
+        font-family: Theme.font-mono;
+        font-weight: 500;
+        above: 6px;
+    }
+}

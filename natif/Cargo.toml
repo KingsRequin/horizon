@@ -1,0 +1,79 @@
+[package]
+name = "horizon-natif"
+description = "Horizon natif : la barre d'Horizon en Rust + Slint (rendu logiciel, fenêtres layered)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[lib]
+name = "horizon_natif"
+
+[[bin]]
+name = "horizon"
+path = "src/main.rs"
+
+[features]
+# Intégrations aux applis personnelles de l'auteur (Prisme, SharkApp, relais Discord de
+# BetterDiscord) : absentes de l'édition publique, celle qu'on obtient par défaut.
+personal = []
+
+[dependencies]
+horizon-core.workspace = true
+horizon-sys.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+log.workspace = true
+crossbeam-channel.workspace = true
+simplelog = "0.12.2"
+png = "0.18"
+# Adresse du récepteur des hooks Claude Code (la même que la version Tauri).
+horizon-hook = { path = "../crates/horizon-hook" }
+# Services locaux (Prisme, relais Discord, Essaim), hooks Claude Code, API et sondes HTTP :
+# mêmes versions que la version Tauri.
+tungstenite = "0.30"
+tiny_http = "0.12"
+# Widgets en ligne (Météo, Agenda, Quota Claude, Serveurs) et heure locale : mêmes versions que
+# la version Tauri.
+ureq = "3"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# Icônes choisies par l'utilisateur et favicons (même version que celle de horizon-sys).
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "ico", "webp"] }
+# Toiles de la fenêtre Prisme (plan en direct, éditeur du plan) : déjà tirée par le rendu des
+# SVG de Slint (resvg), même version.
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
+# 1.18 : la 1.19 demande Rust 1.95. Rendu logiciel seulement, plateforme maison
+# (`src/platform`) : ni winit, ni skia, ni femtovg.
+slint = { version = "~1.18", default-features = false, features = ["std", "compat-1-2", "renderer-software"] }
+# Même version que celle tirée par `slint` (qui la fixe à `=`) : accès à `WindowAdapterInternal`
+# (curseur de la souris), au rendu des icônes SVG (`svg`) et des images embarquées par
+# `@image-url` (`image-decoders`), absents de l'API publique.
+i-slint-core = { version = "=1.18.1", default-features = false, features = ["svg", "image-decoders"] }
+
+[build-dependencies]
+slint-build = "~1.18"
+embed-resource = "3"
+serde_json.workspace = true
+
+[dependencies.windows]
+workspace = true
+features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dwm",
+    "Win32_System_DataExchange",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_UI_Controls",
+    "Win32_UI_Controls_Dialogs",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_Ime",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+]

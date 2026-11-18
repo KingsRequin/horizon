@@ -1,0 +1,98 @@
+// Case à cocher avec son libellé (`<label><input type="checkbox"> …</label>` avec
+// `accent-color`) : case de 13 px, pleine dans l'accent et cochée quand `checked` ; clic sur la
+// case ou le libellé, clavier (Espace, Entrée) avec l'anneau de focus. Contrôlée : elle annonce
+// `toggled(nouvelle valeur)`, c'est au panneau de changer `checked`. `CheckMark` : la case
+// seule (options des fenêtres de réglages, `ui/settings/check.slint`).
+
+import { Theme, StyleTokens } from "../theme.slint";
+import { FocusRing } from "focus.slint";
+
+// La case seule (13 px), pour une brique qui pose son libellé elle-même (`SettingCheck`).
+export component CheckMark inherits Rectangle {
+    in property <bool> checked;
+    in property <bool> hovered;
+    // Anneau du focus clavier.
+    in property <bool> keyboard;
+    width: 13px;
+    height: 13px;
+    border-radius: 3px;
+    // Rendu de Chromium : case blanche à filet gris, pleine dans l'accent une fois cochée,
+    // coche blanche.
+    border-width: root.checked ? 0 : 1px;
+    border-color: root.hovered ? #4f4f4f : #767676;
+    background: root.checked ? (root.hovered ? Theme.accent.darker(0.1) : Theme.accent) : #ffffff;
+    if root.checked: Path {
+        width: 13px;
+        height: 13px;
+        viewbox-width: 13;
+        viewbox-height: 13;
+        commands: "M 3 6.8 L 5.4 9.2 L 10 4.3";
+        stroke: #ffffff;
+        stroke-width: 1.8px;
+    }
+    if root.keyboard: FocusRing {
+        width: 13px + 6px;
+        height: 13px + 6px;
+        radius: 3px;
+    }
+}
+
+export component CheckBox inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <bool> checked;
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <length> font-size: Theme.fs-meta;
+    out property <bool> keyboard;
+    callback toggled(bool);
+    min-width: row.min-width;
+    preferred-width: row.preferred-width;
+    min-height: row.min-height;
+    preferred-height: row.preferred-height;
+    max-height: row.preferred-height;
+    opacity: root.enabled ? 1 : Theme.o-off;
+
+    FocusScope {
+        enabled: root.enabled;
+        focus-on-click: false;
+        focus-gained(r) => {
+            root.keyboard = r == FocusReason.tab-navigation;
+        }
+        focus-lost => {
+            root.keyboard = false;
+        }
+        key-pressed(e) => {
+            if e.text == " " || e.text == Key.Return {
+                root.toggled(!root.checked);
+                return accept;
+            }
+            reject
+        }
+    }
+    area := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+        clicked => {
+            root.toggled(!root.checked);
+        }
+    }
+    row := HorizontalLayout {
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            CheckMark {
+                checked: root.checked;
+                hovered: area.has-hover;
+                keyboard: root.keyboard;
+            }
+        }
+        Text {
+            text: root.text;
+            horizontal-stretch: 1;
+            color: root.t.text;
+            font-size: root.font-size;
+            vertical-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+}

@@ -1,0 +1,83 @@
+// Horloge (app/src/widgets/clock/Widget.svelte) : heures et minutes (deux-points dans l'accent),
+// date en option (`showDate`), minuteur en cours à côté. Clic = panneau du minuteur épinglé ;
+// sur une barre « Survol seul », son panneau s'ouvre au survol pendant un minuteur.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { WidgetFrame } from "../../widget-frame.slint";
+import { Eyebrow } from "../../gauge.slint";
+
+// Données de l'horloge d'une barre (src/widgets/clock.rs), mises à jour au début de chaque minute.
+export global ClockData {
+    in-out property <string> hours: "00";
+    in-out property <string> minutes: "00";
+    // « lundi 17 novembre ».
+    in-out property <string> date;
+    // `showDate` de chaque exemplaire (rang : `Slot.data`).
+    in-out property <[bool]> show-date;
+    // Minuteur en cours (minuteur du cœur, phase D) : compte à rebours, pause, pomodoro en pause.
+    in-out property <bool> timer;
+    in-out property <string> timer-text;
+    in-out property <bool> timer-rest;
+    in-out property <bool> timer-paused;
+}
+
+export component ClockWidget inherits WidgetFrame {
+    // Clic = panneau du minuteur épinglé ; barre « Survol seul » : au survol pendant un minuteur.
+    panel: !root.clickable && ClockData.timer ? "clock" : "";
+    pin: "clock";
+
+    HorizontalLayout {
+        alignment: center;
+        for part in [ClockData.hours, ":", ClockData.minutes]: Text {
+            text: part;
+            color: part == ":" ? Theme.accent : root.t.text;
+            font-family: root.t.graphic ? Theme.font-mono : Theme.font-display;
+            font-weight: 600;
+            font-size: root.t.fs-clock;
+            letter-spacing: root.t.graphic ? 0 : root.t.fs-clock * 0.01;
+            vertical-alignment: center;
+        }
+    }
+    if ClockData.show-date[root.slot.data]: Eyebrow {
+        t: root.t;
+        label: ClockData.date;
+    }
+    if ClockData.timer: HorizontalLayout {
+        // `margin-left: 8px` en plus de l'écart de l'îlot.
+        padding-left: 8px;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            chip := Rectangle {
+                property <color> tint: ClockData.timer-rest ? root.t.ok : Theme.accent;
+                border-radius: root.t.inner-radius;
+                background: ClockData.timer-rest ? root.t.ok.with-alpha(0.14) : Theme.accent-soft;
+                opacity: ClockData.timer-paused ? Theme.o-stale : 1;
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    padding-top: 1px;
+                    padding-bottom: 1px;
+                    spacing: 3px;
+                    VerticalLayout {
+                        alignment: center;
+                        Icon {
+                            source: @image-url("../../../icons/phosphor/timer.svg");
+                            size: 12px;
+                            color: chip.tint;
+                        }
+                    }
+                    Text {
+                        text: ClockData.timer-text;
+                        color: chip.tint;
+                        font-family: Theme.font-mono;
+                        font-weight: 600;
+                        font-size: Theme.fs-meta;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}

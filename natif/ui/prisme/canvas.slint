@@ -1,0 +1,121 @@
+// Toile de Prisme : le plan en direct (pages Lumière et Effets) ou l'éditeur du plan (page
+// Disposition). L'image est peinte par Rust (src/prisme_window/render.rs) à la taille annoncée
+// (`resized`) ; les textes sont posés par-dessus (`labels`). Une seule toile est montrée à la
+// fois (une page), d'où un seul global.
+
+import { PrismeTheme } from "theme.slint";
+
+export struct PrismeLabel {
+    x: length,
+    y: length,
+    text: string,
+    alpha: float,
+    // Nom de l'élément sélectionné : gras, sur fond.
+    pill: bool,
+}
+
+export global PrismeCanvas {
+    in property <image> image;
+    in property <[PrismeLabel]> labels;
+    // Plan en direct sans LED : message à la place.
+    in property <bool> empty;
+    // Curseur de l'éditeur : 0 flèche, 1 main (saisir), 2 main fermée, 3 croix, 4 déplacer.
+    in property <int> cursor;
+    callback resized(length, length);
+    // Éditeur : souris (0 appui, 1 déplacement, 2 relâchement ; Alt coupe l'aimantation) et
+    // clavier (flèches, Maj, Échap) ; vrai si la touche est prise.
+    callback pointer(int, length, length, bool);
+    callback key(string, bool) -> bool;
+}
+
+export component CanvasView inherits Rectangle {
+    // Éditeur du plan (souris, clavier) plutôt que plan en direct.
+    in property <bool> editor;
+    in property <string> empty-text: "Aucune LED à afficher : branche un appareil ou vérifie la page Appareils.";
+    in property <string> label: "Plan du bureau : écrans et LED en direct";
+    property <bool> keyboard;
+    min-height: 220px;
+    border-radius: root.editor ? PrismeTheme.radius-m : 0;
+
+    init => {
+        PrismeCanvas.resized(root.width, root.height);
+    }
+    changed width => {
+        PrismeCanvas.resized(root.width, root.height);
+    }
+    changed height => {
+        PrismeCanvas.resized(root.width, root.height);
+    }
+
+    Image {
+        width: root.width;
+        height: root.height;
+        source: PrismeCanvas.image;
+        image-fit: fill;
+        accessible-role: image;
+        accessible-label: root.label;
+    }
+    for l in PrismeCanvas.labels: Rectangle {
+        x: l.x - self.width / 2;
+        y: l.y - self.height / 2;
+        width: t.preferred-width + (l.pill ? 14px : 0px);
+        height: l.pill ? 20px : t.preferred-height;
+        border-radius: 5px;
+        background: l.pill ? #1a1d24eb : transparent;
+        t := Text {
+            text: l.text;
+            color: PrismeTheme.text.with-alpha(l.alpha);
+            font-family: PrismeTheme.font;
+            font-size: 12px;
+            font-weight: l.pill ? 600 : 400;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+    if !root.editor && PrismeCanvas.empty: Text {
+        x: root.width * 0.2;
+        width: root.width * 0.6;
+        height: root.height;
+        text: root.empty-text;
+        color: PrismeTheme.muted;
+        font-family: PrismeTheme.font;
+        font-size: PrismeTheme.fs;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        wrap: word-wrap;
+    }
+    if root.editor: fs := FocusScope {
+        focus-gained(r) => {
+            root.keyboard = r == FocusReason.tab-navigation;
+        }
+        focus-lost => {
+            root.keyboard = false;
+        }
+        key-pressed(e) => {
+            if PrismeCanvas.key(e.text, e.modifiers.shift) {
+                return accept;
+            }
+            reject
+        }
+        TouchArea {
+            mouse-cursor: PrismeCanvas.cursor == 1 ? MouseCursor.grab : PrismeCanvas.cursor == 2 ? MouseCursor.grabbing : PrismeCanvas.cursor == 3 ? MouseCursor.crosshair : PrismeCanvas.cursor == 4 ? MouseCursor.move : MouseCursor.default;
+            pointer-event(e) => {
+                if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
+                    fs.focus();
+                    root.keyboard = false;
+                    PrismeCanvas.pointer(0, self.mouse-x, self.mouse-y, e.modifiers.alt);
+                } else if e.kind == PointerEventKind.move {
+                    PrismeCanvas.pointer(1, self.mouse-x, self.mouse-y, e.modifiers.alt);
+                } else if e.button == PointerEventButton.left && e.kind == PointerEventKind.up {
+                    PrismeCanvas.pointer(2, self.mouse-x, self.mouse-y, e.modifiers.alt);
+                }
+            }
+        }
+        // Focus clavier signalé discrètement (le plan occupe toute la zone).
+        if root.keyboard: Rectangle {
+            border-width: 1px;
+            border-color: PrismeTheme.line;
+            border-radius: PrismeTheme.radius-m;
+        }
+    }
+}

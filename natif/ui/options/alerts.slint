@@ -1,0 +1,107 @@
+// Section « Alertes » (app/src/settings/options/AlertsSection.svelte) : « Claude attend », « Ne
+// pas déranger » et batteries faibles, pour toutes les barres.
+
+import { SettingsHeading, SettingsNote } from "../settings/text.slint";
+import { SettingRow } from "../settings/row.slint";
+import { SettingCheck } from "../settings/check.slint";
+import { SelectField } from "../settings/field.slint";
+import { OptionsData } from "data.slint";
+
+component Flag inherits SettingCheck {
+    in property <string> key;
+    enabled: !OptionsData.locked;
+    toggled(v) => {
+        OptionsData.toggle(root.key, v);
+    }
+}
+
+component Threshold inherits SettingRow {
+    in property <string> key;
+    in property <string> value;
+    SelectField {
+        text: root.value;
+        enabled: !OptionsData.locked;
+        open(x, y) => {
+            OptionsData.pick(root.key, x, y);
+        }
+    }
+}
+
+export component AlertsSection inherits VerticalLayout {
+    SettingsHeading {
+        text: "Quand Claude attend ou a terminé";
+        first: true;
+    }
+    Flag {
+        key: "alerts.claude_island";
+        checked: OptionsData.claude-island;
+        label: "Montrer le projet et le message dans l’îlot";
+        hint: "Un clic sur l’îlot ramène le terminal de la session.";
+    }
+    if OptionsData.personal: Flag {
+        key: "alerts.claude_light";
+        checked: OptionsData.claude-light;
+        label: "Signal lumineux par Prisme (1,5 s)";
+        hint: "Scène « claude » de Prisme si elle existe, sinon un bref clignotement. Rien si l’éclairage est éteint.";
+    }
+    SettingsNote {
+        text: "Une seule alerte par attente : la suivante vient quand la session s’est remise au travail.";
+        above: 6px;
+    }
+
+    SettingsHeading {
+        text: "Pendant « Ne pas déranger », l’îlot montre quand même";
+    }
+    Flag {
+        key: "alerts.dnd_claude";
+        checked: OptionsData.dnd-claude;
+        label: "« Claude attend »";
+        hint: OptionsData.personal ? "Projet et message dans l’îlot, et signal lumineux." : "Projet et message dans l’îlot.";
+    }
+    Flag {
+        key: "alerts.dnd_battery";
+        checked: OptionsData.dnd-battery;
+        label: "Les alertes d’état";
+        hint: OptionsData.personal ? "Batterie faible (casque, téléphone, montre), serveur hors ligne." : "Batterie faible du casque, serveur hors ligne.";
+    }
+    SettingsNote {
+        text: "Les notifications ne s’affichent plus dans l’îlot (elles restent dans le panneau). La fin du minuteur s’affiche toujours.";
+        above: 6px;
+    }
+
+    if OptionsData.personal: VerticalLayout {
+        SettingsHeading {
+            text: "« Ne pas déranger » change aussi";
+        }
+        Flag {
+            key: "alerts.dnd_discord";
+            checked: OptionsData.dnd-discord;
+            label: "Discord en « Ne pas déranger »";
+            hint: "Le statut d’avant revient ensuite. Demande le plugin KrispBridge 1.3 et un relais qui transmet ses commandes.";
+        }
+        Flag {
+            key: "alerts.dnd_light";
+            checked: OptionsData.dnd-light;
+            label: "Prisme : scène « focus »";
+            hint: "Tenue pendant tout le « Ne pas déranger », si la scène existe ; la scène d’avant revient ensuite.";
+        }
+    }
+
+    SettingsHeading {
+        text: "Batterie faible";
+    }
+    Threshold {
+        key: "alerts.headset_low";
+        label: "Casque";
+        value: OptionsData.headset-low;
+    }
+    if OptionsData.personal: Threshold {
+        key: "alerts.devices_low";
+        label: "Téléphone et montre";
+        value: OptionsData.devices-low;
+    }
+    SettingsNote {
+        text: "L’îlot l’annonce une fois quand le niveau passe sous le seuil ; l’alerte revient après une remontée de 5 points ou une charge.";
+        above: 6px;
+    }
+}

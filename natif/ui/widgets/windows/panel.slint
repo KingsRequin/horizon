@@ -1,0 +1,163 @@
+// Panneau Fenêtres (app/src/widgets/windows/Panel.svelte) : fenêtres d'application par écran
+// (celui de la barre d'abord, « ici »). Clic = la fenêtre vient sur l'écran de la barre et
+// passe au premier plan ; déjà sur cet écran, elle passe seulement au premier plan. Relu à
+// chaque changement du nombre de fenêtres. Relié par src/widgets/windows/panel.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { PanelBase } from "../../panel/base.slint";
+import { PanelHead } from "../../panel/head.slint";
+import { PanelScroll } from "../../panel/scroll.slint";
+import { ListRow } from "../../panel/row.slint";
+import { EmptyState } from "../../panel/empty.slint";
+
+// Une ligne de la liste : en-tête d'un écran, ou une fenêtre de cet écran.
+export struct WindowsPanelRow {
+    header: bool,
+    // Première ligne de la liste (pas d'écart au-dessus de l'en-tête).
+    first: bool,
+    // En-tête : « Écran principal » ; l'écran de la barre (« ici »).
+    name: string,
+    here: bool,
+    // Fenêtre : poignée (renvoyée telle quelle), titre, « Vivaldi · réduite », infobulle.
+    hwnd: string,
+    title: string,
+    meta: string,
+    minimized: bool,
+    tip: string,
+    // Icône de l'appli (sinon son initiale sur fond `surface-2`).
+    icon: image,
+    has-icon: bool,
+    letter: string,
+}
+
+export global WindowsPanelData {
+    // Première réponse reçue : avant, « Chargement… ».
+    in-out property <bool> loaded;
+    // « 7 fenêtres ».
+    in-out property <string> count;
+    in-out property <[WindowsPanelRow]> rows;
+    // Ramener la fenêtre ici (ou la mettre au premier plan).
+    callback bring(string);
+}
+
+export component WindowsPanel inherits PanelBase {
+    width: 340px;
+    spacing: 8px;
+
+    head := PanelHead {
+        t: root.t;
+        title: "Fenêtres";
+        if WindowsPanelData.loaded: Text {
+            text: WindowsPanelData.count;
+            color: root.t.text-dim;
+            font-size: Theme.fs-meta;
+            vertical-alignment: center;
+        }
+    }
+    if WindowsPanelData.rows.length > 0: PanelScroll {
+        t: root.t;
+        // `max-height: 460px` du panneau.
+        limit: 460px - head.preferred-height - 8px;
+        spacing: 0;
+        gutter: 0;
+        for r in WindowsPanelData.rows: VerticalLayout {
+            padding-top: r.header ? (r.first ? 0 : 10px) : 2px;
+            if r.header: HorizontalLayout {
+                padding-left: 2px;
+                padding-bottom: 2px;
+                spacing: 6px;
+                alignment: start;
+                Text {
+                    text: r.name;
+                    color: root.t.text-dim;
+                    font-family: Theme.font-ui;
+                    font-weight: 600;
+                    font-size: Theme.fs-label;
+                    vertical-alignment: center;
+                }
+                if r.here: Rectangle {
+                    border-radius: Theme.r-sm;
+                    background: Theme.accent-soft;
+                    HorizontalLayout {
+                        padding-left: 5px;
+                        padding-right: 5px;
+                        Text {
+                            text: "ici";
+                            color: Theme.accent;
+                            font-family: Theme.font-ui;
+                            font-weight: 500;
+                            font-size: Theme.fs-label;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+            if !r.header: ListRow {
+                t: root.t;
+                padding-x: 8px;
+                padding-y: 6px;
+                gap: 9px;
+                radius: root.t.island-radius - 2px;
+                tip: r.tip;
+                clicked => {
+                    WindowsPanelData.bring(r.hwnd);
+                }
+                VerticalLayout {
+                    alignment: center;
+                    if r.has-icon: Image {
+                        width: 18px;
+                        height: 18px;
+                        source: r.icon;
+                        image-fit: contain;
+                    }
+                    if !r.has-icon: Rectangle {
+                        width: 18px;
+                        height: 18px;
+                        border-radius: Theme.r-sm;
+                        background: root.t.surface-2;
+                        Text {
+                            text: r.letter;
+                            color: root.t.text-dim;
+                            font-family: Theme.font-display;
+                            font-weight: 600;
+                            font-size: Theme.fs-label;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    Text {
+                        text: r.title;
+                        color: r.minimized ? root.t.text-dim : root.t.text;
+                        font-family: Theme.font-ui;
+                        font-weight: 500;
+                        font-size: root.t.fs-body;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: r.meta;
+                        color: root.t.text-dim;
+                        font-size: Theme.fs-label;
+                        overflow: elide;
+                    }
+                }
+                if !r.here: VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        source: @image-url("../../../icons/phosphor/arrowSquareIn.svg");
+                        size: 14px;
+                        color: root.t.text-dim;
+                    }
+                }
+            }
+        }
+    }
+    if WindowsPanelData.rows.length == 0: EmptyState {
+        t: root.t;
+        text: WindowsPanelData.loaded ? "Aucune fenêtre ouverte." : "Chargement…";
+    }
+}

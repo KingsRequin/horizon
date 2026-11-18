@@ -1,0 +1,20 @@
+// En-tête d'un panneau (lib/PanelHead.svelte) : titre en petites capitales à gauche, et à droite
+// un complément (compte, date, bouton) posé en enfant.
+
+import { StyleTokens } from "../theme.slint";
+import { Eyebrow } from "../gauge.slint";
+
+export component PanelHead inherits HorizontalLayout {
+    in property <StyleTokens> t;
+    in property <string> title;
+    // `align="center"` : complément centré verticalement, hauteur d'au moins 18 px (bouton).
+    in property <bool> center;
+    min-height: root.center ? 18px : 0;
+    spacing: 8px;
+    Eyebrow {
+        t: root.t;
+        label: root.title;
+        horizontal-stretch: 1;
+    }
+    @children
+}

@@ -1,0 +1,43 @@
+// Batterie du casque (app/src/widgets/headset/Widget.svelte) : visible seulement quand il est
+// allumé ; sous le seuil de « batterie faible », couleur d'alerte ; en charge, couleur « ok » et
+// éclair. Données : src/widgets/headset.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { WidgetFrame } from "../../widget-frame.slint";
+
+export global HeadsetData {
+    in property <bool> on;
+    in property <int> level;
+    in property <bool> charging;
+    in property <bool> low;
+    in property <string> title;
+}
+
+export component HeadsetWidget inherits WidgetFrame {
+    property <color> c: HeadsetData.low ? root.t.bad : HeadsetData.charging ? root.t.ok : root.t.text;
+    empty: !HeadsetData.on;
+    tip: HeadsetData.title;
+    gap: 5px;
+
+    Icon {
+        y: (root.t.island-h - self.height) / 2;
+        source: @image-url("../../../icons/phosphor/headset.svg");
+        size: 14px;
+        color: root.c;
+    }
+    Text {
+        text: HeadsetData.level + " %";
+        color: root.c;
+        font-family: Theme.font-mono;
+        font-size: Theme.fs-meta;
+        font-weight: 500;
+        vertical-alignment: center;
+    }
+    if HeadsetData.charging: Icon {
+        y: (root.t.island-h - self.height) / 2;
+        source: @image-url("../../../icons/phosphor/lightning.svg");
+        size: 11px;
+        color: root.c;
+    }
+}

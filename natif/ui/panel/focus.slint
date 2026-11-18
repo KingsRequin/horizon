@@ -1,0 +1,17 @@
+// Anneau du focus clavier (`:focus-visible` d'app.css : contour de 2 px dans l'accent, à 1 px de
+// l'élément). Seulement quand le focus vient du clavier (Tab), jamais à la souris : poser
+// `if root.keyboard: FocusRing { radius: … }` dans l'élément, `keyboard` étant tenu par
+// `focus-gained(r) => { root.keyboard = r == FocusReason.tab-navigation; }` et `focus-lost`.
+// L'élément donne sa taille : `width: root.width + 6px; height: root.height + 6px;`.
+
+import { Theme } from "../theme.slint";
+
+export component FocusRing inherits Rectangle {
+    // Rayon des coins de l'élément entouré.
+    in property <length> radius;
+    x: -3px;
+    y: -3px;
+    border-radius: root.radius + 3px;
+    border-width: 2px;
+    border-color: Theme.accent;
+}

@@ -1,0 +1,116 @@
+// Bouton d'un panneau : icône et / ou texte (et enfants), fond de repos et de survol réglables,
+// infobulle (`title`), clavier (Tab, Entrée, Espace) avec l'anneau de focus. Les boutons des
+// panneaux Tauri ont chacun leur style : on le reproduit par ses propriétés (voir
+// `LinkButton` et les commandes du panneau Lecture en cours, `ui/widgets/media/panel.slint`).
+
+import { Theme, StyleTokens } from "../theme.slint";
+import { Icon } from "../components.slint";
+import { Tip } from "../tooltip.slint";
+import { FocusRing } from "focus.slint";
+
+export component PanelButton inherits Rectangle {
+    in property <StyleTokens> t;
+    // Icône (aucune : image vide) et sa taille.
+    in property <image> icon;
+    in property <length> icon-size: 14px;
+    in property <string> text;
+    in property <bool> enabled: true;
+    // Infobulle (`title`) ; vide : aucune.
+    in property <string> tip;
+    in property <length> padding-x: 8px;
+    in property <length> gap: 6px;
+    in property <length> radius: Theme.r-md;
+    // Fond de repos et fond au survol.
+    in property <brush> rest: transparent;
+    in property <brush> hover: root.t.hover;
+    // Couleur du texte et de l'icône, au repos et au survol.
+    in property <color> fg: root.t.text;
+    in property <color> hover-fg: root.fg;
+    // Police du texte (vide : celle de la fenêtre, `t.font`).
+    in property <string> font-family;
+    in property <int> font-weight: 500;
+    in property <length> font-size: root.t.fs-body;
+    // Contenu à gauche (lignes de liste) ou centré (boutons).
+    in property <LayoutAlignment> alignment: center;
+    out property <bool> hovered: area.has-hover && root.enabled;
+    out property <bool> pressed: area.pressed && root.enabled;
+    // Focus venu du clavier (anneau visible).
+    out property <bool> keyboard;
+    callback clicked();
+    border-radius: root.radius;
+    background: root.hovered ? root.hover : root.rest;
+    animate background { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+    FocusScope {
+        enabled: root.enabled;
+        focus-on-click: false;
+        focus-gained(r) => {
+            root.keyboard = r == FocusReason.tab-navigation;
+        }
+        focus-lost => {
+            root.keyboard = false;
+        }
+        key-pressed(e) => {
+            if e.text == Key.Return || e.text == " " {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+    area := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+        changed has-hover => {
+            if self.has-hover && root.tip != "" {
+                Tip.show(root.tip);
+            } else if !self.has-hover {
+                Tip.hide();
+            }
+        }
+        clicked => {
+            Tip.hide();
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        padding-left: root.padding-x;
+        padding-right: root.padding-x;
+        spacing: root.gap;
+        alignment: root.alignment;
+        if root.icon.width > 0: VerticalLayout {
+            alignment: center;
+            Icon {
+                source: root.icon;
+                size: root.icon-size;
+                color: root.hovered ? root.hover-fg : root.fg;
+            }
+        }
+        if root.text != "": Text {
+            text: root.text;
+            color: root.hovered ? root.hover-fg : root.fg;
+            font-family: root.font-family;
+            font-weight: root.font-weight;
+            font-size: root.font-size;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        @children
+    }
+    if root.keyboard: FocusRing {
+        width: root.width + 6px;
+        height: root.height + 6px;
+        radius: root.radius;
+    }
+}
+
+// Petit bouton texte d'un en-tête ou d'un bas de panneau (`.more`, `.link` : « 3 autres »,
+// « Régler », « Ouvrir Prisme ») : discret, s'éclaire au survol.
+export component LinkButton inherits PanelButton {
+    padding-x: 6px;
+    height: 18px;
+    fg: root.t.text-dim;
+    hover-fg: root.t.text;
+    font-family: Theme.font-ui;
+    font-size: Theme.fs-meta;
+}

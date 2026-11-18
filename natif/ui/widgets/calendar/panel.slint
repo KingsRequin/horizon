@@ -1,0 +1,143 @@
+// Panneau Agenda (app/src/widgets/calendar/Panel.svelte), propre à l'exemplaire
+// (« calendar:<id> ») : les prochains événements de ses agendas regroupés par jour, couleur de
+// leur agenda, « en cours » sur fond, lien de visio ; erreurs des agendas illisibles. Relié par
+// src/widgets/calendar/panel.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { Eyebrow } from "../../gauge.slint";
+import { PanelBase } from "../../panel/base.slint";
+import { PanelHead } from "../../panel/head.slint";
+import { PanelButton } from "../../panel/button.slint";
+import { EmptyState } from "../../panel/empty.slint";
+import { ErrorLine } from "../../panel/error.slint";
+import { PanelScroll } from "../../panel/scroll.slint";
+
+// Une ligne de l'agenda : titre d'un jour, ou un événement de ce jour.
+export struct CalendarPanelRow {
+    // Titre de jour (« Aujourd’hui », « Demain », « jeudi 13 novembre ») ; sinon un événement.
+    day: bool,
+    title: string,
+    // « 09:30 – 10:00 » ou « Journée ».
+    time: string,
+    // Lieu (vide : aucun, ou une adresse web).
+    location: string,
+    // Couleur de son agenda (rang dans `Theme.calendars`).
+    color: int,
+    // En cours (journées entières exclues).
+    now: bool,
+    // Lien de visio (vide : aucun).
+    link: string,
+}
+
+export global CalendarPanelData {
+    // Exemplaire dont les événements sont posés (« w3 »).
+    in-out property <string> instance;
+    in-out property <bool> loaded;
+    in-out property <[CalendarPanelRow]> rows;
+    in-out property <[string]> errors;
+    callback join(string);
+}
+
+export component CalendarPanel inherits PanelBase {
+    width: 306px;
+    spacing: 10px;
+    // Données d'un autre exemplaire (le temps de relire celui-ci) : chargement.
+    property <bool> mine: CalendarPanelData.instance == root.instance;
+
+    PanelScroll {
+        t: root.t;
+        // `max-height: 310px` du panneau, en-tête compris.
+        limit: 310px;
+        spacing: 0;
+        gutter: 8px;
+        PanelHead {
+            t: root.t;
+            title: "Agenda";
+        }
+        for r in root.mine ? CalendarPanelData.rows : []: VerticalLayout {
+            // Écart entre l'en-tête et le premier jour, entre deux jours (10 px), entre deux
+            // lignes d'un jour (4 px).
+            padding-top: r.day ? 10px : 4px;
+            if r.day: Eyebrow {
+                t: root.t;
+                label: r.title;
+            }
+            if !r.day: Rectangle {
+                border-radius: Theme.r-lg;
+                background: r.now ? root.t.surface-1 : transparent;
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    padding-top: 5px;
+                    padding-bottom: 5px;
+                    spacing: 8px;
+                    Rectangle {
+                        width: 3px;
+                        border-radius: Theme.r-xs;
+                        background: Theme.calendars[Math.mod(r.color, Theme.calendars.length)];
+                    }
+                    Text {
+                        width: 96px;
+                        text: r.time;
+                        color: root.t.text-dim;
+                        font-family: Theme.font-mono;
+                        font-weight: 500;
+                        font-size: Theme.fs-meta;
+                        vertical-alignment: center;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: r.title;
+                            color: root.t.text;
+                            font-size: root.t.fs-body;
+                            overflow: elide;
+                        }
+                        if r.location != "": Text {
+                            text: r.location;
+                            color: root.t.text-dim;
+                            font-size: Theme.fs-meta;
+                            overflow: elide;
+                        }
+                    }
+                    if r.link != "": VerticalLayout {
+                        alignment: center;
+                        PanelButton {
+                            t: root.t;
+                            width: 26px;
+                            height: 24px;
+                            padding-x: 0;
+                            radius: Theme.r-md;
+                            border-width: 1px;
+                            border-color: root.t.line;
+                            hover: Theme.accent-soft;
+                            fg: Theme.accent;
+                            icon: @image-url("../../../icons/phosphor/videoCamera.svg");
+                            icon-size: 13px;
+                            tip: "Rejoindre la visio";
+                            clicked => {
+                                CalendarPanelData.join(r.link);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !root.mine || CalendarPanelData.rows.length == 0: VerticalLayout {
+            padding-top: 10px;
+            EmptyState {
+                t: root.t;
+                text: root.mine && CalendarPanelData.loaded ? "Rien de prévu." : "Chargement…";
+            }
+        }
+        for e in root.mine ? CalendarPanelData.errors : []: VerticalLayout {
+            padding-top: 10px;
+            ErrorLine {
+                t: root.t;
+                text: e;
+            }
+        }
+    }
+}

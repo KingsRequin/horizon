@@ -1,0 +1,12 @@
+// Message d'un panneau sans contenu (lib/EmptyState.svelte) : rien à montrer, chargement.
+
+import { Theme, StyleTokens } from "../theme.slint";
+
+export component EmptyState inherits Text {
+    in property <StyleTokens> t;
+    // Texte secondaire (`fs-meta`).
+    in property <bool> small;
+    color: root.t.text-dim;
+    font-size: root.small ? Theme.fs-meta : root.t.fs-body;
+    wrap: word-wrap;
+}

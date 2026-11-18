@@ -1,0 +1,600 @@
+// Une barre (App.svelte) : bande du haut (zones gauche, centre, droite) et, sur une barre haute,
+// les tuiles dessous. Chaque widget porté est dessiné par `WidgetView`, les autres restent des
+// emplacements nommés.
+
+import { Theme, Styles, StyleTokens } from "theme.slint";
+import { Slot, Icon } from "components.slint";
+import { Tile } from "tile.slint";
+import { Tip } from "tooltip.slint";
+import { WidgetView } from "widget-view.slint";
+import { WheelHint } from "wheel-hint.slint";
+import { BarStatus } from "bar-status.slint";
+import { Osd, OsdData } from "osd.slint";
+import { PulseLayers } from "pulse.slint";
+import { Icon } from "components.slint";
+import { DashedBox } from "dashed.slint";
+
+// Bouton « + » d'une zone en mode édition (`.add` d'App.svelte) : 22 × 22, après un écart s'il y
+// a des widgets avant lui.
+component AddButton inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <length> lead;
+    callback clicked();
+    width: root.lead + 22px;
+    Rectangle {
+        x: root.lead;
+        y: (parent.height - self.height) / 2;
+        width: 22px;
+        height: 22px;
+        border-radius: root.t.inner-radius;
+        background: root.t.text.with-alpha(area.has-hover ? 0.22 : 0.12);
+        Icon {
+            source: @image-url("../icons/phosphor/plus.svg");
+            size: 13px;
+            color: root.t.text;
+        }
+        area := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                root.clicked();
+            }
+        }
+    }
+}
+
+// Fond d'une zone en mode édition (`.editing .zone`) : pointillés et voile du texte à 4 %.
+component EditZone inherits Rectangle {
+    in property <StyleTokens> t;
+    border-radius: Theme.r-lg;
+    background: root.t.text.with-alpha(0.04);
+    DashedBox {
+        ink: root.t.text.with-alpha(0.35);
+        radius: Theme.r-lg;
+    }
+}
+
+// Tuile d'une barre haute : son widget (genre et exemplaire dans `slot`) et sa place dans la zone
+// des tuiles, calculée par Rust (`src/tiles.rs`) ; `placed` : faux tant que sa hauteur n'est pas
+// mesurée (elle est dessinée, invisible, pour être mesurée).
+export struct TileBox {
+    slot: Slot,
+    x: length,
+    y: length,
+    width: length,
+    height: length,
+    placed: bool,
+}
+
+export component BarWindow inherits Window {
+    in property <bool> graphic;
+    in property <bool> clickable;
+    // Les widgets réagissent au survol (panneaux) : barre autre que « Information seule ».
+    in property <bool> interactive;
+    // Barre resserrée (trop chargée) : chaque widget raccourcit ce qu'il montre (phase B).
+    in property <bool> compact;
+    // Voile de nuit (barre non cliquable, la nuit) : 1 − luminosité ; 0 = aucun.
+    in property <float> dim;
+    in property <[Slot]> left;
+    in property <[Slot]> center;
+    in property <[Slot]> right;
+    in property <[TileBox]> tiles;
+    in property <bool> tall;
+    // Zone des tuiles : place du bouton « Ajouter une tuile » (mode édition) et hauteur du
+    // contenu (bas de la colonne la plus haute), posées par Rust.
+    in property <length> add-x;
+    in property <length> add-y;
+    in property <length> tiles-content-h;
+    // Réapparition après un plein écran : la bande descend et apparaît (App.svelte, `shown`).
+    in property <bool> arriving;
+    // Barre principale : témoins (profil, « ! ») au bout de la zone gauche, après un écart s'il
+    // y a des widgets avant eux (`status-lead`).
+    in property <bool> main;
+    in property <length> status-lead;
+
+    // Mode édition (App.svelte, `editing`) : zones en pointillés, « + » par zone, widgets à
+    // glisser (`slot-drag`), rien de masqué (barre resserrée au besoin) ; tuiles inertes, cadre
+    // pointillé et « Ajouter une tuile » sur une barre haute (`ui::bar::set_editing`).
+    in property <bool> editing;
+    // Widget glissé et son décalage (deux dimensions sur une barre haute).
+    in property <string> drag-id;
+    in property <length> drag-dx;
+    in property <length> drag-dy;
+    // Zone d'où part le glisser (0, 1, 2, 3 = tuiles ; -1 : aucune) : dessinée au-dessus des
+    // autres.
+    in property <int> drag-zone: -1;
+    // Repère de dépôt (trait de l'accent), pixels logiques de la fenêtre.
+    in property <bool> marker-shown;
+    in property <length> marker-x;
+    in property <length> marker-y;
+    in property <length> marker-w;
+    in property <length> marker-h;
+    // Largeur montrée de chaque emplacement (zone, identifiant), sans l'écart avant lui.
+    callback slot-shown(int, string, length);
+    // Survol d'un emplacement (identifiant ; entrée ou sortie) : menu du clic droit.
+    callback slot-hover(string, bool);
+    // Glisser d'un widget : identifiant, phase (0 appui, 1 déplacement, 2 relâché, 3 annulé),
+    // position dans la fenêtre.
+    callback slot-drag(string, int, length, length);
+    // « + » d'une zone (0 gauche, 1 centre, 2 droite).
+    callback add(int);
+    // Clavier du mode édition : « escape », « undo », « redo ».
+    callback key(string);
+    public function focus-keys() {
+        keys.focus();
+    }
+
+    // Zones du mode édition (`.editing .zone`) : marge intérieure 4 px, centre d'au moins 64 px
+    // et écarté de 10 px de ses voisines, gauche et droite jusqu'à lui.
+    property <length> zone-pad: root.editing ? 4px : 0;
+    out property <length> center-zone-w: max(64px, center-row.preferred-width + 2 * self.zone-pad);
+    out property <length> center-zone-x: t.band-pad + (root.inner-width - self.center-zone-w) / 2;
+    out property <length> left-zone-x: t.band-pad;
+    out property <length> left-zone-w: self.center-zone-x - 10px - t.band-pad;
+    out property <length> right-zone-x: self.center-zone-x + self.center-zone-w + 10px;
+    out property <length> right-zone-w: root.width - t.band-pad - self.right-zone-x;
+    // Début de chaque rangée de widgets (pixels logiques de la fenêtre).
+    out property <length> left-row-x: left-zone.x + left-row.x;
+    out property <length> center-row-x: center-row.x;
+    out property <length> right-row-x: right-zone.x + right-row.x;
+    // Défilement des zones gauche et droite trop pleines (mode édition).
+    property <length> left-scroll: 0px;
+    property <length> right-scroll: 0px;
+    property <length> left-max-scroll: root.editing ? max(0px, left-row.preferred-width + 2 * root.zone-pad - root.left-zone-w) : 0px;
+    property <length> right-max-scroll: root.editing ? max(0px, right-row.preferred-width + 2 * root.zone-pad - root.right-zone-w) : 0px;
+    changed left-max-scroll => { root.left-scroll = min(root.left-scroll, root.left-max-scroll); }
+    changed right-max-scroll => { root.right-scroll = min(root.right-scroll, root.right-max-scroll); }
+    // Zone des tuiles (pixels logiques de la fenêtre) et origine de leurs places (`TileBox`),
+    // défilement compris : lues par Rust pour le glisser-déposer.
+    out property <length> tiles-zone-x: root.tiles-margin-x;
+    out property <length> tiles-zone-y: root.band-h + root.tiles-margin-top;
+    out property <length> tiles-zone-w: root.width - 2 * root.tiles-margin-x;
+    out property <length> tiles-zone-bottom: root.height - root.tiles-margin-bottom;
+    out property <length> tiles-origin-x: root.tiles-margin-x + root.tiles-pad;
+    out property <length> tiles-origin-y: root.band-h + root.tiles-margin-top + root.tiles-pad - root.tiles-scroll;
+
+    // Débordement (src/overflow.rs) : largeur disponible, écart entre widgets, largeur
+    // naturelle de chaque emplacement (zone 0, 1, 2 et identifiant).
+    out property <length> inner-width: root.width - 2 * t.band-pad;
+    out property <length> gap: t.zone-gap;
+    callback measured(int, string, length);
+
+    // Barre large (écran de 2 560 px logiques et plus) : les widgets montrent plus de détails.
+    out property <bool> wide: root.width >= 2200px;
+
+    // Zone des tuiles : largeur pour les colonnes et hauteur visible (`--tiles-h`), lues par Rust.
+    out property <length> tiles-width: root.width - 2 * (root.tiles-margin-x + root.tiles-pad);
+    out property <length> tiles-height: root.height - root.band-h - root.tiles-margin-top - root.tiles-margin-bottom - root.tiles-pad - root.tiles-pad-bottom;
+    // Une tuile annonce sa hauteur naturelle (identifiant du widget, hauteur).
+    callback tile-measured(string, length);
+    // La place des tuiles a changé (largeur, hauteur, mode édition) : rangement à revoir.
+    callback tiles-resized();
+    // Bouton « Ajouter une tuile » (mode édition) : menu des widgets qui ont un panneau.
+    callback add-tile();
+
+    // Molette hors des widgets : crans (positif = vers le haut) et abscisse du pointeur.
+    callback wheel(float, length);
+    // La largeur disponible a changé : le débordement est à revoir.
+    callback refit();
+
+    property <StyleTokens> t: root.graphic ? Styles.graphic : Styles.islands;
+    property <length> band-h: 40px;
+    // Zone des tuiles (`.tiles`, `.editing .tiles`) : bords alignés sur les îlots (6 px) ou sur la
+    // bande graphique (4 px), rien en bas (marge de chaque tuile) ; en édition, cadre pointillé
+    // détaché des bords (margin 2 4 4, padding 6).
+    property <length> tiles-margin-x: root.editing ? 4px : 0px;
+    property <length> tiles-margin-top: root.editing ? 2px : 0px;
+    property <length> tiles-margin-bottom: root.editing ? 4px : 0px;
+    property <length> tiles-pad: root.editing ? 6px : t.tiles-pad;
+    property <length> tiles-pad-bottom: root.editing ? 6px : 0px;
+    // Défilement de la zone quand les colonnes ne tiennent pas dans la barre.
+    in-out property <length> tiles-scroll: 0px;
+    property <length> tiles-max-scroll: max(0px, root.tiles-content-h + root.tiles-pad + root.tiles-pad-bottom - root.tiles-zone-h);
+    property <length> tiles-zone-h: root.height - root.band-h - root.tiles-margin-top - root.tiles-margin-bottom;
+
+    title: "Horizon";
+    no-frame: true;
+    // Alpha 1/255 : invisible, mais la souris est captée sur toute la barre (zone vide :
+    // molette = volume), comme la page de la version Tauri.
+    background: #00000001;
+    // Texte courant (body, .graphic d'app.css) : 500, Inter (îlots) ou Space Grotesk (graphique).
+    default-font-family: t.font;
+    default-font-size: t.fs-body;
+    default-font-weight: 500;
+
+    changed inner-width => { root.refit(); }
+    changed tiles-width => { root.tiles-resized(); }
+    changed tiles-height => { root.tiles-resized(); }
+    changed tiles-max-scroll => { root.tiles-scroll = min(root.tiles-scroll, root.tiles-max-scroll); }
+
+    TouchArea {
+        scroll-event(e) => {
+            if (e.delta-y != 0) {
+                root.wheel(e.delta-y / 60px, self.mouse-x);
+            }
+            accept
+        }
+    }
+
+    band := Rectangle {
+        y: 0;
+        // Un widget glissé de la bande vers les tuiles reste visible par-dessus elles.
+        z: root.drag-zone >= 0 && root.drag-zone <= 2 ? 1 : 0;
+        height: root.band-h;
+        // Style C : bande sombre légèrement détachée des bords.
+        if t.graphic: Rectangle {
+            x: 4px;
+            y: 3px;
+            width: parent.width - 8px;
+            height: parent.height - 6px;
+            border-radius: t.island-radius;
+            background: t.bar-bg;
+            border-width: 1px;
+            border-color: t.bar-border;
+        }
+        // Pulsation pendant la lecture (ui/pulse.slint), sur la bande sombre.
+        if t.graphic: PulseLayers {
+            x: 4px;
+            y: 3px;
+            width: parent.width - 8px;
+            height: parent.height - 6px;
+            radius: t.island-radius;
+        }
+
+        if root.editing: EditZone {
+            x: root.left-zone-x;
+            y: 2px;
+            width: root.left-zone-w;
+            height: parent.height - 4px;
+            t: root.t;
+        }
+        if root.editing: EditZone {
+            x: root.center-zone-x;
+            y: 2px;
+            width: root.center-zone-w;
+            height: parent.height - 4px;
+            t: root.t;
+        }
+        if root.editing: EditZone {
+            x: root.right-zone-x;
+            y: 2px;
+            width: root.right-zone-w;
+            height: parent.height - 4px;
+            t: root.t;
+        }
+
+        // Zone gauche (et droite plus bas) : en mode édition, une zone trop pleine est coupée à
+        // sa place et défile à la molette (`.editing .left { overflow-x: auto }`) ; le widget
+        // glissé n'est pas coupé.
+        left-zone := TouchArea {
+            x: root.editing ? root.left-zone-x : 0;
+            z: root.drag-zone == 0 ? 1 : 0;
+            width: root.editing ? root.left-zone-w : root.width;
+            height: parent.height;
+            scroll-event(e) => {
+                if !root.editing || root.left-max-scroll <= 0 {
+                    return reject;
+                }
+                root.left-scroll = max(0px, min(root.left-max-scroll, root.left-scroll - e.delta-y));
+                accept
+            }
+        Rectangle {
+            clip: root.editing && root.drag-id == "";
+        left-row := HorizontalLayout {
+            x: root.editing ? root.zone-pad - root.left-scroll : t.band-pad;
+            width: self.preferred-width;
+            height: parent.height;
+            for s in root.left: WidgetView {
+                t: root.t;
+                slot: s;
+                dim: root.t.graphic ? 0 : root.dim;
+                compact: root.compact;
+                wide: root.wide;
+                interactive: root.interactive;
+                editing: root.editing;
+                dragging: s.id == root.drag-id;
+                offset-x: s.id == root.drag-id ? root.drag-dx : 0;
+                offset-y: s.id == root.drag-id ? root.drag-dy : 0;
+                measured(w) => { root.measured(0, s.id, w); }
+                shown(w) => { root.slot-shown(0, s.id, w); }
+                hovered(on) => { root.slot-hover(s.id, on); }
+                drag(phase, x, y) => { root.slot-drag(s.id, phase, x, y); }
+            }
+            // Largeur annoncée sous l'identifiant « #status » (débordement de la zone gauche).
+            if root.main && !root.editing: status := BarStatus {
+                t: root.t;
+                dim: root.t.graphic ? 0 : root.dim;
+                interactive: root.clickable;
+                lead: root.status-lead;
+                init => { root.measured(0, "#status", self.shown ? self.width - self.lead : 0); }
+                changed width => { root.measured(0, "#status", self.shown ? self.width - self.lead : 0); }
+            }
+            if root.editing: AddButton {
+                t: root.t;
+                lead: root.left.length > 0 ? t.zone-gap : 0;
+                clicked => { root.add(0); }
+            }
+        }
+        }
+        }
+
+        center-row := HorizontalLayout {
+            x: root.editing ? root.center-zone-x + (root.center-zone-w - self.preferred-width) / 2 : t.band-pad + (root.inner-width - self.preferred-width) / 2;
+            z: root.drag-zone == 1 ? 1 : 0;
+            width: self.preferred-width;
+            height: parent.height;
+            for s in root.center: WidgetView {
+                t: root.t;
+                slot: s;
+                dim: root.t.graphic ? 0 : root.dim;
+                compact: root.compact;
+                wide: root.wide;
+                interactive: root.interactive;
+                editing: root.editing;
+                dragging: s.id == root.drag-id;
+                offset-x: s.id == root.drag-id ? root.drag-dx : 0;
+                offset-y: s.id == root.drag-id ? root.drag-dy : 0;
+                measured(w) => { root.measured(1, s.id, w); }
+                shown(w) => { root.slot-shown(1, s.id, w); }
+                hovered(on) => { root.slot-hover(s.id, on); }
+                drag(phase, x, y) => { root.slot-drag(s.id, phase, x, y); }
+            }
+            if root.editing: AddButton {
+                t: root.t;
+                lead: root.center.length > 0 ? t.zone-gap : 0;
+                clicked => { root.add(1); }
+            }
+        }
+
+        right-zone := TouchArea {
+            x: root.editing ? root.right-zone-x : 0;
+            z: root.drag-zone == 2 ? 1 : 0;
+            width: root.editing ? root.right-zone-w : root.width;
+            height: parent.height;
+            scroll-event(e) => {
+                if !root.editing || root.right-max-scroll <= 0 {
+                    return reject;
+                }
+                root.right-scroll = max(0px, min(root.right-max-scroll, root.right-scroll - e.delta-y));
+                accept
+            }
+        Rectangle {
+            clip: root.editing && root.drag-id == "";
+        right-row := HorizontalLayout {
+            // Alignée à droite ; trop pleine, elle part de la gauche et défile (« safe flex-end »).
+            x: !root.editing ? root.width - t.band-pad - self.preferred-width
+                : root.right-max-scroll > 0 ? root.zone-pad - root.right-scroll
+                : root.right-zone-w - root.zone-pad - self.preferred-width;
+            width: self.preferred-width;
+            height: parent.height;
+            for s in root.right: WidgetView {
+                t: root.t;
+                slot: s;
+                dim: root.t.graphic ? 0 : root.dim;
+                compact: root.compact;
+                wide: root.wide;
+                interactive: root.interactive;
+                editing: root.editing;
+                dragging: s.id == root.drag-id;
+                offset-x: s.id == root.drag-id ? root.drag-dx : 0;
+                offset-y: s.id == root.drag-id ? root.drag-dy : 0;
+                measured(w) => { root.measured(2, s.id, w); }
+                shown(w) => { root.slot-shown(2, s.id, w); }
+                hovered(on) => { root.slot-hover(s.id, on); }
+                drag(phase, x, y) => { root.slot-drag(s.id, phase, x, y); }
+            }
+            if root.editing: AddButton {
+                t: root.t;
+                lead: root.right.length > 0 ? t.zone-gap : 0;
+                clicked => { root.add(2); }
+            }
+        }
+        }
+        }
+
+        // Volume et média à la place de l'affichage de Windows (src/ui/osd.rs, barre principale).
+        if OsdData.kind != "" && !root.editing: Osd {
+            t: root.t;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+        }
+
+        // Nuit (barre non cliquable, style C) : un voile noir sur toute la bande, widgets
+        // compris (`.dimmable.graphic .band::after`, au-dessus du contenu).
+        if t.graphic: Rectangle {
+            x: 4px;
+            y: 3px;
+            width: parent.width - 8px;
+            height: parent.height - 6px;
+            border-radius: t.island-radius;
+            background: Colors.black.with-alpha(root.dim);
+            animate background { duration: Theme.dur-ambient; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+        }
+
+        states [
+            arriving when root.arriving: {
+                y: -12px;
+                opacity: 0;
+                out {
+                    animate y, opacity { duration: Theme.dur-base; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                }
+            }
+        ]
+    }
+
+    // Bulle de la molette (volume, avance dans la lecture), au-dessus des widgets.
+    WheelHint {
+        t: root.t;
+        band-h: root.band-h;
+    }
+
+    // Tuiles d'une barre haute (snippet `tiles` d'App.svelte) : le panneau de chaque widget, en
+    // colonnes de même largeur équilibrées (rangées par Rust) ; la zone défile quand elles ne
+    // tiennent pas, avec un fondu du bord d'où il reste à défiler.
+    if root.tall: tiles-zone := Rectangle {
+        // Une tuile glissée vers la bande reste visible par-dessus elle.
+        z: root.drag-zone == 3 ? 1 : 0;
+        x: root.tiles-margin-x;
+        y: root.band-h + root.tiles-margin-top;
+        width: root.width - 2 * root.tiles-margin-x;
+        height: root.tiles-zone-h;
+        border-radius: t.island-radius + 3px;
+        background: root.editing ? t.text.with-alpha(0.04) : transparent;
+
+        if root.editing: DashedBox {
+            width: parent.width;
+            height: parent.height;
+            radius: t.island-radius + 3px;
+            ink: t.text.with-alpha(0.35);
+        }
+
+        // Molette sur la zone : elle défile (jamais le volume de la barre, comme App.svelte).
+        TouchArea {
+            scroll-event(e) => {
+                root.tiles-scroll = max(0px, min(root.tiles-max-scroll, root.tiles-scroll - e.delta-y));
+                accept
+            }
+
+            Rectangle {
+                // Pendant le glisser d'une tuile, rien n'est coupé (`.dragging-any .tiles`).
+                clip: root.drag-zone != 3;
+
+                for b in root.tiles: Tile {
+                    x: root.tiles-pad + b.x + (b.slot.id == root.drag-id ? root.drag-dx : 0);
+                    y: root.tiles-pad + b.y - root.tiles-scroll + (b.slot.id == root.drag-id ? root.drag-dy : 0);
+                    dragging: b.slot.id == root.drag-id;
+                    width: b.width;
+                    height: b.placed ? b.height : self.natural-h;
+                    opacity: b.placed ? 1 : 0;
+                    t: root.t;
+                    kind: b.slot.kind;
+                    instance: b.slot.id;
+                    dim: root.dim;
+                    mode: b.slot.clickable ? 2 : root.interactive ? 1 : 0;
+                    editing: root.editing;
+                    more-above: root.tiles-scroll > 1px;
+                    more-below: root.tiles-scroll < root.tiles-max-scroll - 1px;
+                    view-top: -self.y;
+                    view-bottom: tiles-zone.height - self.y;
+                    measured(h) => {
+                        root.tile-measured(b.slot.id, h);
+                    }
+                    hovered(on) => {
+                        root.slot-hover(b.slot.id, on);
+                    }
+                    drag(phase, x, y) => {
+                        root.slot-drag(b.slot.id, phase, x, y);
+                    }
+                }
+
+                // « Ajouter une tuile » au bout des tuiles (mode édition).
+                if root.editing: Rectangle {
+                    x: root.tiles-pad + root.add-x;
+                    y: root.tiles-pad + root.add-y - root.tiles-scroll;
+                    width: 140px;
+                    height: 96px;
+                    border-radius: t.island-radius + 3px;
+                    background: add-area.has-hover ? t.text.with-alpha(0.08) : transparent;
+                    animate background { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+                    DashedBox {
+                        width: parent.width;
+                        height: parent.height;
+                        radius: t.island-radius + 3px;
+                        ink: t.text.with-alpha(0.35);
+                    }
+
+                    VerticalLayout {
+                        alignment: LayoutAlignment.center;
+                        spacing: 6px;
+                        HorizontalLayout {
+                            alignment: LayoutAlignment.center;
+                            Icon {
+                                source: @image-url("../icons/phosphor/plus.svg");
+                                size: 16px;
+                                color: add-area.has-hover ? t.text : t.text-dim;
+                            }
+                        }
+
+                        Text {
+                            text: "Ajouter une tuile";
+                            horizontal-alignment: TextHorizontalAlignment.center;
+                            color: add-area.has-hover ? t.text : t.text-dim;
+                            font-family: Theme.font-ui;
+                            font-size: Theme.fs-meta;
+                            font-weight: 500;
+                        }
+                    }
+
+                    add-area := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
+                        changed has-hover => {
+                            if self.has-hover {
+                                Tip.show("Ajouter une tuile");
+                            } else {
+                                Tip.hide();
+                            }
+                        }
+                        clicked => {
+                            Tip.hide();
+                            root.add-tile();
+                        }
+                    }
+                }
+
+                if !root.editing && root.tiles.length == 0: Text {
+                    x: root.tiles-pad + 6px;
+                    y: root.tiles-pad + 4px;
+                    text: "Aucune tuile · « Modifier la barre » pour y mettre des panneaux";
+                    color: t.text-dim;
+                    font-family: Theme.font-ui;
+                    font-size: Theme.fs-meta;
+                    font-weight: 500;
+                }
+            }
+        }
+
+        // Information seule : rien n'atteint les tuiles, la zone ne défile pas
+        // (`.inert .tiles { pointer-events: none }`).
+        if !root.interactive && !root.editing: TouchArea {
+            scroll-event(e) => {
+                accept
+            }
+        }
+    }
+
+    // Repère de dépôt du glisser (`.marker`) : au-dessus de tout, sans prendre la souris. Le
+    // rendu logiciel ne dessine pas sa lueur.
+    if root.marker-shown: Rectangle {
+        x: root.marker-x;
+        y: root.marker-y;
+        width: root.marker-w;
+        height: root.marker-h;
+        border-radius: Theme.r-xs;
+        background: Theme.accent;
+    }
+
+    // Clavier du mode édition (la barre prend le focus pendant l'édition) : Échap, Ctrl+Z,
+    // Ctrl+Y ou Ctrl+Maj+Z.
+    keys := FocusScope {
+        x: 0;
+        y: 0;
+        width: 0;
+        height: 0;
+        enabled: root.editing;
+        key-pressed(e) => {
+            if e.text == Key.Escape {
+                root.key("escape");
+                return accept;
+            }
+            if e.modifiers.control && (e.text == "y" || e.text == "Y" || ((e.text == "z" || e.text == "Z") && e.modifiers.shift)) {
+                root.key("redo");
+                return accept;
+            }
+            if e.modifiers.control && (e.text == "z" || e.text == "Z") {
+                root.key("undo");
+                return accept;
+            }
+            reject
+        }
+    }
+}

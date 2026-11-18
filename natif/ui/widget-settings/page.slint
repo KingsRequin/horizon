@@ -1,0 +1,135 @@
+// Page « réglages d'un widget » de la fenêtre de réglages (app/src/settings/SettingsApp.svelte) :
+// nom du widget, « Les modifications sont enregistrées automatiquement. », puis la page du genre
+// (une par fichier de ce dossier), ou un lien vers les « Réglages d'Horizon » pour les widgets
+// dont les réglages sont communs à toutes les barres. Service : src/ui/widget_settings/.
+
+import { Theme } from "../theme.slint";
+import { SettingsLayout } from "../settings/layout.slint";
+import { SettingsScroll } from "../settings/scroll.slint";
+import { SettingsNote } from "../settings/text.slint";
+import { SettingCheck } from "../settings/check.slint";
+import { GlobalLink } from "../settings/global-link.slint";
+import { WeatherSettings } from "weather.slint";
+import { SuggestionsSettings } from "suggestions.slint";
+import { CalendarSettings } from "calendar.slint";
+import { ServersSettings } from "servers.slint";
+import { ShortcutsSettings } from "shortcuts.slint";
+
+export global WidgetSettingsData {
+    // Genre du widget (« weather »…) ; vide : widget introuvable.
+    in property <string> kind;
+    // Nom du widget (manifeste).
+    in property <string> label;
+    in property <bool> personal;
+    in property <string> error;
+    // Micro et Krisp : le bouton coupe le micro de Discord en appel.
+    in property <bool> discord-mute;
+    callback set-discord-mute(bool);
+    // Lien vers une section des « Réglages d'Horizon ».
+    callback open-options(string);
+}
+
+// En-tête d'une page (`header` de SettingsApp.svelte) : titre `h1` et rappel de l'enregistrement.
+export component SettingsHeader inherits VerticalLayout {
+    in property <string> text;
+    padding-bottom: 16px;
+    spacing: 4px;
+    Text {
+        text: root.text;
+        color: SettingsLayout.t.text;
+        font-family: Theme.font-display;
+        font-size: Theme.fs-display;
+        font-weight: 600;
+    }
+    Text {
+        text: "Les modifications sont enregistrées automatiquement.";
+        color: SettingsLayout.t.text-dim;
+        font-size: Theme.fs-meta;
+    }
+}
+
+export component WidgetSettingsPage inherits Rectangle {
+    property <string> kind: WidgetSettingsData.kind;
+
+    public function scroll-top() {
+        scroll.scroll-top();
+    }
+
+    // Une seule page à la fois pose la largeur du contenu (les autres sont cachées).
+    changed visible => {
+        if self.visible {
+            SettingsLayout.content-w = scroll.content-w;
+        }
+    }
+
+    scroll := SettingsScroll {
+        width: root.width;
+        height: root.height;
+        init => {
+            if root.visible {
+                SettingsLayout.content-w = self.content-w;
+            }
+        }
+        changed content-w => {
+            if root.visible {
+                SettingsLayout.content-w = self.content-w;
+            }
+        }
+        if root.kind == "": SettingsNote {
+            text: "Widget introuvable.";
+            font-size: Theme.fs-meta;
+        }
+        if root.kind != "": SettingsHeader {
+            text: WidgetSettingsData.label;
+        }
+        if root.kind == "batteries" || root.kind == "headset": GlobalLink {
+            what: "Seuil de l’alerte « batterie faible ».";
+            section: "alertes";
+            label: "Alertes";
+            open(s) => {
+                WidgetSettingsData.open-options(s);
+            }
+        }
+        if root.kind == "claude_sessions": GlobalLink {
+            what: "Alerte « Claude attend » : dans l’îlot et par la lumière.";
+            section: "alertes";
+            label: "Alertes";
+            open(s) => {
+                WidgetSettingsData.open-options(s);
+            }
+        }
+        if root.kind == "notifications": GlobalLink {
+            what: WidgetSettingsData.personal
+                ? "« Ne pas déranger » : ce que l’îlot montre quand même, Discord et Prisme pendant le NPD."
+                : "« Ne pas déranger » : ce que l’îlot montre quand même.";
+            section: "alertes";
+            label: "Alertes";
+            open(s) => {
+                WidgetSettingsData.open-options(s);
+            }
+        }
+        if root.kind == "mic_krisp": SettingCheck {
+            checked: WidgetSettingsData.discord-mute;
+            label: "En appel Discord, le bouton micro coupe le micro de Discord";
+            hint: "Hors appel, il coupe toujours le micro par défaut de Windows. Le bouton montre alors le logo de Discord.";
+            toggled(v) => {
+                WidgetSettingsData.set-discord-mute(v);
+            }
+        }
+        if root.kind == "weather": WeatherSettings { }
+        if root.kind == "suggestions": SuggestionsSettings { }
+        if root.kind == "calendar": CalendarSettings { }
+        if root.kind == "servers": ServersSettings { }
+        if root.kind == "shortcuts": ShortcutsSettings { }
+        if root.kind != "" && !(root.kind == "batteries" || root.kind == "headset" || root.kind == "claude_sessions" || root.kind == "notifications" || root.kind == "mic_krisp" || root.kind == "weather" || root.kind == "suggestions" || root.kind == "calendar" || root.kind == "servers" || root.kind == "shortcuts"): SettingsNote {
+            text: "Ce widget n’a pas de réglages.";
+            font-size: Theme.fs-meta;
+        }
+        if WidgetSettingsData.error != "": SettingsNote {
+            text: WidgetSettingsData.error;
+            tint: SettingsLayout.t.bad;
+            font-size: Theme.fs-body;
+            above: 12px;
+        }
+    }
+}

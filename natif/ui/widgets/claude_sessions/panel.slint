@@ -1,0 +1,492 @@
+// Panneau Sessions Claude Code (app/src/widgets/claude_sessions/Panel.svelte) : état, message
+// d'attente (ou autorisation demandée : outil et commande), durée, git, jetons du jour et
+// remplissage du contexte ; consommation du jour par projet en bas (transcriptions,
+// approximatif) ; clic = terminal au premier plan ; « × » oublie une session morte (terminal
+// fermé sans fin de session). Textes faits par src/widgets/claude_sessions/panel.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { Eyebrow, Track } from "../../gauge.slint";
+import { StatusDot } from "../../widget-frame.slint";
+import { Tip } from "../../tooltip.slint";
+import { PanelBase } from "../../panel/base.slint";
+import { PanelHead } from "../../panel/head.slint";
+import { PanelButton } from "../../panel/button.slint";
+import { PanelScroll } from "../../panel/scroll.slint";
+import { EmptyState } from "../../panel/empty.slint";
+import { ErrorLine } from "../../panel/error.slint";
+import { FocusRing } from "../../panel/focus.slint";
+
+// Une session.
+export struct ClaudeSessionsPanelRow {
+    id: string,
+    name: string,
+    // 0 travaille, 1 attend, 2 terminé.
+    state: int,
+    // « attend · 2 min ».
+    status: string,
+    can-focus: bool,
+    // Autorisation demandée : outil (« Bash », « github · create_issue ») et commande.
+    permission: bool,
+    tool: string,
+    detail: string,
+    // Message (attente, dernière réponse) ; vide : aucun.
+    message: string,
+    // « 14 k aujourd’hui » ; vide : rien à montrer.
+    usage: string,
+    // Contexte : « contexte 43 % », remplissage (0–1), niveau (0 accent, 1 attention, 2 alerte),
+    // infobulle ; `ctx-text` vide : inconnu.
+    ctx-text: string,
+    ctx: float,
+    ctx-level: int,
+    ctx-tip: string,
+    // Git : la ligne existe, branche (« tête détachée »), jusqu'à trois pastilles.
+    git: bool,
+    branch: string,
+    chip1: string,
+    chip2: string,
+    chip3: string,
+}
+
+// Un projet du jour.
+export struct ClaudeSessionsPanelProject {
+    name: string,
+    value: float,
+    tokens: string,
+}
+
+export global ClaudeSessionsPanelData {
+    // « 2 en attente » ; vide : aucune.
+    in-out property <string> waiting;
+    in-out property <[ClaudeSessionsPanelRow]> sessions;
+    // « 1,2 M jetons · 18 M relus du cache » ; vide : rien aujourd'hui (section cachée).
+    in-out property <string> total;
+    in-out property <[ClaudeSessionsPanelProject]> projects;
+    // Échec de la mise au premier plan ; vide : aucun.
+    in-out property <string> error;
+    // Terminal de la session au premier plan.
+    callback focus(string);
+    // Oublier la session.
+    callback forget(string);
+}
+
+component Chip inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <string> text;
+    height: 16px;
+    border-radius: Theme.r-md;
+    background: t.surface-2;
+    HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        Text {
+            text: root.text;
+            color: root.t.text;
+            font-size: Theme.fs-label;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// Carte d'une session : bouton (clic, Entrée) ; « × » dans le coin, visible au survol de la carte.
+component SessionCard inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <ClaudeSessionsPanelRow> s;
+    // Largeur du panneau (346 px ; celle de la colonne en tuile).
+    in property <length> panel-w: 346px;
+    callback activate();
+    callback forget();
+    property <bool> waiting: root.s.state == 1;
+    property <bool> hovered: area.has-hover;
+    property <bool> keyboard;
+    property <color> fill: root.ctx-color;
+    property <color> ctx-color: root.s.ctx-level == 2 ? root.t.bad : root.s.ctx-level == 1 ? root.t.warn : Theme.accent;
+    border-radius: root.t.island-radius - 2px;
+    border-width: 1px;
+    border-color: root.waiting ? root.t.warn.with-alpha(0.4) : root.t.line;
+    background: root.hovered && root.s.can-focus ? root.t.hover : root.waiting ? root.t.warn.with-alpha(0.08) : root.t.surface-1;
+    animate background, border-color { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    min-height: col.min-height;
+    preferred-height: col.preferred-height;
+
+    FocusScope {
+        enabled: root.s.can-focus;
+        focus-on-click: false;
+        focus-gained(r) => {
+            root.keyboard = r == FocusReason.tab-navigation;
+        }
+        focus-lost => {
+            root.keyboard = false;
+        }
+        key-pressed(e) => {
+            if e.text == Key.Return || e.text == " " {
+                root.activate();
+                return accept;
+            }
+            reject
+        }
+    }
+    // La zone contient tout (dont le « × ») : la carte reste survolée au-dessus du bouton.
+    area := TouchArea {
+        enabled: true;
+        mouse-cursor: root.s.can-focus ? MouseCursor.pointer : MouseCursor.default;
+        clicked => {
+            if root.s.can-focus {
+                root.activate();
+            }
+        }
+        col := VerticalLayout {
+            padding-top: 8px;
+            padding-bottom: 8px;
+            padding-left: 10px;
+            padding-right: 10px;
+            spacing: 4px;
+            // Ligne du haut : pastille, nom, état, flèche (place du « × » réservée).
+            HorizontalLayout {
+                spacing: 7px;
+                padding-right: 20px;
+                VerticalLayout {
+                    alignment: center;
+                    StatusDot {
+                        fill: root.s.state == 0 ? root.t.cpu : root.s.state == 1 ? root.t.warn : root.t.text-dim;
+                        glow: root.s.state == 0 ? 6px : root.s.state == 1 ? 8px : 0;
+                    }
+                }
+                Text {
+                    text: root.s.name;
+                    horizontal-stretch: 1;
+                    color: root.t.text;
+                    font-family: Theme.font-display;
+                    font-weight: 600;
+                    font-size: root.t.fs-body;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.s.status;
+                    color: root.waiting ? root.t.warn : root.t.text-dim;
+                    font-size: Theme.fs-meta;
+                    vertical-alignment: center;
+                }
+                // Place réservée même sans terminal connu : les durées restent alignées.
+                VerticalLayout {
+                    alignment: center;
+                    width: 13px;
+                    Icon {
+                        source: @image-url("../../../icons/phosphor/arrowSquareOut.svg");
+                        size: 13px;
+                        color: root.t.text-dim;
+                        opacity: root.s.can-focus && root.hovered ? 1 : 0;
+                        animate opacity { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                    }
+                }
+            }
+            if root.s.permission: HorizontalLayout {
+                padding-left: 14px;
+                spacing: 6px;
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        source: @image-url("../../../icons/phosphor/shieldWarning.svg");
+                        size: 13px;
+                        color: root.t.warn;
+                    }
+                }
+                Text {
+                    text: "Autorisation demandée : ";
+                    color: root.t.text;
+                    font-size: Theme.fs-meta;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.s.tool;
+                    horizontal-stretch: 1;
+                    color: root.t.text;
+                    font-size: Theme.fs-meta;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+            if root.s.permission && root.s.detail != "": HorizontalLayout {
+                padding-left: 14px;
+                Rectangle {
+                    border-radius: Theme.r-sm;
+                    background: root.t.surface-2;
+                    VerticalLayout {
+                        padding-left: 7px;
+                        padding-right: 7px;
+                        padding-top: 4px;
+                        padding-bottom: 4px;
+                        Text {
+                            text: root.s.detail;
+                            color: root.t.text;
+                            font-family: Theme.font-mono;
+                            font-size: Theme.fs-meta;
+                            // `word-break: break-all` et deux lignes au plus. Largeur donnée (carte à
+                            // la largeur du panneau, bords, marges) : un texte à la ligne dans une
+                            // liste n'est bien mesuré qu'avec une largeur connue d'avance.
+                            width: root.panel-w - 2 * (1px + 10px) - 14px - 2 * 7px;
+                            wrap: char-wrap;
+                            overflow: elide;
+                            max-lines: 2;
+                        }
+                    }
+                }
+            }
+            if !root.s.permission && root.s.message != "": HorizontalLayout {
+                padding-left: 14px;
+                Text {
+                    text: root.s.message;
+                    // Largeur fixe, voir la commande ci-dessus.
+                    width: root.panel-w - 2 * (1px + 10px) - 14px;
+                    color: root.waiting ? root.t.text : root.t.text-dim;
+                    font-size: Theme.fs-meta;
+                    wrap: word-wrap;
+                    overflow: elide;
+                    max-lines: 2;
+                }
+            }
+            if root.s.usage != "": HorizontalLayout {
+                padding-left: 14px;
+                spacing: 5px;
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        source: @image-url("../../../icons/phosphor/coins.svg");
+                        size: 12px;
+                        color: root.t.text-dim;
+                    }
+                }
+                Text {
+                    text: root.s.usage;
+                    horizontal-stretch: 1;
+                    color: root.t.text-dim;
+                    font-size: Theme.fs-meta;
+                    vertical-alignment: center;
+                }
+                if root.s.ctx-text != "": TouchArea {
+                    // Infobulle seulement : le clic reste celui de la carte.
+                    changed has-hover => {
+                        if self.has-hover {
+                            Tip.show(root.s.ctx-tip);
+                        } else {
+                            Tip.hide();
+                        }
+                    }
+                    clicked => {
+                        Tip.hide();
+                        if root.s.can-focus {
+                            root.activate();
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 5px;
+                        Text {
+                            text: root.s.ctx-text;
+                            color: root.t.text-dim;
+                            font-size: Theme.fs-meta;
+                            vertical-alignment: center;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Track {
+                                t: root.t;
+                                width: 44px;
+                                height: 3px;
+                                rounded: true;
+                                value: root.s.ctx;
+                                tint: root.fill;
+                            }
+                        }
+                    }
+                }
+            }
+            if root.s.git: HorizontalLayout {
+                padding-left: 14px;
+                spacing: 5px;
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        source: @image-url("../../../icons/phosphor/gitBranch.svg");
+                        size: 12px;
+                        color: root.t.text-dim;
+                    }
+                }
+                Text {
+                    text: root.s.branch;
+                    color: root.t.text-dim;
+                    font-family: Theme.font-mono;
+                    font-size: Theme.fs-meta;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                if root.s.chip1 != "": VerticalLayout {
+                    alignment: center;
+                    Chip {
+                        t: root.t;
+                        text: root.s.chip1;
+                    }
+                }
+                if root.s.chip2 != "": VerticalLayout {
+                    alignment: center;
+                    Chip {
+                        t: root.t;
+                        text: root.s.chip2;
+                    }
+                }
+                if root.s.chip3 != "": VerticalLayout {
+                    alignment: center;
+                    Chip {
+                        t: root.t;
+                        text: root.s.chip3;
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+            }
+        }
+        // « × » : discret jusqu'au survol de la carte (ou du focus clavier).
+        forget-button := PanelButton {
+            x: parent.width - self.width - 6px;
+            y: 6px;
+            t: root.t;
+            width: 18px;
+            height: 18px;
+            padding-x: 0;
+            radius: Theme.r-sm;
+            icon: @image-url("../../../icons/phosphor/x.svg");
+            icon-size: 11px;
+            fg: root.t.text-dim;
+            hover-fg: root.t.text;
+            tip: "Oublier cette session";
+            opacity: root.hovered || self.keyboard ? 1 : 0;
+            animate opacity { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+            clicked => {
+                root.forget();
+            }
+        }
+    }
+    if root.keyboard: FocusRing {
+        width: root.width + 6px;
+        height: root.height + 6px;
+        radius: root.border-radius;
+    }
+}
+
+export component ClaudeSessionsPanel inherits PanelBase {
+    width: 346px;
+    // `max-height: 420px` : la liste défile, l'en-tête et le bas restent.
+    // Écarts de 8 px posés par chaque partie (une partie vide ne prend aucune place).
+    property <length> list-limit: 420px - head.preferred-height - 8px - day.preferred-height - err.preferred-height;
+    spacing: 0;
+
+    head := PanelHead {
+        t: root.t;
+        title: "Claude Code";
+        if ClaudeSessionsPanelData.waiting != "": Text {
+            text: ClaudeSessionsPanelData.waiting;
+            color: root.t.warn;
+            font-size: Theme.fs-meta;
+            vertical-alignment: center;
+        }
+    }
+    VerticalLayout {
+        padding-top: 8px;
+        if ClaudeSessionsPanelData.sessions.length > 0: PanelScroll {
+            t: root.t;
+            limit: max(80px, root.list-limit);
+            spacing: 4px;
+            gutter: 0;
+            for s in ClaudeSessionsPanelData.sessions: SessionCard {
+                t: root.t;
+                s: s;
+                panel-w: root.width;
+                activate => {
+                    ClaudeSessionsPanelData.focus(s.id);
+                }
+                forget => {
+                    ClaudeSessionsPanelData.forget(s.id);
+                }
+            }
+        }
+        if ClaudeSessionsPanelData.sessions.length == 0: EmptyState {
+            t: root.t;
+            text: "Aucune session Claude Code ouverte.";
+        }
+    }
+    // Consommation du jour (toujours présente pour sa mesure ; vide sans jetons).
+    day := VerticalLayout {
+        padding-top: ClaudeSessionsPanelData.total != "" ? 8px : 0;
+        if ClaudeSessionsPanelData.total != "": Rectangle {
+            height: 1px;
+            background: root.t.line;
+        }
+        if ClaudeSessionsPanelData.total != "": VerticalLayout {
+            padding-top: 8px;
+            spacing: 5px;
+            HorizontalLayout {
+                spacing: 8px;
+                Eyebrow {
+                    t: root.t;
+                    label: "Aujourd’hui";
+                    horizontal-alignment: left;
+                    horizontal-stretch: 1;
+                }
+                TouchArea {
+                    changed has-hover => {
+                        if self.has-hover {
+                            Tip.show("Entrée, écriture du cache et sortie ; relectures du cache à part");
+                        } else {
+                            Tip.hide();
+                        }
+                    }
+                    HorizontalLayout {
+                        Text {
+                            text: ClaudeSessionsPanelData.total;
+                            color: root.t.text-dim;
+                            font-size: Theme.fs-meta;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+            for p in ClaudeSessionsPanelData.projects: HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    width: 108px;
+                    text: p.name;
+                    color: root.t.text;
+                    font-size: Theme.fs-meta;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Track {
+                        t: root.t;
+                        rounded: true;
+                        value: p.value;
+                    }
+                }
+                Text {
+                    width: 44px;
+                    text: p.tokens;
+                    color: root.t.text-dim;
+                    font-size: Theme.fs-meta;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+    err := VerticalLayout {
+        padding-top: ClaudeSessionsPanelData.error != "" ? 8px : 0;
+        if ClaudeSessionsPanelData.error != "": ErrorLine {
+            t: root.t;
+            text: ClaudeSessionsPanelData.error;
+        }
+    }
+}

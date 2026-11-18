@@ -1,0 +1,263 @@
+// Page « Automatique » (apps/prisme/pages/Rules.svelte) : les règles qui choisissent la scène,
+// lues de haut en bas, et la scène par défaut. Données : global `PrismeRules`
+// (src/prisme_window/rules.rs).
+
+import { PrismeTheme } from "theme.slint";
+import { PText, PButton, PField, PSelect, PSummary, PScroll } from "controls.slint";
+
+export struct PrismeRule {
+    name: string,
+    // Libellés des choix : ce qui joue, scène, plein écran.
+    media: string,
+    scene: string,
+    fullscreen: string,
+    // Conditions supplémentaires (applis séparées par des virgules) et section ouverte.
+    advanced: bool,
+    open: bool,
+    apps: string,
+    foreground: string,
+    first: bool,
+    last: bool,
+}
+
+export global PrismeRules {
+    in property <bool> ready;
+    in property <string> intro;
+    in property <bool> has-now;
+    in property <string> now-scene;
+    in property <string> now-reason;
+    in property <[PrismeRule]> rules;
+    in property <string> default-scene;
+    callback rename(int, string);
+    callback up(int);
+    callback down(int);
+    callback remove(int);
+    callback pick-media(int, length, length);
+    callback pick-scene(int, length, length);
+    callback pick-fullscreen(int, length, length);
+    callback toggle(int);
+    callback set-apps(int, string);
+    callback set-foreground(int, string);
+    callback add();
+    callback pick-default(length, length);
+}
+
+component Lbl inherits PText {
+    color: PrismeTheme.muted;
+    vertical-alignment: center;
+}
+
+component RuleCard inherits Rectangle {
+    in property <PrismeRule> rule;
+    in property <int> index;
+    border-width: 1px;
+    border-color: PrismeTheme.line;
+    border-radius: PrismeTheme.radius-m;
+    background: PrismeTheme.panel;
+    min-height: col.min-height;
+    preferred-height: col.preferred-height;
+    col := VerticalLayout {
+        padding-top: 12px;
+        padding-bottom: 14px;
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 10px;
+        HorizontalLayout {
+            spacing: 12px;
+            PField {
+                value: root.rule.name;
+                follow: true;
+                bare: true;
+                font-weight: 600;
+                edited(t) => {
+                    PrismeRules.rename(root.index, t);
+                }
+            }
+            HorizontalLayout {
+                spacing: 2px;
+                PButton {
+                    kind: 2;
+                    text: "↑";
+                    enabled: !root.rule.first;
+                    clicked => {
+                        PrismeRules.up(root.index);
+                    }
+                }
+                PButton {
+                    kind: 2;
+                    text: "↓";
+                    enabled: !root.rule.last;
+                    clicked => {
+                        PrismeRules.down(root.index);
+                    }
+                }
+                PButton {
+                    kind: 2;
+                    text: "Supprimer";
+                    clicked => {
+                        PrismeRules.remove(root.index);
+                    }
+                }
+            }
+        }
+        HorizontalLayout {
+            alignment: start;
+            spacing: 10px;
+            Lbl {
+                text: "Quand";
+                color: PrismeTheme.text;
+            }
+            PSelect {
+                text: root.rule.media;
+                open(x, y) => {
+                    PrismeRules.pick-media(root.index, x, y);
+                }
+            }
+            Lbl {
+                text: "afficher";
+                color: PrismeTheme.text;
+            }
+            PSelect {
+                text: root.rule.scene;
+                open(x, y) => {
+                    PrismeRules.pick-scene(root.index, x, y);
+                }
+            }
+        }
+        VerticalLayout {
+            spacing: 10px;
+            HorizontalLayout {
+                alignment: start;
+                PSummary {
+                    text: "Conditions supplémentaires" + (root.rule.advanced ? " (actives)" : "");
+                    open: root.rule.open;
+                    font-size: PrismeTheme.fs-13;
+                    toggled => {
+                        PrismeRules.toggle(root.index);
+                    }
+                }
+            }
+            if root.rule.open: GridLayout {
+                spacing-horizontal: 14px;
+                spacing-vertical: 8px;
+                Row {
+                    Lbl {
+                        width: 130px;
+                        text: "Joué par";
+                    }
+                    PField {
+                        value: root.rule.apps;
+                        placeholder: "n'importe quelle appli (ex. spotify.exe)";
+                        committed(t) => {
+                            PrismeRules.set-apps(root.index, t);
+                        }
+                    }
+                }
+                Row {
+                    Lbl {
+                        text: "Au premier plan";
+                    }
+                    PField {
+                        value: root.rule.foreground;
+                        placeholder: "n'importe quelle appli (ex. eldenring.exe)";
+                        committed(t) => {
+                            PrismeRules.set-foreground(root.index, t);
+                        }
+                    }
+                }
+                Row {
+                    Lbl {
+                        text: "Plein écran";
+                    }
+                    PSelect {
+                        text: root.rule.fullscreen;
+                        open(x, y) => {
+                            PrismeRules.pick-fullscreen(root.index, x, y);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component RulesPage inherits Rectangle {
+    if PrismeRules.ready: PScroll {
+        content-height: page.preferred-height;
+        page := VerticalLayout {
+            width: parent.width;
+            alignment: start;
+            padding-top: 28px;
+            padding-bottom: 40px;
+            padding-left: 32px;
+            padding-right: max(32px, parent.width - 860px + 32px);
+            spacing: 18px;
+            VerticalLayout {
+                spacing: 6px;
+                PText {
+                    text: "Automatique";
+                    font-size: PrismeTheme.h1;
+                    font-weight: 600;
+                }
+                PText {
+                    // `max-width: 68ch`.
+                    width: min(self.preferred-width, 540px);
+                    text: PrismeRules.intro;
+                    color: PrismeTheme.muted;
+                    wrap: word-wrap;
+                }
+                if PrismeRules.has-now: HorizontalLayout {
+                    alignment: start;
+                    spacing: 4px;
+                    PText {
+                        text: "En ce moment :";
+                        font-size: PrismeTheme.fs-13;
+                    }
+                    PText {
+                        text: PrismeRules.now-scene;
+                        font-size: PrismeTheme.fs-13;
+                        font-weight: 700;
+                    }
+                    PText {
+                        text: "(" + PrismeRules.now-reason + ")";
+                        font-size: PrismeTheme.fs-13;
+                        color: PrismeTheme.muted;
+                    }
+                }
+            }
+            VerticalLayout {
+                spacing: 10px;
+                for r[i] in PrismeRules.rules: RuleCard {
+                    rule: r;
+                    index: i;
+                }
+            }
+            HorizontalLayout {
+                spacing: 16px;
+                HorizontalLayout {
+                    alignment: start;
+                    PButton {
+                        text: "Ajouter une règle";
+                        clicked => {
+                            PrismeRules.add();
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 10px;
+                    Lbl {
+                        text: "Sinon, afficher";
+                        color: PrismeTheme.text;
+                    }
+                    PSelect {
+                        text: PrismeRules.default-scene;
+                        open(x, y) => {
+                            PrismeRules.pick-default(x, y);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

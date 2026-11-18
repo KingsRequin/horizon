@@ -1,0 +1,161 @@
+// Panneau Système (app/src/widgets/system/Panel.svelte) : processeur, GPU, mémoire (valeur,
+// température ou mémoire utilisée, courbe de 60 s) et applis qui consomment le plus. Mesures
+// chaque seconde tant qu'il est ouvert. Relié par src/widgets/system/panel.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { Eyebrow } from "../../gauge.slint";
+import { PanelBase } from "../../panel/base.slint";
+import { PanelHead } from "../../panel/head.slint";
+import { Divider } from "../../panel/divider.slint";
+import { Spark, Sparkline } from "widget.slint";
+
+// Une mesure : valeur (« 12 % », « — »), complément (température, « 9,8 / 31,9 Go »), courbe.
+export struct SystemPanelMeasure {
+    value: string,
+    detail: string,
+    spark: Spark,
+}
+
+// Une appli gourmande : nom et part du processeur (« 3,2 % »).
+export struct SystemPanelProcess {
+    name: string,
+    cpu: string,
+}
+
+export global SystemPanelData {
+    in-out property <SystemPanelMeasure> cpu: { value: "—", detail: "—" };
+    in-out property <SystemPanelMeasure> gpu: { value: "—", detail: "—" };
+    in-out property <SystemPanelMeasure> ram: { value: "—", detail: "—" };
+    in-out property <[SystemPanelProcess]> top;
+}
+
+// Ligne d'une mesure (grille 16 px · nom · 40 px · 96 px · 64 px, écart 8 px).
+component MeasureRow inherits HorizontalLayout {
+    in property <StyleTokens> t;
+    in property <image> icon;
+    in property <color> tint;
+    in property <string> name;
+    in property <SystemPanelMeasure> m;
+    spacing: 8px;
+    VerticalLayout {
+        alignment: center;
+        width: 16px;
+        Icon {
+            source: root.icon;
+            size: 15px;
+            color: root.tint;
+        }
+    }
+    Text {
+        text: root.name;
+        horizontal-stretch: 1;
+        min-width: 0;
+        color: root.t.text;
+        font-weight: 500;
+        font-size: root.t.fs-body;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    Text {
+        width: 40px;
+        text: root.m.value;
+        color: root.t.text;
+        font-family: Theme.font-mono;
+        font-weight: 500;
+        font-size: Theme.fs-meta;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+    Text {
+        width: 96px;
+        text: root.m.detail;
+        color: root.t.text-dim;
+        font-family: Theme.font-mono;
+        font-weight: 500;
+        font-size: Theme.fs-meta;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+    VerticalLayout {
+        alignment: center;
+        Sparkline {
+            width: 64px;
+            height: 18px;
+            spark: root.m.spark;
+            tint: root.tint;
+        }
+    }
+}
+
+export component SystemPanel inherits PanelBase {
+    width: 338px;
+    spacing: 12px;
+
+    PanelHead {
+        t: root.t;
+        title: "Système";
+    }
+    VerticalLayout {
+        spacing: 8px;
+        MeasureRow {
+            t: root.t;
+            icon: @image-url("../../../icons/phosphor/cpu.svg");
+            tint: root.t.cpu;
+            name: "Processeur";
+            m: SystemPanelData.cpu;
+        }
+        MeasureRow {
+            t: root.t;
+            icon: @image-url("../../../icons/phosphor/graphicsCard.svg");
+            tint: root.t.gpu;
+            name: "GPU";
+            m: SystemPanelData.gpu;
+        }
+        MeasureRow {
+            t: root.t;
+            icon: @image-url("../../../icons/phosphor/memory.svg");
+            tint: root.t.ram;
+            name: "Mémoire";
+            m: SystemPanelData.ram;
+        }
+    }
+    VerticalLayout {
+        Divider {
+            t: root.t;
+        }
+        VerticalLayout {
+            padding-top: 10px;
+            spacing: 5px;
+            Eyebrow {
+                t: root.t;
+                label: "Les plus gourmands";
+                horizontal-alignment: left;
+            }
+            for p in SystemPanelData.top: HorizontalLayout {
+                spacing: 8px;
+                Text {
+                    text: p.name;
+                    horizontal-stretch: 1;
+                    color: root.t.text;
+                    font-size: root.t.fs-body;
+                    overflow: elide;
+                }
+                Text {
+                    text: p.cpu;
+                    color: root.t.text;
+                    font-family: Theme.font-mono;
+                    font-weight: 500;
+                    font-size: Theme.fs-meta;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+            if SystemPanelData.top.length == 0: Text {
+                text: "Chargement…";
+                color: root.t.text-dim;
+                font-size: root.t.fs-body;
+            }
+        }
+    }
+}

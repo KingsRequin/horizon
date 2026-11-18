@@ -1,0 +1,351 @@
+// Page « Profils » de la fenêtre de réglages (app/src/settings/ProfilesEditor.svelte) : nom de
+// chaque profil, activer, supprimer (annulable ; au moins un profil), applis qui l'activent
+// (retrait annulable, ajout parmi les applis récentes du journal), nouveau profil (copie du
+// profil actif, pas activé). Service : src/ui/profiles.rs.
+
+import { Theme } from "../theme.slint";
+import { SettingsLayout } from "../settings/layout.slint";
+import { SettingsScroll } from "../settings/scroll.slint";
+import { SettingsNote } from "../settings/text.slint";
+import { SettingsButton, RemoveButton } from "../settings/button.slint";
+import { InputField } from "../settings/input.slint";
+import { DashedBox } from "../dashed.slint";
+import { Tip } from "../tooltip.slint";
+import { SettingsHeader } from "../widget-settings/page.slint";
+
+export struct ProfileApp {
+    key: string,
+    name: string,
+    // Profil qui l'a déjà (choix d'une appli) : « sera retirée de « X » ».
+    other: string,
+}
+
+export struct ProfileRow {
+    name: string,
+    active: bool,
+    apps: [ProfileApp],
+    picking: bool,
+    // Applis récentes pas encore dans ce profil (choix ouvert).
+    candidates: [ProfileApp],
+}
+
+export global ProfilesData {
+    in property <[ProfileRow]> rows;
+    // Profil actif choisi par une appli au premier plan.
+    in property <bool> auto;
+    // Dernier profil créé, pas activé (vide : rien à dire).
+    in property <string> created;
+    in property <string> error;
+    callback rename(int, string);
+    callback activate(int);
+    callback remove(int);
+    callback remove-app(int, int);
+    callback toggle-picker(int);
+    callback add-app(int, int);
+    callback add();
+    callback activate-created();
+}
+
+// Bouton à contour pointillé (« + Appli », « Nouveau profil… »).
+component DashedButton inherits Rectangle {
+    in property <string> text;
+    in property <length> radius: Theme.r-2xl;
+    in property <length> padding-x: 10px;
+    callback clicked();
+    height: 22px;
+    width: label.preferred-width + 2 * root.padding-x;
+    background: area.has-hover ? SettingsLayout.t.surface-2 : transparent;
+    border-radius: root.radius;
+    DashedBox {
+        ink: SettingsLayout.t.surface-2;
+        radius: root.radius;
+    }
+    area := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+    label := Text {
+        text: root.text;
+        color: SettingsLayout.t.text;
+        font-size: Theme.fs-meta;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+}
+
+component Chip inherits Rectangle {
+    in property <ProfileApp> app;
+    callback removed();
+    height: 22px;
+    width: row.preferred-width;
+    border-radius: Theme.r-2xl;
+    background: SettingsLayout.t.surface-2;
+    TouchArea {
+        changed has-hover => {
+            if self.has-hover {
+                Tip.show(root.app.key);
+            } else {
+                Tip.hide();
+            }
+        }
+    }
+    row := HorizontalLayout {
+        padding-left: 9px;
+        padding-right: 4px;
+        spacing: 4px;
+        Text {
+            text: root.app.name;
+            color: SettingsLayout.t.text;
+            font-size: Theme.fs-meta;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            width: 20px;
+            height: 18px;
+            y: 2px;
+            border-radius: Theme.r-xl;
+            background: x.has-hover ? SettingsLayout.t.surface-1 : transparent;
+            x := TouchArea {
+                mouse-cursor: pointer;
+                changed has-hover => {
+                    if self.has-hover {
+                        Tip.show("Retirer");
+                    } else {
+                        Tip.hide();
+                    }
+                }
+                clicked => {
+                    Tip.hide();
+                    root.removed();
+                }
+            }
+            Text {
+                text: "×";
+                color: SettingsLayout.t.text;
+                font-size: Theme.fs-meta;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+component Candidate inherits Rectangle {
+    in property <ProfileApp> app;
+    callback clicked();
+    height: 24px;
+    width: row.preferred-width;
+    border-radius: Theme.r-md;
+    border-width: 1px;
+    border-color: SettingsLayout.t.surface-2;
+    background: area.has-hover ? SettingsLayout.t.surface-2 : transparent;
+    area := TouchArea {
+        mouse-cursor: pointer;
+        changed has-hover => {
+            if self.has-hover {
+                Tip.show(root.app.key);
+            } else {
+                Tip.hide();
+            }
+        }
+        clicked => {
+            Tip.hide();
+            root.clicked();
+        }
+    }
+    row := HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        Text {
+            text: root.app.name;
+            color: SettingsLayout.t.text;
+            font-size: Theme.fs-meta;
+            vertical-alignment: center;
+        }
+        if root.app.other != "": Text {
+            text: " · sera retirée de « " + root.app.other + " »";
+            color: SettingsLayout.t.text-dim;
+            font-size: Theme.fs-meta * 0.85;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component ProfilesPage inherits Rectangle {
+    public function scroll-top() {
+        scroll.scroll-top();
+    }
+
+    changed visible => {
+        if self.visible {
+            SettingsLayout.content-w = scroll.content-w;
+        }
+    }
+
+    scroll := SettingsScroll {
+        width: root.width;
+        height: root.height;
+        init => {
+            if root.visible {
+                SettingsLayout.content-w = self.content-w;
+            }
+        }
+        changed content-w => {
+            if root.visible {
+                SettingsLayout.content-w = self.content-w;
+            }
+        }
+        SettingsHeader {
+            text: "Profils";
+        }
+        SettingsNote {
+            text: "Chaque profil garde sa propre disposition des barres. Choisis-le dans le menu de la barre (clic droit → Profil), ou associe-lui des applis : il s’active tant que l’une d’elles est au premier plan, puis le profil d’avant revient.";
+            below: 14px;
+        }
+        VerticalLayout {
+            padding-bottom: 14px;
+            spacing: 10px;
+            for p[i] in ProfilesData.rows: Rectangle {
+                property <length> inner: SettingsLayout.content-w - 24px;
+                border-radius: Theme.r-xl;
+                border-width: 1px;
+                border-color: p.active ? Theme.accent.with-alpha(0.55) : transparent;
+                background: SettingsLayout.t.surface-1;
+                VerticalLayout {
+                    padding-top: 10px;
+                    padding-bottom: 10px;
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 8px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        InputField {
+                            horizontal-stretch: 1;
+                            height: 28px;
+                            padding-x: 8px;
+                            font-weight: 600;
+                            value: p.name;
+                            committed(t) => {
+                                ProfilesData.rename(i, t);
+                            }
+                        }
+                        if p.active: VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: badge.preferred-width + 16px;
+                                height: 21px;
+                                border-radius: Theme.r-md;
+                                background: Theme.accent.with-alpha(0.14);
+                                badge := Text {
+                                    text: ProfilesData.auto ? "actif (appli)" : "actif";
+                                    color: Theme.accent;
+                                    font-size: Theme.fs-meta;
+                                }
+                            }
+                        }
+                        if !p.active: VerticalLayout {
+                            alignment: center;
+                            SettingsButton {
+                                text: "Activer";
+                                small: true;
+                                padding-x: 10px;
+                                clicked => {
+                                    ProfilesData.activate(i);
+                                }
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            RemoveButton {
+                                what: "le profil « " + p.name + " »";
+                                enabled: ProfilesData.rows.length >= 2;
+                                reason: "Il faut au moins un profil";
+                                clicked => {
+                                    ProfilesData.remove(i);
+                                }
+                            }
+                        }
+                    }
+                    FlexboxLayout {
+                        width: inner;
+                        spacing: 6px;
+                        for a[k] in p.apps: Chip {
+                            app: a;
+                            removed => {
+                                ProfilesData.remove-app(i, k);
+                            }
+                        }
+                        DashedButton {
+                            text: p.picking ? "Fermer" : "+ Appli";
+                            clicked => {
+                                ProfilesData.toggle-picker(i);
+                            }
+                        }
+                    }
+                    if p.picking: VerticalLayout {
+                        spacing: 8px;
+                        Rectangle {
+                            height: 1px;
+                            background: SettingsLayout.t.surface-2;
+                        }
+                        Flickable {
+                            height: min(160px, picks.preferred-height);
+                            content-height: picks.preferred-height;
+                            picks := FlexboxLayout {
+                                width: inner;
+                                spacing: 6px;
+                                for c[k] in p.candidates: Candidate {
+                                    app: c;
+                                    clicked => {
+                                        ProfilesData.add-app(i, k);
+                                    }
+                                }
+                                if p.candidates.length == 0: Text {
+                                    text: "Aucune appli récente dans le journal.";
+                                    color: SettingsLayout.t.text-dim;
+                                    font-size: Theme.fs-meta;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        DashedButton {
+            text: "Nouveau profil (copie du profil actif)";
+            height: 32px;
+            width: SettingsLayout.content-w;
+            radius: Theme.r-md;
+            clicked => {
+                ProfilesData.add();
+            }
+        }
+        if ProfilesData.created != "": HorizontalLayout {
+            padding-top: 10px;
+            spacing: 10px;
+            alignment: start;
+            Text {
+                text: "« " + ProfilesData.created + " » créé, copie du profil actif. Il n’est pas activé.";
+                color: SettingsLayout.t.text-dim;
+                font-size: Theme.fs-meta;
+                vertical-alignment: center;
+            }
+            SettingsButton {
+                text: "Activer";
+                small: true;
+                padding-x: 10px;
+                clicked => {
+                    ProfilesData.activate-created();
+                }
+            }
+        }
+        if ProfilesData.error != "": SettingsNote {
+            text: ProfilesData.error;
+            tint: SettingsLayout.t.bad;
+            font-size: Theme.fs-body;
+            above: 10px;
+        }
+    }
+}

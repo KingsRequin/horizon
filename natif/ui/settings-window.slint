@@ -1,0 +1,68 @@
+// Fenêtre de réglages, unique (src/ui/settings_window.rs) : fenêtre Windows ordinaire, opaque
+// (`page-bg`), redimensionnable (460 × 420 au moins), qui montre une page : « Réglages
+// d'Horizon » (`options`), réglages d'un widget (`widget`) ou profils (`profiles`).
+//
+// La page affichée pose `SettingsLayout.content-w` (largeur de son contenu qui défile, les pages
+// cachées ne la touchent pas) et utilise les briques de `ui/settings/`.
+
+import { Theme } from "theme.slint";
+import { Tip } from "tooltip.slint";
+import { UndoBar } from "undo-bar.slint";
+import { SettingsLayout } from "settings/layout.slint";
+import { OptionsPage } from "options/page.slint";
+import { WidgetSettingsPage } from "widget-settings/page.slint";
+import { ProfilesPage } from "profiles/page.slint";
+
+export component SettingsWindow inherits Window {
+    // Page montrée : « options », « widget » ou « profiles ».
+    in property <string> page: "options";
+    // Retrait annulable en cours (bandeau `UndoBar`, logique src/undoable.rs) ; vide = caché.
+    in property <string> undo-label;
+    callback undo-undo();
+    // Titre de la fenêtre (« Réglages d’Horizon », « Météo — Écran principal »).
+    in property <string> window-title: "Réglages d’Horizon";
+
+    title: root.window-title;
+    preferred-width: 760px;
+    preferred-height: 640px;
+    min-width: 460px;
+    min-height: 420px;
+    background: Theme.page-bg;
+    default-font-family: Theme.font-ui;
+    default-font-size: Theme.fs-body;
+
+    // Revient en haut de la page (autre section demandée).
+    public function scroll-top() {
+        options.scroll-top();
+        widget.scroll-top();
+        profiles.scroll-top();
+    }
+
+    options := OptionsPage {
+        visible: root.page == "options";
+        width: root.width;
+        height: root.height;
+    }
+
+    widget := WidgetSettingsPage {
+        visible: root.page == "widget";
+        width: root.width;
+        height: root.height;
+    }
+
+    profiles := ProfilesPage {
+        visible: root.page == "profiles";
+        width: root.width;
+        height: root.height;
+    }
+
+    UndoBar {
+        x: (parent.width - self.width) / 2;
+        y: parent.height - self.height - 18px;
+        t: SettingsLayout.t;
+        label: root.undo-label;
+        undo => {
+            root.undo-undo();
+        }
+    }
+}

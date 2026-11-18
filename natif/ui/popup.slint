@@ -1,0 +1,125 @@
+// Fenêtre surgissante (app/src/popup/PopupApp.svelte) : le panneau d'un widget, dans le style de
+// la barre d'où il vient. Une seule fenêtre pour tous les panneaux, menée par src/ui/popup.rs
+// (placement, délais, focus) : elle annonce sa taille (`measured`), le survol de la souris
+// (`hover`) et Échap (`escape`).
+//
+// Cadre : fond `popup-bg`, bord `popup-border`, rayon concentrique aux îlots (+ 3 px), marges
+// 14 × 16 px. Fondus d'entrée et de sortie (opacité et 4 px de glissement) déclenchés par Rust,
+// jamais continus ; le nouveau panneau d'un passage d'un widget à l'autre apparaît en fondu.
+
+import { Theme, Styles, StyleTokens } from "theme.slint";
+import { PanelView } from "@panel-view";
+import { EditHelp } from "edit-help.slint";
+
+export component PanelWindow inherits Window {
+    // Genre du widget dont le panneau est affiché (« media », « weather ») ; vide : aucun.
+    in property <string> kind;
+    // Exemplaire d'un panneau propre à un widget (« w1 » de « weather:w1 »), vide sinon.
+    in property <string> instance;
+    in property <bool> graphic;
+    // Ouvert par un clic : il a le focus (Tab, Échap).
+    in property <bool> pinned;
+    // Fondu de sortie en cours (annulé si la souris revient).
+    in property <bool> closing;
+    // Apparition : vrai le temps de la première image, puis faux (fondu d'entrée).
+    in property <bool> entering;
+    // Changement de panneau dans la fenêtre affichée : même chose pour le contenu seul.
+    in property <bool> switching;
+
+    property <StyleTokens> t: root.graphic ? Styles.graphic : Styles.islands;
+    property <length> pad-x: 16px;
+    property <length> pad-y: 14px;
+    // Aide du mode édition (« edithelp », `instance` = écran de la barre) à la place d'un panneau.
+    property <bool> help: root.kind == "edithelp";
+    property <length> content-w: root.help ? help-view.preferred-width : view.natural-w;
+    property <length> content-h: root.help ? help-view.preferred-height : view.natural-h;
+    // Taille de la fenêtre pour le panneau affiché : panneau, marges et bord (pixels logiques).
+    out property <length> panel-width: root.content-w + 2 * (root.pad-x + 1px);
+    out property <length> panel-height: root.content-h + 2 * (root.pad-y + 1px);
+    callback measured(length, length);
+    // La souris entre dans le panneau (`true`) ou en sort.
+    callback hover(bool);
+    // Échap (panneau épinglé).
+    callback escape();
+    // « Terminé » de l'aide du mode édition (écran de la barre).
+    callback edit-done(string);
+
+    // Panneau épinglé : le focus va au panneau (Tab passe ensuite d'un bouton à l'autre).
+    public function focus-panel() {
+        keys.focus();
+    }
+
+    changed panel-width => {
+        root.measured(root.panel-width, root.panel-height);
+    }
+    changed panel-height => {
+        root.measured(root.panel-width, root.panel-height);
+    }
+
+    title: "Horizon";
+    no-frame: true;
+    background: transparent;
+    // Texte courant (body, .graphic d'app.css) : 500, Inter (îlots) ou Space Grotesk (graphique).
+    default-font-family: root.t.font;
+    default-font-size: root.t.fs-body;
+    default-font-weight: 500;
+
+    keys := FocusScope {
+        focus-on-click: false;
+        focus-on-tab-navigation: false;
+        key-pressed(e) => {
+            if e.text == Key.Escape {
+                root.escape();
+                return accept;
+            }
+            reject
+        }
+
+        // Le survol d'un parent reste vrai au-dessus de ses boutons : le cadre est son enfant.
+        area := TouchArea {
+            changed has-hover => {
+                root.hover(self.has-hover);
+            }
+
+            frame := Rectangle {
+                width: root.width;
+                height: root.height;
+                border-radius: root.t.island-radius + 3px;
+                background: root.t.popup-bg;
+                border-width: 1px;
+                border-color: root.t.popup-border;
+                clip: true;
+                opacity: root.closing || root.entering ? 0 : 1;
+                y: root.closing || root.entering ? -4px : 0;
+                animate opacity, y { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+                view := PanelView {
+                    x: root.pad-x + 1px;
+                    y: root.pad-y + 1px;
+                    // Au moins 1 px : un élément vide peut être écarté du rendu, et Slint ne
+                    // construit le panneau (`if`) qu'en le dessinant (première mesure).
+                    width: max(1px, self.natural-w);
+                    height: max(1px, self.natural-h);
+                    kind: root.kind;
+                    instance: root.instance;
+                    t: root.t;
+                    pinned: root.pinned;
+                    opacity: root.switching ? 0 : 1;
+                    animate opacity { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                }
+
+                help-view := EditHelp {
+                    x: root.pad-x + 1px;
+                    y: root.pad-y + 1px;
+                    width: self.preferred-width;
+                    height: self.preferred-height;
+                    visible: root.help;
+                    t: root.t;
+                    done => {
+                        root.edit-done(root.instance);
+                    }
+                }
+            }
+        }
+    }
+}

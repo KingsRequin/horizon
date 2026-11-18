@@ -1,0 +1,190 @@
+// Notifications (app/src/widgets/notifications/Widget.svelte) : cloche et nombre de non lues
+// (survol = panneau, phase C ; clic = panneau épinglé et tout marquer comme lu). Sur une barre
+// sans clic en style graphique (écran du haut), la dernière notification en texte tant qu'elle a
+// moins de 10 min, puis la cloche. Le badge pulse une fois quand le nombre augmente.
+// « Ne pas déranger » (src/dnd.rs) : lune à la place de la cloche. Îlot dynamique
+// (ui/flash.slint) : ici en style graphique, ou en îlots quand la barre n'a pas de Lecture en
+// cours. Données : src/widgets/notifications.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { FlashData, FlashLine } from "../../flash.slint";
+import { WidgetFrame } from "../../widget-frame.slint";
+
+export global NotifsData {
+    in property <int> unread;
+    // Accès refusé ou lecture impossible : cloche estompée.
+    in property <bool> denied;
+    in property <bool> dnd;
+    // Dernière notification (moins de 10 min) : titre, texte, ancienneté, logo de l'appli.
+    in property <bool> has-latest;
+    in property <string> who;
+    in property <string> what;
+    in property <string> when;
+    in property <bool> has-logo;
+    in property <image> logo;
+    in property <bool> logo-tinted;
+    in property <color> logo-color;
+    // Toutes les 30 s (barre en mode texte) : ancienneté et durée de vie relues.
+    callback tick();
+    callback mark-read();
+}
+
+export component NotificationsWidget inherits WidgetFrame {
+    // Barre sans clic en style graphique (où l'îlot n'est qu'un groupe) : la dernière
+    // notification récente en texte.
+    property <bool> text-mode: !root.clickable && root.t.graphic;
+    // Îlot dynamique : ici, sauf en îlots quand un widget Lecture en cours s'en charge.
+    property <bool> flash: FlashData.active && (root.t.graphic || !FlashData.media-host);
+    property <bool> show-line: !root.flash && root.text-mode && NotifsData.has-latest;
+    property <int> unread: NotifsData.unread;
+    property <int> seen;
+    property <bool> pulsing;
+    property <float> k: 1;
+    init => {
+        root.seen = root.unread;
+    }
+    changed unread => {
+        if (root.unread > root.seen) {
+            root.pulsing = true;
+        }
+        root.seen = root.unread;
+    }
+    // Survol = panneau ; clic = panneau épinglé et tout marqué comme lu.
+    panel: "notifications";
+    has-action: true;
+    tip: NotifsData.dnd ? "Ne pas déranger" : "";
+    activated => {
+        if NotifsData.unread > 0 {
+            NotifsData.mark-read();
+        }
+    }
+
+    Timer {
+        interval: 30s;
+        running: root.text-mode;
+        triggered => {
+            NotifsData.tick();
+        }
+    }
+    Timer {
+        interval: 16ms;
+        running: root.pulsing;
+        triggered => {
+            root.pulsing = false;
+        }
+    }
+
+    if root.show-line: Rectangle {
+        y: (root.t.island-h - self.height) / 2;
+        width: min(row.preferred-width, root.compact ? 240px : 380px);
+        height: row.preferred-height;
+        border-radius: root.t.inner-radius;
+        background: root.t.surface-1;
+        clip: true;
+        row := HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 10px;
+            padding-top: 4px;
+            padding-bottom: 4px;
+            spacing: 7px;
+            if NotifsData.dnd: Icon {
+                y: (parent.height - self.height) / 2;
+                source: @image-url("../../../icons/phosphor/moonFill.svg");
+                size: 12px;
+                color: Theme.accent;
+            }
+            if NotifsData.has-logo: Image {
+                y: (parent.height - self.height) / 2;
+                width: 13px;
+                height: 13px;
+                source: NotifsData.logo;
+                image-fit: contain;
+                colorize: NotifsData.logo-tinted ? NotifsData.logo-color : root.t.text;
+            }
+            if !NotifsData.has-logo: Icon {
+                y: (parent.height - self.height) / 2;
+                source: @image-url("../../../icons/phosphor/bellSimple.svg");
+                size: 13px;
+                color: root.t.text;
+            }
+            Text {
+                text: NotifsData.who;
+                color: root.t.text;
+                font-family: root.t.font;
+                font-size: Theme.fs-meta;
+                font-weight: 600;
+                max-width: 140px;
+                overflow: elide;
+                vertical-alignment: center;
+            }
+            Text {
+                text: NotifsData.what;
+                color: root.t.text-dim;
+                font-family: root.t.font;
+                font-size: Theme.fs-meta;
+                overflow: elide;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+            }
+            // Barre resserrée : sans l'ancienneté.
+            if root.wide && !root.compact: Text {
+                text: NotifsData.when;
+                color: root.t.text-dim;
+                font-family: root.t.font;
+                font-size: Theme.fs-meta;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    if root.flash: FlashLine {
+        y: (root.t.island-h - self.height) / 2;
+        t: root.t;
+        compact: root.compact;
+        clickable: root.clickable;
+    }
+
+    if !root.flash && !root.show-line: Rectangle {
+        y: (root.t.island-h - self.height) / 2;
+        width: 22px;
+        height: 22px;
+        opacity: NotifsData.denied ? Theme.o-off : 1;
+        Icon {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            source: NotifsData.dnd ? @image-url("../../../icons/phosphor/moonFill.svg") : @image-url("../../../icons/phosphor/bellSimple.svg");
+            size: 15px;
+            color: NotifsData.dnd ? Theme.accent : NotifsData.unread > 0 ? root.t.text : root.t.text-dim;
+        }
+        // Badge (scale(1.25) → 1 à chaque hausse ; le rendu logiciel ne transforme pas : la
+        // taille suit `k`).
+        if NotifsData.unread > 0: Rectangle {
+            property <length> base-w: max(15px, badge-text.preferred-width + 8px);
+            width: self.base-w * root.k;
+            height: 15px * root.k;
+            x: parent.width + 6px - self.base-w + (self.base-w - self.width) / 2;
+            y: -3px + (15px - self.height) / 2;
+            border-radius: Theme.r-lg * root.k;
+            background: root.t.badge;
+            badge-text := Text {
+                text: NotifsData.unread > 9 ? "9+" : NotifsData.unread;
+                color: Theme.on-badge;
+                font-family: Theme.font-ui;
+                font-size: Theme.fs-label * root.k;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    states [
+        pulse when root.pulsing: {
+            k: 1.25;
+            out {
+                animate k { duration: Theme.dur-base; easing: cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+            }
+        }
+    ]
+}

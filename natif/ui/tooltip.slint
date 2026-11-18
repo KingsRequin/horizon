@@ -1,0 +1,8 @@
+// Info-bulles (attribut `title` de la version Tauri) : un élément appelle `Tip.show(texte)` au
+// survol et `Tip.hide()` à la sortie ou au clic ; l'info-bulle Windows apparaît après un délai
+// (src/ui/tooltip.rs).
+
+export global Tip {
+    callback show(string);
+    callback hide();
+}
