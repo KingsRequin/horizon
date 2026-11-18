@@ -113,7 +113,7 @@ DÉSINSTALLER
 [IO.File]::WriteAllText((Join-Path $stage 'LISEZMOI.txt'), $readme.Replace("`r`n", "`n").Replace("`n", "`r`n"), [Text.UTF8Encoding]::new($true))
 
 $readmeEn = @"
-Horizon $version: a toolbar at the top of every screen (Windows 10 and 11). The interface is in
+Horizon ${version}: a toolbar at the top of every screen (Windows 10 and 11). The interface is in
 French.
 
 INSTALL
