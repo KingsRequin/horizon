@@ -41,6 +41,12 @@ in one native app that uses ~50 MB of memory and stays out of your way.
 
 ## Features
 
+**It follows the music.** While something plays, the islands light up with the bass and flash on
+every kick, in the colors of the album art (the graphic style shows a spectrum). Updated at most
+20 times per second, and only when something changes.
+
+<img src="docs/images/music.gif" alt="Bars pulsing with the music" width="100%">
+
 <table>
 <tr>
 <td width="33%" valign="top"><img src="docs/images/media.png" alt="Now playing panel"></td>

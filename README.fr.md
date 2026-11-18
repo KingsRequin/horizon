@@ -38,6 +38,12 @@ dans une appli native qui utilise ~50 Mo de mémoire et se fait oublier.
 
 ## Fonctions
 
+**Elle suit la musique.** Pendant la lecture, les îlots s'éclairent avec les basses et flashent à
+chaque grosse caisse, aux couleurs de la pochette (le style graphique montre un spectre). Au plus
+20 mises à jour par seconde, et seulement quand quelque chose change.
+
+<img src="docs/images/music.gif" alt="Barres qui pulsent avec la musique" width="100%">
+
 <table>
 <tr>
 <td width="33%" valign="top"><img src="docs/images/media.png" alt="Panneau de lecture"></td>
