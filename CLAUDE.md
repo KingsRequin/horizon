@@ -2,7 +2,7 @@
 
 Barre d'outils modulaire en haut de chaque écran (Windows 10 et 11, un ou plusieurs écrans).
 Rust + Slint 1.18 (rendu logiciel, fenêtres « layered »), un seul processus. Ce que fait l'appli
-et comment l'installer : `README.fr.md` (`README.md` en anglais). Mode d'emploi du code
+et comment l'installer : `README.md` (`README.en.md` en anglais). Mode d'emploi du code
 (plateforme, hôte, thème, briques, panneaux, réglages, ajouter un widget, pièges de Slint) :
 `natif/README.md`. Consignes propres à un poste (dossier de compilation, droits d'installer) :
 `CLAUDE.local.md`, non suivi par git.

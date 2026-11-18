@@ -19,7 +19,7 @@ in one native app that uses ~50 MB of memory and stays out of your way.
 [Features](#features) ·
 [Install](#install) ·
 [FAQ](#faq) ·
-[Français](README.fr.md)
+[Français](README.md)
 
 <img src="docs/images/hero.png" alt="A tall Horizon bar: shortcuts, microphone, system and clock in the strip; music, Claude Code, system and weather as tiles" width="100%">
 

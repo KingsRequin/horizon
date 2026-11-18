@@ -19,7 +19,7 @@ dans une appli native qui utilise ~50 Mo de mémoire et se fait oublier.
 [Fonctions](#fonctions) ·
 [Installation](#installation) ·
 [Questions](#questions-fréquentes) ·
-[English](README.md)
+[English](README.en.md)
 
 <img src="docs/images/hero.png" alt="Une barre haute d'Horizon : raccourcis, micro, système et horloge dans la bande ; musique, Claude Code, système et météo en tuiles" width="100%">
 
