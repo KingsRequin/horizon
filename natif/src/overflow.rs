@@ -26,6 +26,30 @@ pub struct Fit {
     pub hidden: Vec<(Zone, &'static str)>,
 }
 
+/// Largeurs naturelles annoncées par l'interface, gardées par état (normal, resserré) : décider de
+/// desserrer d'après des largeurs mesurées resserrées ferait croire que tout tient, et la barre
+/// basculerait sans fin d'un état à l'autre. Une largeur jamais mesurée dans un état est prise
+/// dans l'autre.
+#[derive(Debug, Default, Clone)]
+pub struct Widths {
+    normal: std::collections::HashMap<String, f32>,
+    compact: std::collections::HashMap<String, f32>,
+}
+
+impl Widths {
+    /// Note la largeur de `id` mesurée dans l'état `compact` ; vrai si elle a changé.
+    pub fn insert(&mut self, compact: bool, id: &str, w: f32) -> bool {
+        let map = if compact { &mut self.compact } else { &mut self.normal };
+        map.insert(id.to_owned(), w) != Some(w)
+    }
+
+    /// Largeur de `id` dans l'état `compact`.
+    pub fn get(&self, compact: bool, id: &str) -> Option<f32> {
+        let (mine, other) = if compact { (&self.compact, &self.normal) } else { (&self.normal, &self.compact) };
+        mine.get(id).or_else(|| other.get(id)).copied()
+    }
+}
+
 /// Zones qui débordent, d'après la largeur intérieure de la bande et la largeur voulue par
 /// chaque zone (gauche, centre, droite). Comme en CSS : le centre garde sa largeur, gauche et
 /// droite se partagent le reste à parts égales.
@@ -89,6 +113,32 @@ mod tests {
         fn fit(&self, editing: bool) -> Fit {
             fit(&["suggestions", "weather", "system"], editing, |c, h| self.measure(c, h), |z, k| self.present(z, k))
         }
+    }
+
+    #[test]
+    fn widths_are_kept_per_state() {
+        let mut w = Widths::default();
+        assert!(w.insert(false, "media", 300.0));
+        assert!(!w.insert(false, "media", 300.0), "même largeur : rien de changé");
+        assert_eq!(w.get(true, "media"), Some(300.0), "jamais mesurée resserrée : la normale");
+        assert!(w.insert(true, "media", 180.0));
+        assert_eq!(w.get(false, "media"), Some(300.0), "la normale ne bouge pas");
+        assert_eq!(w.get(true, "media"), Some(180.0));
+        assert_eq!(w.get(false, "absent"), None);
+    }
+
+    /// La boucle de la barre de l'écran du haut : resserrée, elle tient ; desserrée, elle
+    /// déborde. Avec les largeurs par état, le calcul refait sur l'état resserré reste resserré.
+    #[test]
+    fn a_squeezed_bar_does_not_flip_back() {
+        let mut w = Widths::default();
+        w.insert(false, "a", 600.0);
+        w.insert(true, "a", 400.0);
+        let measure = |compact: bool, _: &[(Zone, &'static str)]| overflowing(1000.0, [w.get(compact, "a").unwrap(), 0.0, 0.0]);
+        let first = fit(&[], false, measure, |_, _| false);
+        assert!(first.compact);
+        let again = fit(&[], false, measure, |_, _| false);
+        assert_eq!(first, again, "stable");
     }
 
     #[test]

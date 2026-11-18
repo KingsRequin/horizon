@@ -34,8 +34,8 @@ struct BarUi {
     /// Emplacements de chaque zone (gauche, centre, droite), masqués compris.
     models: [Rc<VecModel<Slot>>; 3],
     /// Largeur naturelle de chaque emplacement (identifiant → px logiques), annoncée par
-    /// l'interface.
-    widths: Rc<RefCell<HashMap<String, f32>>>,
+    /// l'interface, par état (normal, resserré).
+    widths: Rc<RefCell<overflow::Widths>>,
     fit: RefCell<Fit>,
     fit_pending: Cell<bool>,
     /// Déjà affichée une fois (la première apparition n'est pas animée).
@@ -194,10 +194,12 @@ pub fn open(app: &AppHandle, label: &str, monitor: &MonitorInfo, rect: (i32, i32
     });
     let l = label.to_owned();
     ui.window.on_refit(move || schedule_fit(&l));
-    let (l, widths) = (label.to_owned(), ui.widths.clone());
+    let (l, widths, win) = (label.to_owned(), ui.widths.clone(), ui.window.as_weak());
     ui.window.on_measured(move |_, id, w| {
-        // Annoncé pendant la mise en page : noté, le calcul vient au tour suivant.
-        let changed = widths.try_borrow_mut().is_ok_and(|mut m| m.insert(id.to_string(), w) != Some(w));
+        // Annoncé pendant la mise en page : noté pour l'état où il a été mesuré, le calcul vient
+        // au tour suivant.
+        let compact = win.upgrade().is_some_and(|w| w.get_compact());
+        let changed = widths.try_borrow_mut().is_ok_and(|mut m| m.insert(compact, &id, w));
         if changed {
             schedule_fit(&l);
         }
@@ -424,14 +426,14 @@ const STATUS_ID: &str = "#status";
 /// avant chaque emplacement affiché sauf le premier. Un widget qui n'a rien à montrer (largeur
 /// nulle : Sessions Claude sans session) ne compte pas, comme `.slot:not(:has(*))` ; les témoins
 /// de la barre principale comptent dans la zone gauche.
-fn needs(b: &BarUi, widths: &HashMap<String, f32>, hidden: &[(Zone, &'static str)]) -> [f32; 3] {
+fn needs(b: &BarUi, widths: &overflow::Widths, compact: bool, hidden: &[(Zone, &'static str)]) -> [f32; 3] {
     let gap = b.window.get_gap();
     Zone::ALL.map(|z| {
-        let status = if z == Zone::Left { widths.get(STATUS_ID).copied() } else { None };
+        let status = if z == Zone::Left { widths.get(compact, STATUS_ID) } else { None };
         let shown: Vec<f32> = b.models[zone_index(z)]
             .iter()
             .filter(|s| !hidden.contains(&(z, s.kind.as_str())))
-            .map(|s| widths.get(s.id.as_str()).copied().unwrap_or(0.0))
+            .map(|s| widths.get(compact, s.id.as_str()).unwrap_or(0.0))
             .chain(status)
             .filter(|w| *w > 0.0)
             .collect();
@@ -442,7 +444,7 @@ fn needs(b: &BarUi, widths: &HashMap<String, f32>, hidden: &[(Zone, &'static str
 /// Masque et écarte les emplacements (ligne par ligne : rien n'est recréé). Un widget vide
 /// (largeur naturelle nulle) ne prend pas d'écart et laisse au suivant la place de premier,
 /// sauf en mode édition (`editing`), où il garde sa place, nommée.
-fn show_slots(b: &BarUi, widths: &HashMap<String, f32>, compact: bool, hidden: &[(Zone, &'static str)], editing: bool) {
+fn show_slots(b: &BarUi, widths: &overflow::Widths, compact: bool, hidden: &[(Zone, &'static str)], editing: bool) {
     let gap = b.window.get_gap();
     for z in Zone::ALL {
         let model = &b.models[zone_index(z)];
@@ -450,7 +452,7 @@ fn show_slots(b: &BarUi, widths: &HashMap<String, f32>, compact: bool, hidden: &
         for row in 0..model.row_count() {
             let Some(mut s) = model.row_data(row) else { continue };
             let hide = hidden.contains(&(z, s.kind.as_str()));
-            let empty = !editing && widths.get(s.id.as_str()).is_some_and(|w| *w <= 0.0);
+            let empty = !editing && widths.get(compact, s.id.as_str()).is_some_and(|w| w <= 0.0);
             let lead = if hide || empty || first { 0.0 } else { gap };
             first &= hide || empty;
             if s.hidden != hide || s.lead != lead {
@@ -482,7 +484,7 @@ fn run_fit(label: &str) {
     let fit = overflow::fit(
         crate::widgets::SQUEEZE_ORDER,
         editing,
-        |_, hidden| overflow::overflowing(inner, needs(&b, &widths, hidden)),
+        |compact, hidden| overflow::overflowing(inner, needs(&b, &widths, compact, hidden)),
         |z, kind| b.models[zone_index(z)].iter().any(|s| s.kind == kind),
     );
     show_slots(&b, &widths, fit.compact, &fit.hidden, editing);
