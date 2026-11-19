@@ -1,0 +1,152 @@
+// Carte dépliante : un réglage principal (interrupteur si `switchable`) et, dessous, les réglages
+// qui en dépendent (lignes `nested` posées en enfants), montrés quand la carte est dépliée.
+// Cliquer la carte la déplie ou la replie, cliquer l'interrupteur change le réglage (et déplie la
+// carte quand il s'allume). Clavier : Espace change le réglage (déplie sans interrupteur),
+// Entrée déplie ou replie. Contrôlée pour le réglage (`toggled`), libre pour le dépliage.
+//
+// Le corps reste dans l'arbre, replié à hauteur nulle : `@children` ne peut pas être sous un
+// `if`.
+
+import { Theme } from "../theme.slint";
+import { Icon } from "../components.slint";
+import { FocusRing } from "../panel/focus.slint";
+import { SettingsLayout } from "layout.slint";
+import { Card } from "card.slint";
+import { Switch } from "switch.slint";
+
+export component SettingExpander inherits Rectangle {
+    in property <string> label;
+    in property <string> hint;
+    in property <bool> switchable: true;
+    in property <bool> checked;
+    in property <bool> enabled: true;
+    in-out property <bool> expanded;
+    out property <bool> keyboard;
+    callback toggled(bool);
+    property <length> text-w: Card.text-w(false, (root.switchable ? 40px + 8px : 0) + 28px);
+
+    function flip() {
+        if root.enabled {
+            if !root.checked {
+                root.expanded = true;
+            }
+            root.toggled(!root.checked);
+        }
+    }
+
+    VerticalLayout {
+        padding-bottom: Card.gap;
+        head := Rectangle {
+            min-height: Card.min-h;
+            border-top-left-radius: Theme.r-md;
+            border-top-right-radius: Theme.r-md;
+            border-bottom-left-radius: root.expanded ? 0 : Theme.r-md;
+            border-bottom-right-radius: root.expanded ? 0 : Theme.r-md;
+            background: area.has-hover ? Card.bg-hover : Card.bg;
+            FocusScope {
+                focus-on-click: false;
+                focus-gained(r) => {
+                    root.keyboard = r == FocusReason.tab-navigation;
+                }
+                focus-lost => {
+                    root.keyboard = false;
+                }
+                key-pressed(e) => {
+                    if e.text == Key.Return || (e.text == " " && !root.switchable) {
+                        root.expanded = !root.expanded;
+                        return accept;
+                    }
+                    if e.text == " " {
+                        root.flip();
+                        return accept;
+                    }
+                    reject
+                }
+            }
+            area := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.expanded = !root.expanded;
+                }
+            }
+            HorizontalLayout {
+                padding-top: Card.pad-y;
+                padding-bottom: Card.pad-y;
+                padding-left: Card.pad-x;
+                padding-right: Card.pad-x - 6px;
+                spacing: Card.spacing;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    opacity: root.enabled ? 1 : Theme.o-off;
+                    Text {
+                        width: root.text-w;
+                        text: root.label;
+                        color: SettingsLayout.t.text;
+                        wrap: word-wrap;
+                    }
+                    if root.hint != "": Text {
+                        width: root.text-w;
+                        text: root.hint;
+                        color: SettingsLayout.t.text-dim;
+                        font-size: Theme.fs-meta;
+                        wrap: word-wrap;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    if root.switchable: VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 40px;
+                            height: 28px;
+                            sw-area := TouchArea {
+                                enabled: root.enabled;
+                                mouse-cursor: root.enabled ? MouseCursor.pointer : MouseCursor.default;
+                                clicked => {
+                                    root.flip();
+                                }
+                            }
+                            Switch {
+                                checked: root.checked;
+                                hovered: sw-area.has-hover;
+                                enabled: root.enabled;
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 28px;
+                            height: 28px;
+                            border-radius: Theme.r-md;
+                            background: area.has-hover ? SettingsLayout.t.surface-2 : transparent;
+                            Icon {
+                                source: root.expanded ? @image-url("../../icons/phosphor/caretUp.svg") : @image-url("../../icons/phosphor/caretDown.svg");
+                                size: 14px;
+                                color: SettingsLayout.t.text-dim;
+                            }
+                        }
+                    }
+                }
+            }
+            if root.keyboard: FocusRing {
+                width: head.width + 6px;
+                height: head.height + 6px;
+                radius: Theme.r-md;
+            }
+        }
+        Rectangle {
+            height: root.expanded ? body.preferred-height : 0;
+            clip: true;
+            border-bottom-left-radius: Theme.r-md;
+            border-bottom-right-radius: Theme.r-md;
+            background: Card.body;
+            body := VerticalLayout {
+                y: 0;
+                height: self.preferred-height;
+                @children
+            }
+        }
+    }
+}

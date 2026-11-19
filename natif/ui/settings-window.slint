@@ -1,5 +1,5 @@
 // Fenêtre de réglages, unique (src/ui/settings_window.rs) : fenêtre Windows ordinaire, opaque
-// (`page-bg`), redimensionnable (460 × 420 au moins), qui montre une page : « Réglages
+// (`page-bg`), redimensionnable (560 × 420 au moins), qui montre une page : « Réglages
 // d'Horizon » (`options`), réglages d'un widget (`widget`) ou profils (`profiles`).
 //
 // La page affichée pose `SettingsLayout.content-w` (largeur de son contenu qui défile, les pages
@@ -25,7 +25,7 @@ export component SettingsWindow inherits Window {
     title: root.window-title;
     preferred-width: 760px;
     preferred-height: 640px;
-    min-width: 460px;
+    min-width: 560px;
     min-height: 420px;
     background: Theme.page-bg;
     default-font-family: Theme.font-ui;

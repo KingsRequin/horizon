@@ -1,0 +1,29 @@
+// Interrupteur des réglages (dessin seul, la carte qui le porte reçoit les clics) : piste de
+// 40 × 20 px, pleine dans l'accent quand il est mis, contour estompé sinon ; la pastille glisse
+// d'un bout à l'autre et grossit au survol. Désactivé : estompé.
+
+import { Theme } from "../theme.slint";
+import { SettingsLayout } from "layout.slint";
+
+export component Switch inherits Rectangle {
+    in property <bool> checked;
+    in property <bool> hovered;
+    in property <bool> enabled: true;
+    width: 40px;
+    height: 20px;
+    border-radius: 10px;
+    border-width: root.checked ? 0 : 1px;
+    border-color: root.hovered && root.enabled ? SettingsLayout.t.text : SettingsLayout.t.text-dim;
+    background: root.checked ? (root.hovered && root.enabled ? Theme.accent.mix(SettingsLayout.t.text, 0.85) : Theme.accent) : transparent;
+    opacity: root.enabled ? 1 : Theme.o-off;
+    knob := Rectangle {
+        property <length> size: root.hovered && root.enabled ? 14px : 12px;
+        x: root.checked ? root.width - self.size - 4px : 4px;
+        y: (root.height - self.size) / 2;
+        width: self.size;
+        height: self.size;
+        border-radius: self.size / 2;
+        background: root.checked ? Theme.on-accent : SettingsLayout.t.text-dim;
+        animate x, width, height { duration: Theme.dur-fast; easing: ease-out; }
+    }
+}

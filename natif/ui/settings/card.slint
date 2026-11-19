@@ -1,0 +1,29 @@
+// Mesures et couleurs des cartes de réglages (une carte = un réglage, à la façon des
+// Paramètres de Windows 11) : `SettingRow`, `SettingCheck` et `SettingExpander` les partagent.
+// Une carte « imbriquée » (`nested`) est une ligne du corps d'une carte dépliante : sans fond
+// propre, en retrait, séparée de la précédente par un filet.
+
+import { Theme } from "../theme.slint";
+import { SettingsLayout } from "layout.slint";
+
+export global Card {
+    out property <length> pad-x: 16px;
+    out property <length> pad-y: 11px;
+    // Retrait des lignes imbriquées (aligné après l'interrupteur de la carte qui les porte).
+    out property <length> indent: 44px;
+    out property <length> min-h: 52px;
+    // Écart entre deux cartes.
+    out property <length> gap: 4px;
+    out property <length> spacing: 14px;
+    out property <brush> bg: SettingsLayout.t.surface-1;
+    out property <brush> bg-hover: SettingsLayout.t.surface-2.mix(SettingsLayout.t.surface-1, 0.45);
+    // Corps d'une carte dépliée.
+    out property <brush> body: SettingsLayout.t.surface-1.mix(Theme.page-bg, 0.55);
+    out property <brush> body-hover: SettingsLayout.t.surface-1.mix(Theme.page-bg, 0.85);
+    out property <brush> line: Theme.page-bg;
+
+    // Largeur des textes d'une carte : le contenu moins les marges, l'écart et le contrôle.
+    public pure function text-w(nested: bool, control: length) -> length {
+        max(60px, SettingsLayout.content-w - 2 * self.pad-x - (nested ? self.indent - self.pad-x : 0) - self.spacing - control)
+    }
+}

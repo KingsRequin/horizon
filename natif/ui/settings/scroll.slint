@@ -1,6 +1,7 @@
 // Contenu qui défile d'une fenêtre de réglages (`overflow: auto` de la page) : colonne posée en
 // enfants, à la largeur de la vue moins la gouttière, molette et barre de défilement fine à
-// droite (seulement quand le contenu dépasse ; glissable). `padding-*` : marges du contenu.
+// droite (seulement quand le contenu dépasse ; glissable). `padding-*` : marges du contenu ;
+// colonne de `max-content-w` au plus, centrée.
 // `scroll-top()` : revient en haut (changement de section).
 
 import { Theme } from "../theme.slint";
@@ -9,8 +10,19 @@ import { SettingsLayout } from "layout.slint";
 export component SettingsScroll inherits Rectangle {
     in property <length> padding-x: 24px;
     in property <length> padding-y: 22px;
+    // Largeur de lecture au plus : la colonne est centrée au-delà.
+    in property <length> max-content-w: 640px;
     // Largeur de la colonne (à poser dans `SettingsLayout.content-w` par la page).
-    out property <length> content-w: root.width - 2 * root.padding-x;
+    out property <length> content-w: min(root.max-content-w, root.width - 2 * root.padding-x);
+    // Marge qui centre la colonne, posée à la main : liée à la largeur, elle ferait une boucle
+    // de liaison (la taille de la fenêtre dépend de la mise en page de la colonne).
+    property <length> side: root.padding-x;
+    init => {
+        root.side = (root.width - root.content-w) / 2;
+    }
+    changed width => {
+        root.side = (root.width - root.content-w) / 2;
+    }
     property <length> content-h: col.preferred-height;
     property <bool> overflows: root.content-h > root.height;
     property <length> bar-h: max(24px, root.height * root.height / max(1px, root.content-h));
@@ -27,8 +39,8 @@ export component SettingsScroll inherits Rectangle {
             y: 0;
             width: fl.width;
             height: max(fl.height, root.content-h);
-            padding-left: root.padding-x;
-            padding-right: root.padding-x;
+            padding-left: root.side;
+            padding-right: root.side;
             padding-top: root.padding-y;
             padding-bottom: root.padding-y;
             alignment: start;

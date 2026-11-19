@@ -1,4 +1,4 @@
-// Textes d'une page de réglages : titre de section (`h2`), sous-titre (`h3`), note ou
+// Textes d'une page de réglages : titre de page, titre de groupe, sous-titre (`h3`), note ou
 // introduction (`.note`, `.intro`, `.text`), message d'erreur ou de réussite (`.error`, `.ok`).
 // Les marges des feuilles de style Svelte sont des remplissages (`above`, `below`), la page
 // empile ses éléments sans espacement.
@@ -6,20 +6,44 @@
 import { Theme } from "../theme.slint";
 import { SettingsLayout } from "layout.slint";
 
-// `h2` : Space Grotesk 600, 14 px ; 22 px au-dessus (sauf le premier), 10 px dessous.
-export component SettingsHeading inherits Rectangle {
+// Titre de page (section de la navigation) : Space Grotesk 600, 24 px, et sa description.
+export component SettingsTitle inherits Rectangle {
     in property <string> text;
-    in property <bool> first;
-    in property <length> below: 10px;
+    in property <string> description;
     VerticalLayout {
-        padding-top: root.first ? 0 : 22px;
-        padding-bottom: root.below;
+        padding-bottom: 6px;
+        spacing: 4px;
         Text {
             text: root.text;
             color: SettingsLayout.t.text;
             font-family: Theme.font-display;
-            font-size: Theme.fs-title;
+            font-size: 24px;
             font-weight: 600;
+        }
+        if root.description != "": Text {
+            width: SettingsLayout.content-w;
+            text: root.description;
+            color: SettingsLayout.t.text-dim;
+            wrap: word-wrap;
+        }
+    }
+}
+
+// Titre d'un groupe de cartes : Inter 600, 13 px ; 22 px au-dessus (sauf le premier), 8 px dessous.
+export component SettingsHeading inherits Rectangle {
+    in property <string> text;
+    in property <bool> first;
+    in property <length> below: 8px;
+    VerticalLayout {
+        padding-top: root.first ? 0 : 22px;
+        padding-bottom: root.below;
+        Text {
+            width: SettingsLayout.content-w;
+            text: root.text;
+            color: SettingsLayout.t.text;
+            font-size: 13px;
+            font-weight: 600;
+            wrap: word-wrap;
         }
     }
 }
