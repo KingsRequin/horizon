@@ -266,7 +266,7 @@ const FORBIDDEN: [&str; 6] = ["image-url", ".ttf", ".otf", ".ttc", ".woff", ".pf
 /// Chemin d'import permis : bibliothèque (`@horizon`, `std-widgets.slint`), ou `.slint` relatif
 /// sans `..`, lecteur ni chemin réseau.
 fn import_allowed(p: &str) -> bool {
-    if p.starts_with('@') || p == "std-widgets.slint" {
+    if p == "@horizon" || p == "std-widgets.slint" {
         return true;
     }
     let n = p.replace('\\', "/");
@@ -417,7 +417,7 @@ export component Widget inherits Window {
     #[test]
     fn network_imports_are_refused_before_compiling() {
         // Source Slint : `"\\\\serveur\\x.slint"` vaut \\serveur\x.slint.
-        for bad in [r#"\\\\serveur\\x.slint"#, "//serveur/x.slint", "C:/x.slint", "../x.slint", "a//b.slint"] {
+        for bad in [r#"\\\\serveur\\x.slint"#, "//serveur/x.slint", "C:/x.slint", "../x.slint", "a//b.slint", "@horizon/../x.slint", "@autre"] {
             let text = format!("import {{ X }} from \"{bad}\";\nexport component Widget inherits Window {{}}\n");
             let dir = plugin("net", &[("widget.slint", &text)]);
             let e = compile(&dir, true, false).err().unwrap_or_else(|| panic!("accepté : {bad}"));
