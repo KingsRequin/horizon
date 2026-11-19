@@ -145,12 +145,18 @@ pub(super) fn run(rx: &Receiver<ToJs>, me: &Sender<ToJs>, out: &dyn Fn(FromJs)) 
 /// Traite un message ; vrai pour `Quit`.
 fn handle(plugins: &mut HashMap<String, Plugin>, msg: ToJs, me: &Sender<ToJs>, out: &dyn Fn(FromJs)) -> bool {
     match msg {
-        ToJs::Load { id, main, instances, permissions } => match Plugin::new(&id, instances, permissions, me.clone()) {
+        ToJs::Load { id, main, instances, permissions } => match Plugin::new(&id, instances, permissions.clone(), me.clone()) {
             Ok(p) => match p.load_main(main, out) {
-                // La nouvelle version ne se charge pas : l'ancienne (s'il y en a une) reste.
+                // La nouvelle version ne se charge pas : l'ancienne reste, sauf si ses permissions
+                // ne sont plus celles qui ont été acceptées (elle n'y aurait plus droit).
                 Some(message) => {
                     out(FromJs::Crash { id: id.clone(), message, import: true });
-                    plugins.entry(id).or_insert(p);
+                    let keep = plugins.get(&id).is_some_and(|old| old.hooks.borrow().perms == permissions);
+                    if !keep {
+                        if let Some(old) = plugins.insert(id, p) {
+                            old.unload(out);
+                        }
+                    }
                 }
                 None => {
                     if let Some(old) = plugins.insert(id.clone(), p) {

@@ -187,6 +187,19 @@ mod tests {
     }
 
     #[test]
+    fn broken_reload_with_new_permissions_drops_the_old_script() {
+        let (s, rx) = engine();
+        let wide = Permissions { http: vec!["https://example.com/".into()], ..Permissions::default() };
+        load_with(&s, "a", r#"horizon.ui.on("ping", () => horizon.ui.set("pong", 1));"#, vec![], wide);
+        next(&rx);
+        load_with(&s, "a", "faute(;\n", vec![], Permissions::default());
+        assert!(matches!(next(&rx), FromJs::Crash { import: true, .. }));
+        s.send(ToJs::Callback { id: "a".into(), instance: "w".into(), name: "ping".into(), args: vec![] }).unwrap();
+        // L'ancien script (aux permissions plus larges) ne répond plus.
+        assert!(rx.recv_timeout(Duration::from_millis(300)).into_iter().all(|m| !matches!(m, FromJs::UiSet { .. })));
+    }
+
+    #[test]
     fn throw_at_import_reports_line() {
         let (s, rx) = engine();
         load(&s, "a", "let a = 1;\nlet b = 2;\nthrow new Error('boum');\n", vec![]);

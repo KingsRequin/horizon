@@ -6,7 +6,7 @@
 //! réseau, ni `..`) : seulement pour une propriété `image` de premier niveau.
 
 use serde_json::Value as Json;
-use slint::{Brush, Color, Image, ModelRc, SharedString, VecModel};
+use slint::{Brush, Color, Image, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel};
 use slint_interpreter::{Struct, Value, ValueType};
 use std::path::{Path, PathBuf};
 
@@ -55,11 +55,17 @@ pub fn plugin_image(dir: &Path, rel: &str) -> Option<Image> {
     if std::fs::metadata(&path).ok()?.len() > MAX_IMAGE_BYTES {
         return None;
     }
-    let (w, h) = image::image_dimensions(&path).ok()?;
-    if w > MAX_IMAGE || h > MAX_IMAGE {
-        return None;
-    }
-    Image::load_from_path(&path).ok()
+    // Un seul décodage, borné (dimensions et mémoire) : pas d'écart entre ce qui est vérifié et
+    // ce qui est décodé.
+    let mut reader = image::ImageReader::open(&path).ok()?.with_guessed_format().ok()?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_IMAGE);
+    limits.max_image_height = Some(MAX_IMAGE);
+    limits.max_alloc = Some(128 * 1024 * 1024);
+    reader.limits(limits);
+    let rgba = reader.decode().ok()?.to_rgba8();
+    let buf = SharedPixelBuffer::<Rgba8Pixel>::clone_from_slice(rgba.as_raw(), rgba.width(), rgba.height());
+    Some(Image::from_rgba8(buf))
 }
 
 /// Valeur Slint de `v` pour une propriété de type `ty` (`None` : ne convient pas).

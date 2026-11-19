@@ -112,13 +112,27 @@ fn send(msg: ToJs) {
 pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     let a = app.clone();
     let tx = js::spawn(move |m| {
-        if m == FromJs::Quit {
-            QUIT_DONE.store(true, Ordering::SeqCst);
-            return;
+        // Coût et plantages vont au budget directement (jamais perdus dans la file).
+        match &m {
+            FromJs::Quit => {
+                QUIT_DONE.store(true, Ordering::SeqCst);
+                return;
+            }
+            FromJs::Cost { id, us } => {
+                a.state::<Plugins>().record_cost(id, *us);
+                return;
+            }
+            FromJs::Crash { id, message, .. } => a.state::<Plugins>().script_crashed(&a, id, message.clone()),
+            _ => {}
         }
         {
             let mut q = crate::util::lock(&QUEUE);
-            if q.len() >= MAX_QUEUE {
+            let control = matches!(m, FromJs::Crash { .. } | FromJs::Loaded { .. });
+            if q.len() >= MAX_QUEUE && !control {
+                // File pleine : le plugin qui la remplit est compté comme planté.
+                if let Some(id) = plugin_of_message(&m) {
+                    a.state::<Plugins>().script_crashed(&a, &id, "trop de messages pour l'interface".to_owned());
+                }
                 return;
             }
             q.push(m);
@@ -131,17 +145,27 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     JS.set(tx).map_err(|_| anyhow::anyhow!("fil des scripts déjà lancé"))
 }
 
+/// Plugin qui a produit un message destiné à l'interface.
+fn plugin_of_message(m: &FromJs) -> Option<String> {
+    match m {
+        FromJs::UiSet { id, .. }
+        | FromJs::UiOn { id, .. }
+        | FromJs::Island { id, .. }
+        | FromJs::Alert { id, .. }
+        | FromJs::Palette { id, .. }
+        | FromJs::Log { id, .. }
+        | FromJs::Open { id, .. } => Some(id.clone()),
+        _ => None,
+    }
+}
+
 /// Traite les messages en attente ; le temps passé est compté dans le budget de chaque plugin.
 fn drain(app: &AppHandle) {
     SCHEDULED.store(false, Ordering::SeqCst);
     let batch = std::mem::take(&mut *crate::util::lock(&QUEUE));
     let plugins = app.state::<Plugins>();
     for m in batch {
-        let id = match &m {
-            FromJs::UiSet { id, .. } | FromJs::UiOn { id, .. } | FromJs::Island { id, .. } | FromJs::Alert { id, .. } => Some(id.clone()),
-            FromJs::Palette { id, .. } => Some(id.clone()),
-            _ => None,
-        };
+        let id = plugin_of_message(&m);
         let t = Instant::now();
         from_js(app, m);
         if let Some(id) = id {
@@ -214,7 +238,7 @@ pub fn reconcile(app: &AppHandle) {
                     send(ToJs::Instances { id, list });
                 }
             }
-            reloaded => {
+            _ => {
                 let path = dir.join("main.js");
                 let main = match std::fs::metadata(&path) {
                     Ok(m) if m.len() > MAX_MAIN => {
@@ -224,10 +248,6 @@ pub fn reconcile(app: &AppHandle) {
                     Ok(_) => std::fs::read_to_string(&path).ok(),
                     Err(_) => None,
                 };
-                if reloaded.is_some() {
-                    // Nouvelle version : coût et plantages comptés de zéro.
-                    plugins.reset_counts(&id);
-                }
                 // Valeurs et rappels de la version en place gardés : si la nouvelle ne se
                 // charge pas, l'ancienne continue (le fil des scripts la garde aussi).
                 LOADED.with_borrow_mut(|l| {
@@ -344,13 +364,17 @@ fn from_js(app: &AppHandle, m: FromJs) {
         }
         FromJs::Crash { id, message, import } => {
             log::warn!("plugin {id} : {message}");
+            // Déjà compté dans le budget par le fil des scripts.
             if import {
-                super::view::set_script_error(&id, Some(message.clone()));
+                super::view::set_script_error(&id, Some(message));
             }
-            app.state::<Plugins>().script_crashed(app, &id, message);
         }
-        FromJs::Loaded { id } => super::view::set_script_error(&id, None),
-        FromJs::Cost { id, us } => app.state::<Plugins>().record_cost(&id, us),
+        FromJs::Loaded { id } => {
+            // Nouvelle version chargée : coût et plantages comptés de zéro.
+            app.state::<Plugins>().reset_counts(&id);
+            super::view::set_script_error(&id, None);
+        }
+        FromJs::Cost { .. } => {}
         FromJs::Island { id, key, spec } => {
             let activity = spec.map(|s| crate::ui::island::Activity {
                 icon: crate::ui::icons::static_name(s["icon"].as_str().unwrap_or_default()).unwrap_or("squaresFour"),
