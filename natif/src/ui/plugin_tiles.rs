@@ -64,7 +64,7 @@ pub fn tile_text(p: &PluginInfo, load: f32, crash: Option<String>, update: Optio
 /// montré avant l'installation.
 pub fn library_text(t: &Tile) -> TileText {
     let detail = if t.permissions.is_empty() { "Aucune permission demandée".to_owned() } else { format!("Demande : {}", t.permissions.join(" ; ")) };
-    TileText { chip: "Disponible", level: 1, detail, action: Some((format!("plugin_install:{}", t.id), "Installer")) }
+    TileText { chip: "", level: 1, detail, action: Some((format!("plugin_install:{}", t.id), "Installer")) }
 }
 
 /// « 1.2.0 · KingsRequin · 14 Ko ».

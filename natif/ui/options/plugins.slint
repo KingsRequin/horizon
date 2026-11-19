@@ -82,7 +82,8 @@ component Tile inherits Rectangle {
                     overflow: elide;
                 }
             }
-            VerticalLayout {
+            // Pas de pastille dans la bibliothèque : tout y est « disponible ».
+            if root.tile.chip != "": VerticalLayout {
                 alignment: start;
                 Chip {
                     text: root.tile.chip;
