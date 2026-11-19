@@ -10,6 +10,7 @@
 pub mod check;
 mod convert;
 pub mod events;
+pub mod library;
 mod registry;
 pub mod script;
 mod slint_host;
@@ -226,6 +227,24 @@ impl Plugins {
         self.edit_store(app, |r| r.store.entry(id.to_owned()).or_default().disabled = reason);
     }
 
+    /// Le plugin `id` vient de la bibliothèque (elle le met à jour).
+    pub fn from_library(&self, id: &str) -> bool {
+        lock(&self.registry).store.get(id).is_some_and(|e| e.library)
+    }
+
+    /// Le plugin `id` vient d'être installé depuis la bibliothèque.
+    pub fn set_from_library(&self, app: &AppHandle, id: &str) {
+        self.edit_store(app, |r| r.store.entry(id.to_owned()).or_default().library = true);
+    }
+
+    /// Le plugin `id` a été retiré : son accord et son origine sont oubliés.
+    pub fn forget(&self, app: &AppHandle, id: &str) {
+        self.reset_counts(id);
+        self.edit_store(app, |r| {
+            r.store.remove(id);
+        });
+    }
+
     /// L'utilisateur accepte les permissions actuelles du plugin `id`.
     pub fn accept(&self, app: &AppHandle, id: &str) {
         self.edit_store(app, |r| {
@@ -359,6 +378,8 @@ fn snapshot(root: &Path) -> Snapshot {
         .flatten()
         .flatten()
         .filter(|e| std::fs::symlink_metadata(e.path()).is_ok_and(|m| m.is_dir()))
+        // Dossiers de travail (installation, modèle) : « .nom.… », jamais des plugins.
+        .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
         .filter_map(|e| Some((e.file_name().into_string().ok()?, signature(&e.path()))))
         .collect()
 }
@@ -416,6 +437,7 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     }
     script::start(app)?;
     events::start(app)?;
+    library::start(app)?;
     let a = app.clone();
     start_thread("plugins-budget", move || {
         loop {

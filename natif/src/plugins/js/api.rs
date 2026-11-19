@@ -797,10 +797,8 @@ fn install_io<'js>(ctx: &Ctx<'js>, horizon: &Object<'js>, id: &str, hooks: &Rc<R
     files.set(
         "read",
         Function::new(ctx.clone(), move |ctx: Ctx<'js>, path: String| -> rquickjs::Result<Option<String>> {
-            let p = PathBuf::from(&path);
-            if !h.borrow().perms.allows_file(&p, &|v| std::env::var(v).ok()) {
-                return Err(missing(&ctx, &format!("files {path}")));
-            }
+            let allowed = h.borrow().perms.allows_file(&path, &|v| std::env::var(v).ok());
+            let Some(p) = allowed else { return Err(missing(&ctx, &format!("files {path}"))) };
             Ok(read_small(&p))
         })?,
     )?;
@@ -808,11 +806,10 @@ fn install_io<'js>(ctx: &Ctx<'js>, horizon: &Object<'js>, id: &str, hooks: &Rc<R
     files.set(
         "watch",
         Function::new(ctx.clone(), move |ctx: Ctx<'js>, path: String, f: Function<'js>| -> rquickjs::Result<()> {
-            let p = PathBuf::from(&path);
             let mut hk = h.borrow_mut();
-            if !hk.perms.allows_file(&p, &|v| std::env::var(v).ok()) {
+            let Some(p) = hk.perms.allows_file(&path, &|v| std::env::var(v).ok()) else {
                 return Err(missing(&ctx, &format!("files {path}")));
-            }
+            };
             if hk.watches.len() >= MAX_WATCHES {
                 return Err(rquickjs::Exception::throw_range(&ctx, "files.watch : trop de fichiers"));
             }

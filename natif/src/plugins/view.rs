@@ -496,7 +496,9 @@ fn tick() {
             super::sentinel_arm(f, &job.plugin);
         }
         let t = std::time::Instant::now();
-        let image = if size.0 > 0.0 && size.1 > 0.0 { surface.render(size.0, size.1, max) } else { None };
+        // Largeur nulle (rien à montrer) : dessiné quand même sur un pixel, sinon un élément
+        // conditionnel qui devrait apparaître ne serait jamais créé (et la largeur resterait nulle).
+        let image = if size.1 > 0.0 { surface.render(size.0.max(1.0), size.1, max) } else { None };
         drop(surface);
         let took = t.elapsed();
         if let Some(f) = &sentinel {

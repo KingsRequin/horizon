@@ -157,6 +157,23 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   rechercher maintenant, ou installer. Si la nouvelle version ne peut pas être lancée,
   l'ancienne est remise. Une compilation depuis les sources ne se met pas à jour seule.
 
+## Discord vocal
+
+Le widget *Discord vocal* (et la partie Krisp du widget *Micro*) parle au RPC local de Discord,
+celui des overlays de streaming : salon en cours, participants, qui parle, micro et son. Par
+défaut, Horizon se présente comme **StreamKit** (l'application de Discord pour les overlays) :
+la première fois, Discord demande d'autoriser StreamKit (une fenêtre dans Discord), puis plus
+rien. Le jeton est gardé dans le Gestionnaire d'identifiants de Windows ; page « État », ligne
+« Discord vocal ».
+
+- Les commandes (micro, son, quitter le salon, volume d'un participant, suppression de bruit)
+  passent si Discord les permet à l'application ; sinon le widget reste en lecture seule.
+- **Ta propre application Discord** (portail des développeurs, avec `http://localhost` dans
+  *RPC Origins*) : `client_id` et `client_secret` dans la section `[discord]` de
+  `settings.toml`.
+- Le statut « Ne pas déranger » de Discord n'est pas accessible par ce RPC.
+- L'autorisation n'est demandée que si un widget Discord vocal ou Micro est sur une barre.
+
 ## Plugins (préversion)
 
 Un plugin ajoute un widget (et son panneau) sans toucher à Horizon : un dossier

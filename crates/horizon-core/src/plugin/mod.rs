@@ -3,6 +3,7 @@
 //! `natif/src/plugins/`. Conception : `.superpowers/docs/specs/2026-11-19-plugins-design.md`.
 
 pub mod budget;
+pub mod library;
 mod manifest;
 mod permissions;
 mod settings;

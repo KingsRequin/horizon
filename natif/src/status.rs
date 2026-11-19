@@ -142,6 +142,15 @@ fn checks(app: &AppHandle) -> Vec<Check> {
         None => Check::new("game", "Mode jeu", Level::Off, "désactivé (Réglages d’Horizon › Fonctions)"),
     });
 
+    // Discord vocal par le RPC local (StreamKit ou ta propre application).
+    let d = app.state::<crate::discord::Discord>();
+    let ds = d.status();
+    out.push(if d.active() {
+        Check::new("discord_rpc", "Discord vocal", Level::Ok, ds)
+    } else {
+        Check::new("discord_rpc", "Discord vocal", Level::Off, if ds.is_empty() { "démarrage…".to_owned() } else { ds })
+    });
+
     // Applis personnelles (absentes de l’édition partagée).
     if crate::PERSONAL {
         // Relais Discord (plugin KrispBridge).

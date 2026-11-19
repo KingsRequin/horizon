@@ -150,7 +150,6 @@ dans le menu du clic droit sur une barre → *Réglages d'Horizon*.
 - **Plugins** : des widgets dans leur propre dossier (interface Slint + JavaScript), chargés
   sans redémarrer, avec un [guide pour les écrire avec une IA](docs/PLUGINS.md) (préversion) ;
   à venir : une bibliothèque sur GitHub.
-- **Discord vocal** par le RPC local officiel (qui parle, micro coupé, volume par personne).
 - **Traductions.**
 
 ## Fait avec Claude Code

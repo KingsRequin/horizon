@@ -84,6 +84,6 @@ pub fn krisp_toggle(app: AppHandle) -> Result<(), String> {
     let Some(k) = status(&app).1 else {
         return Err("Krisp indisponible (Discord fermé ?)".into());
     };
-    crate::relay::send(&app, serde_json::json!({ "type": "set", "krisp": !k }));
+    crate::discord::send(&app, serde_json::json!({ "type": "set", "krisp": !k }));
     Ok(())
 }

@@ -2,7 +2,7 @@
 //! script peut joindre doit y figurer.
 
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::PathBuf;
 use url::Url;
 
 /// Ce qu'un plugin a déclaré pouvoir faire.
@@ -132,10 +132,12 @@ impl Permissions {
         self.http.iter().filter_map(|e| parse(e)).any(|e| covers(&e, &u)).then(|| u.to_string())
     }
 
-    /// Le script peut lire ce fichier. `env` donne les variables d'environnement.
-    pub fn allows_file(&self, path: &Path, env: &dyn Fn(&str) -> Option<String>) -> bool {
-        let Some(wanted) = path.to_str().and_then(normalize) else { return false };
-        self.files.iter().filter_map(|e| expand(e, env)).filter_map(|e| normalize(&e)).any(|e| e == wanted)
+    /// Le script peut lire ce fichier (variables `%LOCALAPPDATA%` et `%APPDATA%` permises, comme
+    /// dans le manifeste) : le chemin réel à lire, `None` sinon. `env` donne les variables.
+    pub fn allows_file(&self, path: &str, env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
+        let real = expand(path, env)?;
+        let wanted = normalize(&real)?;
+        self.files.iter().filter_map(|e| expand(e, env)).filter_map(|e| normalize(&e)).any(|e| e == wanted).then(|| PathBuf::from(real))
     }
 
     /// Le plugin reçoit cet événement.
@@ -175,7 +177,6 @@ impl Permissions {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     fn perms() -> Permissions {
         Permissions {
@@ -252,11 +253,17 @@ mod tests {
     fn file_exact_and_no_escape() {
         let p = perms();
         let base = r"C:\Users\u\AppData\Local\KingsHub";
-        assert!(p.allows_file(&PathBuf::from(format!(r"{base}\PHONE.json")), &env));
-        assert!(p.allows_file(&PathBuf::from("C:/Users/u/AppData/Local/KingsHub/phone.json"), &env));
-        assert!(!p.allows_file(&PathBuf::from(format!(r"{base}\..\KingsHub\phone.json")), &env));
-        assert!(!p.allows_file(&PathBuf::from(format!(r"{base}\phone.json.bak")), &env));
-        assert!(!p.allows_file(&PathBuf::from(format!(r"\\?\{base}\phone.json")), &env));
+        assert!(p.allows_file(&format!(r"{base}\PHONE.json"), &env).is_some());
+        assert!(p.allows_file("C:/Users/u/AppData/Local/KingsHub/phone.json", &env).is_some());
+        // Le script peut aussi écrire le chemin comme dans le manifeste.
+        assert_eq!(
+            p.allows_file("%LOCALAPPDATA%/KingsHub/phone.json", &env),
+            Some(PathBuf::from(r"C:\Users\u\AppData\Local\KingsHub\phone.json"))
+        );
+        assert!(p.allows_file(&format!(r"{base}\..\KingsHub\phone.json"), &env).is_none());
+        assert!(p.allows_file(&format!(r"{base}\phone.json.bak"), &env).is_none());
+        assert!(p.allows_file(&format!(r"\\?\{base}\phone.json"), &env).is_none());
+        assert!(p.allows_file("%APPDATA%/KingsHub/phone.json", &env).is_none());
     }
 
     #[test]

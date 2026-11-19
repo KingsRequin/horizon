@@ -329,6 +329,7 @@ fn set_on(surface: &Surface, dir: &std::path::Path, prop: &str, value: &Json) {
             if let Err(e) = inst.set_property(prop, v) {
                 log::debug!("plugin : {prop} : {e}");
             }
+            surface.touch();
         }
         None => log::debug!("plugin : {prop} : valeur {value} de type inattendu"),
     }

@@ -6,10 +6,12 @@
 //! les réglages par défaut servent en attendant qu'il soit corrigé : il n'est jamais écrasé.
 
 mod alerts;
+mod discord;
 mod features;
 mod write;
 
 pub use alerts::AlertSettings;
+pub use discord::DiscordSettings;
 pub use features::FeatureSettings;
 
 use crate::night::NightSettings;
@@ -73,10 +75,13 @@ pub struct Settings {
     pub alerts: AlertSettings,
     pub timer: TimerSettings,
     pub features: FeatureSettings,
+    pub discord: DiscordSettings,
 }
 
 /// État du fichier, pour la page « État » et l'enregistrement.
 #[derive(Debug, Clone, PartialEq)]
+// Une valeur de plus par lecture du fichier : la taille de la variante ne compte pas.
+#[allow(clippy::large_enum_variant)]
 pub enum SettingsFile {
     /// Absent (créé à la première lecture).
     Missing,
