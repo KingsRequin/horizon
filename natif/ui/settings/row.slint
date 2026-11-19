@@ -1,31 +1,34 @@
-// Ligne de réglage (app/src/settings/ui/Row.svelte) : carte `surface-1`, libellé (et
-// explication) à gauche, contrôle posé en enfants à droite, centré verticalement. 6 px sous la
-// carte. Les textes passent à la ligne dans la place que laisse le contrôle
-// (`SettingsLayout.content-w`).
+// Carte de réglage : libellé (et explication) à gauche, contrôle posé en enfants à droite,
+// centré verticalement. `nested` : ligne du corps d'une carte dépliante (`SettingExpander`). Les
+// textes passent à la ligne dans la place que laisse le contrôle (`SettingsLayout.content-w`).
 
 import { Theme } from "../theme.slint";
 import { SettingsLayout } from "layout.slint";
+import { Card } from "card.slint";
 
 export component SettingRow inherits Rectangle {
     in property <string> label;
     in property <string> hint;
-    // Place des textes : la largeur du contenu moins les marges, l'écart et le contrôle.
-    property <length> text-w: max(60px, SettingsLayout.content-w - 20px - 14px - ctl.preferred-width);
+    in property <bool> nested;
+    in property <bool> enabled: true;
+    property <length> text-w: Card.text-w(root.nested, ctl.preferred-width);
 
     VerticalLayout {
-        padding-bottom: 6px;
+        padding-bottom: root.nested ? 0 : Card.gap;
         Rectangle {
-            border-radius: Theme.r-lg;
-            background: SettingsLayout.t.surface-1;
+            min-height: Card.min-h;
+            border-radius: root.nested ? 0 : Theme.r-md;
+            background: root.nested ? transparent : Card.bg;
             HorizontalLayout {
-                padding-top: 9px;
-                padding-bottom: 9px;
-                padding-left: 10px;
-                padding-right: 10px;
-                spacing: 14px;
+                padding-top: Card.pad-y;
+                padding-bottom: Card.pad-y;
+                padding-left: root.nested ? Card.indent : Card.pad-x;
+                padding-right: Card.pad-x;
+                spacing: Card.spacing;
                 VerticalLayout {
                     alignment: center;
-                    spacing: 3px;
+                    spacing: 2px;
+                    opacity: root.enabled ? 1 : Theme.o-off;
                     Text {
                         width: root.text-w;
                         text: root.label;
@@ -48,6 +51,11 @@ export component SettingRow inherits Rectangle {
                         @children
                     }
                 }
+            }
+            if root.nested: Rectangle {
+                y: 0;
+                height: 1px;
+                background: Card.line;
             }
         }
     }

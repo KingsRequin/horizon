@@ -136,7 +136,7 @@ fn checks(app: &AppHandle) -> Vec<Check> {
     out.push(match crate::game::since_ms() {
         Some(t) => Check::new("game", "Mode jeu", Level::Ok, "actif : spectre coupé, mesures espacées").at("depuis", Some(t)),
         None if game => Check::new("game", "Mode jeu", Level::Ok, "prêt (plein écran sur l’écran principal)"),
-        None => Check::new("game", "Mode jeu", Level::Off, "désactivé (Réglages d’Horizon › Fonctions)"),
+        None => Check::new("game", "Mode jeu", Level::Off, "désactivé (Réglages d’Horizon › Général)"),
     });
 
     // Discord vocal par le RPC local (StreamKit ou ta propre application).
@@ -236,54 +236,27 @@ fn checks(app: &AppHandle) -> Vec<Check> {
     out
 }
 
-/// Une ligne par plugin (état, coût, accord à donner), et le dossier des plugins.
+/// Une ligne pour les plugins : combien, et ceux qui attendent un accord ou sont en échec (le
+/// détail est sur la page Plugins).
 fn plugin_checks(app: &AppHandle) -> Vec<Check> {
     use crate::plugins::{Disabled, PluginState, Plugins};
-    let plugins = app.state::<Plugins>();
-    let mut out = Vec::new();
-    for p in plugins.list() {
-        let name = p.manifest.as_ref().map_or_else(|| p.id.clone(), |m| m.name.clone());
-        let label = format!("Plugin : {name}");
-        let version = p.manifest.as_ref().map(|m| format!("{} · ", m.version)).unwrap_or_default();
-        let id = format!("plugin:{}", p.id);
-        let c = match &p.state {
-            PluginState::Ok => {
-                let load = plugins.load(&p.id) * 100.0;
-                let mut detail = format!("{version}actif · {load:.1} % d’un cœur");
-                if let Some(e) = &p.error {
-                    detail.push_str(&format!(" · nouvelle version refusée (l’ancienne reste) : {e}"));
-                } else if let Some(crash) = plugins.last_crash(&p.id) {
-                    detail.push_str(&format!(" · dernière erreur du script : {crash}"));
-                }
-                let level = if p.error.is_some() { Level::Error } else { Level::Ok };
-                Check::new(&id, &label, level, detail).action(format!("plugin_disable:{}", p.id), "Désactiver")
-            }
-            PluginState::NeedsConsent(asks) => Check::new(&id, &label, Level::Off, format!("{version}attend ton accord : {}", asks.join(" ; ")))
-                .action(format!("plugin_accept:{}", p.id), "Autoriser"),
-            PluginState::Disabled(Disabled::User) => {
-                Check::new(&id, &label, Level::Off, format!("{version}désactivé")).action(format!("plugin_enable:{}", p.id), "Activer")
-            }
-            PluginState::Disabled(Disabled::TooHeavy) => Check::new(&id, &label, Level::Error, format!("{version}désactivé : trop gourmand (plus de 2 % d’un cœur)"))
-                .action(format!("plugin_enable:{}", p.id), "Réactiver"),
-            PluginState::Disabled(Disabled::Crashing) => {
-                let crash = plugins.last_crash(&p.id).unwrap_or_default();
-                Check::new(&id, &label, Level::Error, format!("{version}désactivé : erreurs répétées du script · {crash}"))
-                    .action(format!("plugin_enable:{}", p.id), "Réactiver")
-            }
-            PluginState::Broken => Check::new(&id, &label, Level::Error, p.error.clone().unwrap_or_else(|| "invalide".into()))
-                .action(format!("plugin_folder:{}", p.id), "Ouvrir le dossier"),
-        };
-        out.push(c);
+    let list = app.state::<Plugins>().list();
+    if list.is_empty() {
+        return vec![Check::new("plugins", "Plugins", Level::Off, "aucun installé").action("plugins", "Voir")];
     }
-    let dir = crate::plugins::plugins_dir();
-    let count = out.len();
-    let detail = if count == 0 { format!("aucun plugin dans {}", dir.display()) } else { format!("{count} dans {}", dir.display()) };
-    out.push(Check::new("plugins", "Plugins", if count == 0 { Level::Off } else { Level::Ok }, detail).action("plugins_dir", "Ouvrir le dossier"));
-    out.push(
-        Check::new("plugin_new", "Nouveau plugin", Level::Ok, "un modèle à modifier, avec son guide (PLUGINS.md), posé sur la barre principale")
-            .action("plugin_new", "Créer"),
-    );
-    out
+    let consent = list.iter().filter(|p| matches!(p.state, PluginState::NeedsConsent(_))).count();
+    let failing = list
+        .iter()
+        .filter(|p| p.error.is_some() || matches!(p.state, PluginState::Broken | PluginState::Disabled(Disabled::TooHeavy | Disabled::Crashing)))
+        .count();
+    let mut detail = if list.len() == 1 { "1 installé".to_owned() } else { format!("{} installés", list.len()) };
+    if consent > 0 {
+        detail.push_str(&format!(" · {consent} à autoriser"));
+    }
+    if failing > 0 {
+        detail.push_str(&format!(" · {failing} en échec"));
+    }
+    vec![Check::new("plugins", "Plugins", if failing > 0 { Level::Error } else { Level::Ok }, detail).action("plugins", "Voir")]
 }
 
 fn update_check(app: &AppHandle) -> Check {
@@ -305,7 +278,7 @@ fn update_check(app: &AppHandle) -> Check {
         Status::Failed(e) => Check::new("update", L, Level::Off, format!("{version} · dernière recherche ratée : {e}")),
         Status::UpToDate => Check::new("update", L, Level::Ok, format!("{version}, à jour")),
         Status::Idle if auto => Check::new("update", L, Level::Ok, format!("{version} · recherche une minute après le démarrage")),
-        Status::Idle => Check::new("update", L, Level::Off, format!("{version} · automatique coupée (Réglages d’Horizon › Fonctions)")),
+        Status::Idle => Check::new("update", L, Level::Off, format!("{version} · automatique coupée (Réglages d’Horizon › Général)")),
     };
     c.at("dernière recherche", u.checked_ms()).action("update_check", "Rechercher")
 }

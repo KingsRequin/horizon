@@ -1,7 +1,8 @@
-// Section « Alertes » (app/src/settings/options/AlertsSection.svelte) : « Claude attend », « Ne
-// pas déranger » et batteries faibles, pour toutes les barres.
+// Section « Alertes » : ce que l'îlot annonce (« Claude attend », captures d'écran proposées à
+// Claude, appel du téléphone), ce qui passe pendant « Ne pas déranger », batteries faibles ; pour
+// toutes les barres.
 
-import { SettingsHeading, SettingsNote } from "../settings/text.slint";
+import { SettingsTitle, SettingsHeading, SettingsNote } from "../settings/text.slint";
 import { SettingRow } from "../settings/row.slint";
 import { SettingCheck } from "../settings/check.slint";
 import { SelectField } from "../settings/field.slint";
@@ -28,9 +29,12 @@ component Threshold inherits SettingRow {
 }
 
 export component AlertsSection inherits VerticalLayout {
+    SettingsTitle {
+        text: "Alertes";
+        description: "Ce que l’îlot annonce, et ce qui passe quand même pendant « Ne pas déranger ».";
+    }
     SettingsHeading {
         text: "Quand Claude attend ou a terminé";
-        first: true;
     }
     Flag {
         key: "alerts.claude_island";
@@ -46,7 +50,21 @@ export component AlertsSection inherits VerticalLayout {
     }
     SettingsNote {
         text: "Une seule alerte par attente : la suivante vient quand la session s’est remise au travail.";
-        above: 6px;
+        above: 2px;
+    }
+
+    SettingsHeading {
+        text: "Captures d’écran vers Claude";
+    }
+    Flag {
+        key: "features.capture_to_claude";
+        checked: OptionsData.capture-to-claude;
+        label: "Proposer chaque nouvelle capture à la session Claude qui attend";
+        hint: "L’îlot montre la miniature quelques secondes ; un clic ramène le terminal et y colle le chemin de l’image. Rien n’est envoyé : à toi d’appuyer sur Entrée.";
+    }
+    SettingsNote {
+        text: "Dossier surveillé : Images › Captures d’écran (Win+Maj+S, Impr. écran). Sans session qui attend ou terminée, rien n’est proposé.";
+        above: 2px;
     }
 
     SettingsHeading {
@@ -66,25 +84,23 @@ export component AlertsSection inherits VerticalLayout {
     }
     SettingsNote {
         text: "Les notifications ne s’affichent plus dans l’îlot (elles restent dans le panneau). La fin du minuteur s’affiche toujours.";
-        above: 6px;
+        above: 2px;
     }
 
-    VerticalLayout {
-        SettingsHeading {
-            text: "« Ne pas déranger » change aussi";
-        }
-        Flag {
-            key: "alerts.dnd_discord";
-            checked: OptionsData.dnd-discord;
-            label: "Discord en « Ne pas déranger »";
-            hint: "Le statut d’avant revient ensuite. Demande le plugin KrispBridge 1.3 et un relais qui transmet ses commandes.";
-        }
-        Flag {
-            key: "alerts.dnd_light";
-            checked: OptionsData.dnd-light;
-            label: "Plugin Prisme : scène « focus »";
-            hint: "Tenue pendant tout le « Ne pas déranger », si la scène existe ; la scène d’avant revient ensuite.";
-        }
+    SettingsHeading {
+        text: "« Ne pas déranger » change aussi";
+    }
+    Flag {
+        key: "alerts.dnd_discord";
+        checked: OptionsData.dnd-discord;
+        label: "Discord en « Ne pas déranger »";
+        hint: "Le statut d’avant revient ensuite. Demande le plugin KrispBridge 1.3 et un relais qui transmet ses commandes.";
+    }
+    Flag {
+        key: "alerts.dnd_light";
+        checked: OptionsData.dnd-light;
+        label: "Plugin Prisme : scène « focus »";
+        hint: "Tenue pendant tout le « Ne pas déranger », si la scène existe ; la scène d’avant revient ensuite.";
     }
 
     SettingsHeading {
@@ -97,6 +113,6 @@ export component AlertsSection inherits VerticalLayout {
     }
     SettingsNote {
         text: "L’îlot l’annonce une fois quand le niveau passe sous le seuil ; l’alerte revient après une remontée de 5 points ou une charge.";
-        above: 6px;
+        above: 2px;
     }
 }

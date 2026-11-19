@@ -1,27 +1,30 @@
-// Option à cocher d'une fenêtre de réglages (app/src/settings/ui/Check.svelte) : carte
-// `surface-1` avec la case (`CheckMark`, rendu de Chromium), le libellé et son explication. Toute
-// la carte se clique ; clavier (Tab, Espace, Entrée) avec l'anneau de focus. Désactivée :
-// estompée (`o-off`), rien ne réagit. Contrôlée : elle annonce `toggled(nouvelle valeur)`.
+// Réglage tout ou rien : carte avec le libellé (et son explication) à gauche et un interrupteur
+// à droite ; l'effet est immédiat. Toute la carte se clique ; clavier (Tab, Espace, Entrée) avec
+// l'anneau de focus. Désactivée : estompée, rien ne réagit. `nested` : ligne du corps d'une carte
+// dépliante. Contrôlée : elle annonce `toggled(nouvelle valeur)`.
 
 import { Theme } from "../theme.slint";
-import { CheckMark } from "../panel/check.slint";
+import { FocusRing } from "../panel/focus.slint";
 import { SettingsLayout } from "layout.slint";
+import { Card } from "card.slint";
+import { Switch } from "switch.slint";
 
 export component SettingCheck inherits Rectangle {
     in property <bool> checked;
     in property <string> label;
     in property <string> hint;
     in property <bool> enabled: true;
+    in property <bool> nested;
     out property <bool> keyboard;
     callback toggled(bool);
-    property <length> text-w: max(60px, SettingsLayout.content-w - 20px - 10px - 13px);
+    property <length> text-w: Card.text-w(root.nested, 40px);
 
     VerticalLayout {
-        padding-bottom: 6px;
-        Rectangle {
-            border-radius: Theme.r-lg;
-            background: SettingsLayout.t.surface-1;
-            opacity: root.enabled ? 1 : Theme.o-off;
+        padding-bottom: root.nested ? 0 : Card.gap;
+        card := Rectangle {
+            min-height: Card.min-h;
+            border-radius: root.nested ? 0 : Theme.r-md;
+            background: area.has-hover && root.enabled ? (root.nested ? Card.body-hover : Card.bg-hover) : (root.nested ? transparent : Card.bg);
             FocusScope {
                 enabled: root.enabled;
                 focus-on-click: false;
@@ -47,23 +50,15 @@ export component SettingCheck inherits Rectangle {
                 }
             }
             HorizontalLayout {
-                padding-top: 9px;
-                padding-bottom: 9px;
-                padding-left: 10px;
-                padding-right: 10px;
-                spacing: 10px;
-                alignment: start;
+                padding-top: Card.pad-y;
+                padding-bottom: Card.pad-y;
+                padding-left: root.nested ? Card.indent : Card.pad-x;
+                padding-right: Card.pad-x;
+                spacing: Card.spacing;
                 VerticalLayout {
-                    padding-top: 2px;
-                    alignment: start;
-                    CheckMark {
-                        checked: root.checked;
-                        hovered: area.has-hover;
-                        keyboard: root.keyboard;
-                    }
-                }
-                VerticalLayout {
-                    spacing: 3px;
+                    alignment: center;
+                    spacing: 2px;
+                    opacity: root.enabled ? 1 : Theme.o-off;
                     Text {
                         width: root.text-w;
                         text: root.label;
@@ -78,6 +73,24 @@ export component SettingCheck inherits Rectangle {
                         wrap: word-wrap;
                     }
                 }
+                VerticalLayout {
+                    alignment: center;
+                    Switch {
+                        checked: root.checked;
+                        hovered: area.has-hover;
+                        enabled: root.enabled;
+                    }
+                }
+            }
+            if root.nested: Rectangle {
+                y: 0;
+                height: 1px;
+                background: Card.line;
+            }
+            if root.keyboard: FocusRing {
+                width: card.width + 6px;
+                height: card.height + 6px;
+                radius: Theme.r-md;
             }
         }
     }

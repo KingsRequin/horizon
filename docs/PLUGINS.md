@@ -41,8 +41,8 @@ Un dossier `%APPDATA%\Horizon\plugins\<id>\` (le nom du dossier est l'`id` du pl
   syntaxe du script ; code de sortie 0 si tout va bien, sinon une erreur par ligne avec le
   fichier et la ligne).
 - Une erreur au chargement s'affiche dans la barre : pastille rouge à la place du widget, le
-  détail au survol (fichier:ligne). La page *Réglages d'Horizon › État* liste chaque plugin,
-  son coût et sa dernière erreur.
+  détail au survol (fichier:ligne). La page *Réglages d'Horizon › Plugins* montre une tuile par
+  plugin : son état, son coût et sa dernière erreur.
 - Une nouvelle version de `main.js` qui ne se charge pas laisse l'ancienne tourner ; une
   interface `.slint` qui ne compile plus laisse l'ancienne affichée.
 

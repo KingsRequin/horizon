@@ -19,6 +19,7 @@ pub mod osd;
 pub mod panel_hosts;
 pub mod palette;
 pub mod panels;
+pub mod plugin_tiles;
 pub mod popup;
 pub mod profiles;
 pub mod pulse;

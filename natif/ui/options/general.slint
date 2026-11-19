@@ -1,17 +1,22 @@
-// Section « Général » (app/src/settings/options/GeneralSection.svelte) : démarrage avec
-// Windows, profils, fichier des réglages.
+// Section « Général » : démarrage avec Windows, mode jeu, mises à jour automatiques (version
+// publiée), profils, fichier des réglages.
 
 import { Theme } from "../theme.slint";
 import { SettingsLayout } from "../settings/layout.slint";
-import { SettingsHeading, SettingsNote } from "../settings/text.slint";
+import { SettingsTitle, SettingsHeading, SettingsNote } from "../settings/text.slint";
+import { SettingRow } from "../settings/row.slint";
 import { SettingCheck } from "../settings/check.slint";
 import { SettingsButton } from "../settings/button.slint";
 import { OptionsData } from "data.slint";
 
 export component GeneralSection inherits VerticalLayout {
-    SettingsHeading {
+    SettingsTitle {
         text: "Général";
-        first: true;
+        description: "Démarrage, mises à jour, profils et fichier des réglages.";
+    }
+
+    SettingsHeading {
+        text: "Démarrage";
     }
     SettingCheck {
         checked: OptionsData.autostart;
@@ -25,19 +30,42 @@ export component GeneralSection inherits VerticalLayout {
         text: OptionsData.autostart-error;
         tint: SettingsLayout.t.bad;
         font-size: Theme.fs-body;
+        below: 4px;
+    }
+    SettingCheck {
+        checked: OptionsData.game-mode;
+        enabled: !OptionsData.locked;
+        label: "Alléger Horizon quand une appli est en plein écran sur l’écran principal";
+        hint: "Spectre et capture du son coupés, mesures système toutes les 6 s au lieu de chaque seconde (sauf panneau Système ouvert), import de l’historique Vivaldi retardé. Tout reprend à la sortie du plein écran.";
+        toggled(v) => {
+            OptionsData.toggle("features.game_mode", v);
+        }
+    }
+
+    if OptionsData.updates: VerticalLayout {
+        SettingsHeading {
+            text: "Mises à jour";
+        }
+        SettingCheck {
+            checked: OptionsData.auto-update;
+            enabled: !OptionsData.locked;
+            label: "Installer automatiquement les nouvelles versions";
+            hint: "Cherchée sur GitHub au démarrage puis deux fois par jour, téléchargée et vérifiée (empreinte SHA-256), puis installée au démarrage suivant. Page État : l’installer tout de suite.";
+            toggled(v) => {
+                OptionsData.toggle("features.auto_update", v);
+            }
+        }
     }
 
     SettingsHeading {
         text: "Profils";
     }
-    SettingsNote {
-        text: "Chaque profil garde sa propre disposition des barres, et peut s’activer tout seul quand une appli est au premier plan.";
-        below: 10px;
-    }
-    HorizontalLayout {
-        alignment: start;
+    SettingRow {
+        label: "Disposition des barres par profil";
+        hint: "Chaque profil garde sa propre disposition, et peut s’activer tout seul quand une appli est au premier plan.";
         SettingsButton {
             text: "Gérer les profils…";
+            small: true;
             clicked => {
                 OptionsData.open-profiles();
             }
@@ -47,14 +75,15 @@ export component GeneralSection inherits VerticalLayout {
     SettingsHeading {
         text: "Fichier";
     }
-    SettingsNote {
-        text: "Ces réglages sont enregistrés dans le fichier ci-dessous, modifiable à la main (chaque option y est commentée). Enregistrer depuis cette fenêtre réécrit le fichier ; un fichier illisible n’est jamais écrasé.";
-    }
-    SettingsNote {
-        text: OptionsData.path;
-        tint: SettingsLayout.t.text;
-        font-family: Theme.font-mono;
-        font-weight: 500;
-        above: 6px;
+    SettingRow {
+        label: OptionsData.path;
+        hint: "Modifiable à la main, chaque option y est commentée. Enregistrer depuis cette fenêtre réécrit le fichier ; un fichier illisible n’est jamais écrasé.";
+        SettingsButton {
+            text: "Montrer le fichier";
+            small: true;
+            clicked => {
+                OptionsData.status-action("settings_file");
+            }
+        }
     }
 }

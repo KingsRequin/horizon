@@ -5,7 +5,7 @@ import { Theme } from "../theme.slint";
 import { Icon } from "../components.slint";
 import { Tip } from "../tooltip.slint";
 import { SettingsLayout } from "../settings/layout.slint";
-import { SettingsHeading, SettingsNote } from "../settings/text.slint";
+import { SettingsTitle, SettingsHeading, SettingsNote } from "../settings/text.slint";
 import { SettingRow } from "../settings/row.slint";
 import { CommitField, NumberField } from "../settings/field.slint";
 import { SettingsButton } from "../settings/button.slint";
@@ -102,9 +102,12 @@ component AddPreset inherits HorizontalLayout {
 export component TimerSection inherits VerticalLayout {
     // Le champ d'ajout tient au bout de la rangée (sinon à la ligne, comme `flex-wrap`).
     property <bool> fits: chips.preferred-width + 6px + 72px + 6px + 80px <= SettingsLayout.content-w;
+    SettingsTitle {
+        text: "Minuteur";
+        description: "Durées proposées par le panneau de l’horloge, et cycle Pomodoro.";
+    }
     SettingsHeading {
         text: "Durées proposées";
-        first: true;
     }
     HorizontalLayout {
         spacing: 6px;

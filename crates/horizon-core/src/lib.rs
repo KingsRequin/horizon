@@ -25,6 +25,7 @@ pub mod misses;
 pub mod mixer;
 pub mod night;
 pub mod notifs;
+pub mod options_search;
 pub mod palette;
 pub mod plugin;
 pub mod quota;
