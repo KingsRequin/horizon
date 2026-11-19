@@ -1,0 +1,14 @@
+// Panneau ouvert au survol du widget.
+import { PanelBase, ListRow, Theme } from "@horizon";
+
+export component Panel inherits Window {
+    in property <int> clics;
+    callback zero();
+    background: transparent;
+
+    PanelBase {
+        title: "{{name}}";
+        Text { text: "Clics : " + root.clics; color: Theme.text; font-size: Theme.fs-body; }
+        ListRow { icon: "arrowCounterClockwise"; title: "Remettre à zéro"; clicked => { root.zero(); } }
+    }
+}

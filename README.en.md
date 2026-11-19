@@ -147,8 +147,8 @@ menu of a bar → *Réglages d'Horizon*.
 ## Roadmap
 
 - **Plugins** — widgets in their own folder (Slint interface + JavaScript), loaded without
-  restarting (preview available, see the [guide, in French](docs/guide.md#plugins-préversion));
-  coming next: a library on GitHub and a guide to write them with an AI assistant.
+  restarting, with a [guide to write them with an AI assistant](docs/PLUGINS.md) (preview, in
+  French — AI assistants read it fine); coming next: a library on GitHub.
 - **Discord voice** through the official local RPC (who's talking, mute, per-user volume).
 - **Translations.**
 

@@ -314,6 +314,10 @@ fn plugin_checks(app: &AppHandle) -> Vec<Check> {
     let count = out.len();
     let detail = if count == 0 { format!("aucun plugin dans {}", dir.display()) } else { format!("{count} dans {}", dir.display()) };
     out.push(Check::new("plugins", "Plugins", if count == 0 { Level::Off } else { Level::Ok }, detail).action("plugins_dir", "Ouvrir le dossier"));
+    out.push(
+        Check::new("plugin_new", "Nouveau plugin", Level::Ok, "un modèle à modifier, avec son guide (PLUGINS.md), posé sur la barre principale")
+            .action("plugin_new", "Créer"),
+    );
     out
 }
 
@@ -438,6 +442,7 @@ pub fn status_action(app: &AppHandle, id: &str) -> Result<(), String> {
         "update_check" => crate::update::check_now(app),
         "update_now" => crate::update::install_now(app)?,
         "plugins_dir" => horizon_sys::launch::launch(&crate::plugins::plugins_dir().display().to_string()),
+        "plugin_new" => crate::plugins::template::new_plugin(app)?,
         other => {
             let plugins = app.state::<crate::plugins::Plugins>();
             match other.split_once(':') {

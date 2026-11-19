@@ -168,6 +168,10 @@ chronomètre en Slint seul).
 
 - **Ajouter un plugin** : copier son dossier dans `plugins`, puis l'ajouter à une barre en mode
   édition (*Ajouter un widget*). Page « État » : une ligne par plugin.
+- **Écrire un plugin** : page « État » › *Nouveau plugin* crée un modèle (posé sur la barre
+  principale, dossier ouvert) avec le guide [PLUGINS.md](PLUGINS.md), écrit pour être donné à
+  une IA. `horizon.exe --check-plugin <dossier>` vérifie un plugin sans le charger (erreurs
+  avec fichier et ligne).
 - **Accord** : un plugin qui veut se connecter à une application du PC, lire un fichier, joindre
   un site ou recevoir des événements d'Horizon le déclare ; rien n'est chargé tant que ces
   demandes n'ont pas été acceptées (page « État » › *Autoriser*, avec la liste en clair). Une

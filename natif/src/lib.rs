@@ -114,6 +114,14 @@ pub fn notif_probe() {
     }
 }
 
+/// Sortie de la console qui a lancé Horizon (programme sans console à lui : les lignes
+/// écrites par `--check-plugin` y apparaissent).
+pub fn attach_console() {
+    use windows::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
+    // SAFETY : sans argument pointeur ; échoue sans effet s'il n'y a pas de console parente.
+    let _ = unsafe { AttachConsole(ATTACH_PARENT_PROCESS) };
+}
+
 pub fn run() {
     journal::init();
     let args: Vec<String> = std::env::args().skip(1).collect();

@@ -1,0 +1,14 @@
+{
+  "id": "{{id}}",
+  "name": "{{name}}",
+  "version": "0.1.0",
+  "api": 0,
+  "description": "Mon plugin pour Horizon (modèle : à modifier).",
+  "icon": "sparkle",
+  "widget": { "squeeze": 8 },
+  "panel": true,
+  "permissions": {},
+  "settings": [
+    { "key": "texte", "type": "string", "label": "Texte affiché", "default": "Bonjour" }
+  ]
+}

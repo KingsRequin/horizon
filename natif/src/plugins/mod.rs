@@ -7,12 +7,14 @@
 //! la première fois, ou qui demande de nouvelles permissions, attend l'accord de l'utilisateur
 //! (page État) ; rien n'est chargé avant.
 
+pub mod check;
 mod convert;
 pub mod events;
 mod registry;
 pub mod script;
 mod slint_host;
 mod store;
+pub mod template;
 pub mod js;
 pub mod view;
 

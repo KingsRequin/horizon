@@ -1,0 +1,26 @@
+// Widget de la barre. Guide complet : PLUGINS.md (dans ce dossier).
+import { Island, Icon, Pill, Theme } from "@horizon";
+
+export component Widget inherits Window {
+    // Posées par main.js (horizon.ui.set).
+    in property <string> texte: "…";
+    in property <int> clics;
+    // Les clics vont au widget (sinon ils épinglent le panneau).
+    out property <bool> own-clicks: true;
+    // Appelé dans main.js (horizon.ui.on).
+    callback clique();
+    background: transparent;
+
+    VerticalLayout {
+        alignment: center;
+        Island {
+            Icon { name: "sparkle"; y: (parent.height - self.height) / 2; }
+            Text { text: root.texte; color: Theme.text; font-size: Theme.fs-body; vertical-alignment: center; }
+            Pill { text: root.clics; y: (parent.height - self.height) / 2; }
+        }
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clique(); }
+    }
+}

@@ -456,6 +456,11 @@ fn to_json<'js>(ctx: &Ctx<'js>, v: Value<'js>) -> Json {
     }
 }
 
+/// Texte d'une erreur de script (vérification de `main.js`).
+pub(super) fn describe_error(ctx: &Ctx, e: rquickjs::Error) -> String {
+    describe(ctx, e)
+}
+
 /// Texte d'une erreur de script : type, message et place dans `main.js` si QuickJS la donne.
 fn describe(ctx: &Ctx, e: rquickjs::Error) -> String {
     if !e.is_exception() {

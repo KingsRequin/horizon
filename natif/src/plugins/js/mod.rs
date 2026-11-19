@@ -87,6 +87,17 @@ pub enum FromJs {
     Quit,
 }
 
+/// Erreur de syntaxe de `source` (« main.js:<ligne> : … »), sans l'exécuter.
+pub fn syntax_error(source: &str) -> Option<String> {
+    let rt = rquickjs::Runtime::new().ok()?;
+    rt.set_memory_limit(MEMORY_LIMIT);
+    let ctx = rquickjs::Context::full(&rt).ok()?;
+    ctx.with(|ctx| match rquickjs::Module::declare(ctx.clone(), "main.js", source) {
+        Ok(_) => None,
+        Err(e) => Some(api::describe_error(&ctx, e)),
+    })
+}
+
 /// Lance le fil des scripts ; `out` reçoit ce qu'ils produisent (depuis ce fil).
 pub fn spawn(out: impl Fn(FromJs) + Send + 'static) -> anyhow::Result<Sender<ToJs>> {
     let (tx, rx) = unbounded();
