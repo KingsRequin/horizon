@@ -165,11 +165,6 @@ impl Surface {
         Some(Image::from_rgba8_premultiplied(px))
     }
 
-    /// Une animation ou un changement attend d'être dessiné.
-    pub fn dirty(&self) -> bool {
-        self.win.has_active_animations()
-    }
-
     /// Transmet un événement de souris.
     pub fn pointer(&self, ev: Pointer) {
         let w = self.win.window();
@@ -262,31 +257,63 @@ fn compile_one(dir: &Path, file: &str, component: &str) -> Result<ComponentDefin
         .ok_or_else(|| diag(format!("il faut `export component {component} inherits Window`")))
 }
 
-/// Mots refusés dans le source d'un plugin (minuscules, cherchés partout, commentaires et
-/// chaînes compris : aucune lecture du code, donc aucun écart avec l'analyseur de Slint).
-/// `image-url` : une image lue par chemin pourrait l'être sur un partage réseau (`\\serveur`,
-/// où Windows enverrait les identifiants de la session) ; les images d'un plugin passent par
-/// Horizon (`horizon.ui.set` avec un chemin du dossier du plugin, vérifié). Polices : importées
-/// par chemin, même risque.
+/// Mots refusés partout dans le source d'un plugin (minuscules, `_` lu comme `-` comme le fait
+/// Slint), en plus de l'analyse ci-dessous : `image-url` (une image lue par chemin pourrait l'être
+/// sur un partage réseau, où Windows enverrait les identifiants de la session ; les images d'un
+/// plugin passent par Horizon) et les extensions de polices.
 const FORBIDDEN: [&str; 6] = ["image-url", ".ttf", ".otf", ".ttc", ".woff", ".pfb"];
 
-/// Erreurs du source `text` du fichier `name` (mots refusés).
+/// Chemin d'import permis : bibliothèque (`@horizon`, `std-widgets.slint`), ou `.slint` relatif
+/// sans `..`, lecteur ni chemin réseau.
+fn import_allowed(p: &str) -> bool {
+    if p.starts_with('@') || p == "std-widgets.slint" {
+        return true;
+    }
+    let n = p.replace('\\', "/");
+    n.ends_with(".slint") && !(n.starts_with('/') || n.contains(':') || n.split('/').any(|c| c == ".." || c.is_empty()))
+}
+
+/// Erreurs du source `text` du fichier `name` : mots refusés, puis chaque chaîne d'import
+/// (`import … from "…"`, `export … from "…"`) et chaque `@image-url`, lus par l'analyseur de
+/// Slint lui-même (aucun écart d'interprétation) avant que le compilateur ne touche au disque.
 fn check_source(name: &str, text: &str) -> Vec<Diag> {
-    let lower = text.to_lowercase();
-    FORBIDDEN
+    use i_slint_compiler::parser::SyntaxKind;
+    let line_of = |at: usize| text[..at.min(text.len())].matches('\n').count() + 1;
+    let diag = |at: usize, message: String| Diag { file: name.to_owned(), line: line_of(at), column: 1, message };
+    let lower = text.to_lowercase().replace('_', "-");
+    let mut errors: Vec<Diag> = FORBIDDEN
         .iter()
         .filter_map(|w| lower.find(w).map(|at| (w, at)))
-        .map(|(w, at)| Diag {
-            file: name.to_owned(),
-            line: lower[..at].matches('\n').count() + 1,
-            column: 1,
-            message: if *w == "image-url" {
+        .map(|(w, at)| {
+            let message = if *w == "image-url" {
                 "@image-url est interdit dans un plugin : passer l'image par horizon.ui.set (fichier du dossier du plugin)".to_owned()
             } else {
                 format!("« {w} » : les polices ne peuvent pas être importées par un plugin")
-            },
+            };
+            // Position dans le texte en minuscules : même nombre de lignes.
+            Diag { file: name.to_owned(), line: lower[..at].matches('\n').count() + 1, column: 1, message }
         })
-        .collect()
+        .collect();
+    let mut diags = i_slint_compiler::diagnostics::BuildDiagnostics::default();
+    let root = i_slint_compiler::parser::parse(text.to_owned(), None, &mut diags);
+    for node in root.descendants() {
+        let kind = node.kind();
+        if kind == SyntaxKind::AtImageUrl {
+            errors.push(diag(usize::from(node.text_range().start()), "@image-url est interdit dans un plugin".to_owned()));
+            continue;
+        }
+        if kind != SyntaxKind::ImportSpecifier && kind != SyntaxKind::ExportModule {
+            continue;
+        }
+        let Some(tok) = node.child_token(SyntaxKind::StringLiteral) else { continue };
+        let at = usize::from(tok.text_range().start());
+        match i_slint_compiler::literals::unescape_string(tok.text()) {
+            Some(p) if import_allowed(&p) => {}
+            Some(p) => errors.push(diag(at, format!("import « {p} » : seuls les .slint du dossier du plugin sont permis"))),
+            None => errors.push(diag(at, "import illisible".to_owned())),
+        }
+    }
+    errors
 }
 
 /// Attend un futur qui ne dépend d'aucun réveil extérieur (compilation Slint, fichiers lus
@@ -384,6 +411,22 @@ export component Widget inherits Window {
         let dir = plugin("font", &[("widget.slint", "import \"assets/font.TTF\";\nexport component Widget inherits Window {}\n")]);
         let e = compile(&dir, true, false).err().expect("police refusée");
         assert!(e[0].message.contains("polices"), "{e:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn network_imports_are_refused_before_compiling() {
+        // Source Slint : `"\\\\serveur\\x.slint"` vaut \\serveur\x.slint.
+        for bad in [r#"\\\\serveur\\x.slint"#, "//serveur/x.slint", "C:/x.slint", "../x.slint", "a//b.slint"] {
+            let text = format!("import {{ X }} from \"{bad}\";\nexport component Widget inherits Window {{}}\n");
+            let dir = plugin("net", &[("widget.slint", &text)]);
+            let e = compile(&dir, true, false).err().unwrap_or_else(|| panic!("accepté : {bad}"));
+            assert!(e[0].message.contains("seuls les .slint"), "{bad} : {e:?}");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+        let text = "export component Widget inherits Window { Image { source: @image_url(\"x.png\"); } }\n";
+        let dir = plugin("under", &[("widget.slint", text)]);
+        assert!(compile(&dir, true, false).is_err(), "@image_url accepté");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

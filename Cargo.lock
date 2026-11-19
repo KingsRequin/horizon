@@ -263,7 +263,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "audio-commun"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "log",
@@ -1496,7 +1496,7 @@ dependencies = [
  "log",
  "presser",
  "thiserror 2.0.21",
- "windows 0.62.2",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -1645,6 +1645,7 @@ dependencies = [
  "horizon-core",
  "horizon-hook",
  "horizon-sys",
+ "i-slint-compiler",
  "i-slint-core",
  "image",
  "log",
@@ -2007,7 +2008,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]

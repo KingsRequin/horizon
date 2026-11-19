@@ -55,6 +55,8 @@ i-slint-core = { version = "=1.18.1", default-features = false, features = ["svg
 
 # Plugins : interface Slint compilée à l'exécution (même version que `i-slint-core`).
 slint-interpreter = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-2"] }
+# Son analyseur (déjà tiré par l'interpréteur) : imports des plugins vérifiés avant compilation.
+i-slint-compiler = { version = "=1.18.1", default-features = false }
 
 [build-dependencies]
 slint-build = "~1.18"
