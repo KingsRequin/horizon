@@ -223,10 +223,13 @@ déranger », recharger, démarrage avec Windows, journal, quitter) ; `state.rs`
 | Fichier | Brique | Version Tauri |
 | --- | --- | --- |
 | `layout.slint` | global `SettingsLayout` : `content-w` (largeur du contenu, posée par la page ; les textes qui passent à la ligne en tirent leur largeur), `t` | — |
-| `scroll.slint` | `SettingsScroll` : contenu qui défile (colonne en enfants, marges `padding-x/y`, molette, barre fine glissable), `content-w`, `scroll-top()` | `overflow: auto` de la page |
-| `text.slint` | `SettingsHeading` (`h2`, `first`, `below`), `SettingsSubheading` (`h3` + `small`), `SettingsNote` (paragraphe : `color`, `above`, `below`, police) | `h2`, `h3`, `.note`, `.intro` |
-| `row.slint` | `SettingRow` : carte, libellé et `hint` à gauche, contrôle en enfants à droite | `Row.svelte` |
-| `check.slint` | `SettingCheck` : carte cochable (`checked`, `label`, `hint`, `enabled` ; `toggled(bool)`), case `CheckMark` de `ui/panel/check.slint` | `Check.svelte` |
+| `scroll.slint` | `SettingsScroll` : contenu qui défile (colonne en enfants, centrée, `max-content-w` 640 px au plus, marges `padding-x/y`, molette, barre fine glissable), `content-w`, `scroll-top()` | `overflow: auto` de la page |
+| `text.slint` | `SettingsTitle` (titre de page et `description`), `SettingsHeading` (titre d'un groupe de cartes, `first`, `below`), `SettingsSubheading` (`h3` + `small`), `SettingsNote` (paragraphe : `color`, `above`, `below`, police) | `h2`, `h3`, `.note`, `.intro` |
+| `card.slint` | global `Card` : mesures et couleurs des cartes (une carte = un réglage, comme les Paramètres de Windows 11), `text-w(nested, contrôle)` | — |
+| `row.slint` | `SettingRow` : carte, libellé et `hint` à gauche, contrôle en enfants à droite ; `nested` : ligne d'une carte dépliante | `Row.svelte` |
+| `check.slint` | `SettingCheck` : carte à interrupteur, effet immédiat (`checked`, `label`, `hint`, `enabled`, `nested` ; `toggled(bool)`) | `Check.svelte` |
+| `switch.slint` | `Switch` : dessin de l'interrupteur (`checked`, `hovered`, `enabled`) | — |
+| `expander.slint` | `SettingExpander` : carte dépliante, réglage principal (interrupteur si `switchable`) et dessous les réglages qui en dépendent (enfants `nested`) ; `expanded` | — |
 | `segmented.slint` | `Segmented` (`value`, `choices: [SegmentChoice { value, label, hint }]`, `enabled` ; `selected(valeur)`), infobulle par choix | `Segmented.svelte` |
 | `field.slint` | `CommitField` (texte validé à Entrée ou à la sortie, `commit-on-blur`, `placeholder` ; `committed`, `edited`), `NumberField` (borné, ↑ ↓ = ± `step`), `SelectField` (`open(x, y)` : le service ouvre un menu Windows sous le champ, `ui::menu::show_at`) | `<input>`, `<input type="number">`, `<select>` |
 | `button.slint` | `SettingsButton` (filet ; `small`, `filled`, `on`, `mono`, `icon`, `tip` ; `clicked`, `key(KeyEvent)`, `grab()`), `RemoveButton` (corbeille, rouge au survol, « Retirer X » ou `reason`) | boutons des sections, `RemoveButton.svelte` |
@@ -241,8 +244,9 @@ déranger », recharger, démarrage avec Windows, journal, quitter) ; `state.rs`
   Windows, modaux, hors d'un rappel Slint). Mise en page qui passe à la ligne : `FlexboxLayout`
   de Slint (puces d'applis des profils).
 - **« Réglages d'Horizon »** (`ui/options/`, global `OptionsData`, `src/ui/options.rs`,
-  `src/options.rs`) : sections Barres, Alertes, Fonctions, Nuit, Minuteur, Palette, Général,
-  État, à l'identique de `app/src/settings/options/`. Une option se désigne par son chemin dans
+  `src/options.rs`) : recherche (`horizon_core::options_search`, un clic mène à la section), sections Barres,
+  Apparence, Son et média, Alertes, Minuteur, Palette, Plugins (tuiles, `src/ui/plugin_tiles.rs`),
+  Général, État (`options_search::SECTIONS`, anciens noms « fonctions » et « nuit » repris). Une option se désigne par son chemin dans
   `settings.toml` (« features.osd ») : `options::apply_edit` (règles et bornes des sections,
   testées), affichée tout de suite, enregistrée 400 ms après la dernière modification
   (`options_set` → `state::save_settings`) ; les fonctions qui ne relisent pas les réglages sont prévenues (`applied` :

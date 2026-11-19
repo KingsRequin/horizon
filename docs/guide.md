@@ -104,7 +104,7 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   dans Images › Captures d'écran est proposée 15 s dans l'îlot (miniature, « Envoyer à
   deskbar ») pour la session qui attend, sinon la dernière terminée. Clic : son terminal revient
   au premier plan et le chemin y est collé (presse-papiers + Ctrl+V) ; jamais Entrée.
-- **Bascule audio du casque** (Réglages d'Horizon › Fonctions ; désactivée tant qu'aucune sortie
+- **Bascule audio du casque** (Réglages d'Horizon › Son et média ; désactivée tant qu'aucune sortie
   de repli n'est choisie) : casque éteint (deux lectures d'affilée, relu toutes les 5 s), la
   sortie par défaut passe sur la sortie de repli ; rallumé, elle revient à celle d'avant, sauf si
   une autre sortie a été choisie entre-temps. 15 s au moins entre deux bascules. L'îlot le dit.
@@ -149,7 +149,7 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   remontée de 5 points ou une charge.
 - Sortie de veille : météo, agenda, quota et casque sont relus une fois le réseau revenu. La
   météo d'une ville n'est chargée qu'une fois pour toutes les barres et le panneau.
-- **Mises à jour** (`[features] auto_update`, Réglages d'Horizon › Fonctions) : une version
+- **Mises à jour** (`[features] auto_update`, Réglages d'Horizon › Général) : une version
   installée depuis les Releases cherche la dernière version sur GitHub une minute après le
   démarrage puis toutes les 12 h, télécharge `horizon.exe` et `horizon-hook.exe`, vérifie leurs
   empreintes (`SHA256SUMS` de la Release) et les installe au démarrage suivant. L'îlot l'annonce
@@ -167,20 +167,21 @@ recharge à chaque modification d'un de ses fichiers. Deux exemples :
 chronomètre en Slint seul).
 
 - **Ajouter un plugin** : copier son dossier dans `plugins`, puis l'ajouter à une barre en mode
-  édition (*Ajouter un widget*). Page « État » : une ligne par plugin.
-- **Écrire un plugin** : page « État » › *Nouveau plugin* crée un modèle (posé sur la barre
+  édition (*Ajouter un widget*). Page « Plugins » : une tuile par plugin (état, coût,
+  action).
+- **Écrire un plugin** : page « Plugins » › *Nouveau plugin* crée un modèle (posé sur la barre
   principale, dossier ouvert) avec le guide [PLUGINS.md](PLUGINS.md), écrit pour être donné à
   une IA. `horizon.exe --check-plugin <dossier>` vérifie un plugin sans le charger (erreurs
   avec fichier et ligne).
 - **Accord** : un plugin qui veut se connecter à une application du PC, lire un fichier, joindre
   un site ou recevoir des événements d'Horizon le déclare ; rien n'est chargé tant que ces
-  demandes n'ont pas été acceptées (page « État » › *Autoriser*, avec la liste en clair). Une
+  demandes n'ont pas été acceptées (page « Plugins » › *Autoriser*, avec la liste en clair). Une
   mise à jour du plugin qui demande plus redemande l'accord.
 - **Bac à sable** : le script n'a que l'objet `horizon` (ni fichiers, ni réseau, ni programmes
   hors de ce qui est déclaré), 50 ms par appel et 32 Mo au plus. Images et polices par chemin
   sont refusées dans l'interface.
 - **Budget** : un plugin qui prend plus de 2 % d'un cœur pendant une minute, ou dont le script
-  plante trois fois en une minute, est désactivé (alerte dans l'îlot) ; page « État » :
+  plante trois fois en une minute, est désactivé (alerte dans l'îlot) ; page « Plugins » :
   *Réactiver*. Un plugin absent de toutes les barres ne coûte rien.
 - **Réglages** : ceux que le plugin déclare apparaissent dans *Réglages…* de son widget ; un
   secret (jeton, mot de passe) est gardé dans le Gestionnaire d'identifiants de Windows.
