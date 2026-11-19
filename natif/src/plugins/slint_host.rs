@@ -42,6 +42,21 @@ pub struct Compiled {
     pub panel: Option<ComponentDefinition>,
 }
 
+/// Taille maximale d'un fichier `.slint` d'un plugin.
+const MAX_SOURCE: u64 = 1024 * 1024;
+
+/// Valeur bornée à `0..=max` (valeur non finie : 0, ou `max` pour l'infini positif).
+pub fn bound(v: f32, max: f32) -> f32 {
+    if v.is_nan() { 0.0 } else { v.clamp(0.0, max) }
+}
+
+/// Taille du tampon (px physiques) pour une taille logique `w` × `h` bornée par `max`.
+pub fn render_size(w: f32, h: f32, scale: f32, max: (f32, f32)) -> (u32, u32) {
+    let scale = if scale.is_finite() && scale > 0.0 { scale.min(4.0) } else { 1.0 };
+    let px = |v: f32, m: f32| ((bound(v, m).max(1.0) * scale).round() as u32).max(1);
+    (px(w, max.0), px(h, max.1))
+}
+
 /// Propriétés standard qu'Horizon pose sur un exemplaire, si son composant les déclare.
 pub const STD_PROPS: [&str; 5] = ["compact", "bar-height", "limit", "hovered", "instance"];
 
@@ -145,9 +160,10 @@ impl Surface {
         }
     }
 
-    /// Image de l'exemplaire à la taille logique `w` × `h` ; `None` si rien n'a changé.
-    pub fn render(&mut self, w: f32, h: f32) -> Option<Image> {
-        let size = ((w * self.scale).round().max(1.0) as u32, (h * self.scale).round().max(1.0) as u32);
+    /// Image de l'exemplaire à la taille logique `w` × `h` (bornée par `max`) ; `None` si rien
+    /// n'a changé.
+    pub fn render(&mut self, w: f32, h: f32, max: (f32, f32)) -> Option<Image> {
+        let size = render_size(w, h, self.scale, max);
         if size != self.size {
             self.size = size;
             self.buf = vec![PremultipliedRgbaColor::default(); (size.0 * size.1) as usize];
@@ -216,6 +232,9 @@ fn compile_one(dir: &Path, file: &str, component: &str) -> Result<ComponentDefin
     if !path.is_file() {
         return Err(diag(format!("fichier absent (il faut `export component {component} inherits Window`)")));
     }
+    if std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) > MAX_SOURCE || super::convert::has_link_below(dir, &path) {
+        return Err(diag("fichier trop gros (1 Mo au plus) ou lien vers un autre dossier".to_owned()));
+    }
     let top = std::fs::read_to_string(&path).map_err(|e| diag(format!("illisible : {e}")))?;
     let errors = check_source(file, &top);
     if !errors.is_empty() {
@@ -225,11 +244,21 @@ fn compile_one(dir: &Path, file: &str, component: &str) -> Result<ComponentDefin
     let api = PathBuf::from(API_DIR).join("horizon.slint");
     compiler.set_library_paths(HashMap::from([("horizon".to_owned(), api)]));
     let root = lexical(dir);
+    let base = dir.to_path_buf();
     compiler.set_file_loader(move |p: &Path| {
         let answer: Option<std::io::Result<String>> = if p.components().any(|c| c.as_os_str() == API_DIR) {
             Some(Ok(HORIZON_API.to_owned()))
         } else if lexical(p).starts_with(&format!("{root}\\")) {
-            // Fichier du plugin : lu ici pour être vérifié comme le premier.
+            // Fichier du plugin : lu ici pour être vérifié comme le premier (ni lien vers un
+            // autre dossier, ni fichier énorme lu sur le fil de l'interface).
+            let refused = |m: &str| std::io::Error::new(std::io::ErrorKind::PermissionDenied, m.to_owned());
+            let rel = lexical(p).strip_prefix(&format!("{root}\\")).map(str::to_owned).unwrap_or_default();
+            if super::convert::inside(&base, &rel).is_none() {
+                return Box::pin(std::future::ready(Some(Err(refused("lien ou chemin hors du dossier du plugin")))));
+            }
+            if std::fs::metadata(p).map(|m| m.len()).unwrap_or(0) > MAX_SOURCE {
+                return Box::pin(std::future::ready(Some(Err(refused("fichier trop gros (1 Mo au plus)")))));
+            }
             Some(std::fs::read_to_string(p).and_then(|text| {
                 let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                 match check_source(&name, &text).first() {
@@ -450,6 +479,16 @@ export component Widget inherits Window {
         let e = compile(&dir, true, false).err().expect("image d'un fichier importé refusée");
         assert!(e.iter().any(|d| d.message.contains("@image-url est interdit")), "{e:?}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn render_size_is_bounded() {
+        assert_eq!(render_size(100.0, 40.0, 1.5, (1200.0, 1200.0)), (150, 60));
+        assert_eq!(render_size(1e9, 40.0, 1.0, (1200.0, 1200.0)), (1200, 40));
+        assert_eq!(render_size(f32::NAN, f32::INFINITY, 2.0, (1200.0, 800.0)), (2, 1600));
+        assert_eq!(render_size(-5.0, 0.0, 1.0, (1200.0, 800.0)), (1, 1));
+        assert_eq!(bound(f32::NAN, 500.0), 0.0);
+        assert_eq!(bound(1e9, 500.0), 500.0);
     }
 
     #[test]

@@ -42,7 +42,12 @@ pub fn read(target: &str) -> Option<String> {
     unsafe {
         CredReadW(&HSTRING::from(target), CRED_TYPE_GENERIC, None, &mut out).ok()?;
         let c = &*out;
-        let bytes = std::slice::from_raw_parts(c.CredentialBlob, c.CredentialBlobSize as usize).to_vec();
+        // Secret vide : pas de tampon (pointeur nul), rien à lire.
+        let bytes = if c.CredentialBlobSize == 0 || c.CredentialBlob.is_null() {
+            Vec::new()
+        } else {
+            std::slice::from_raw_parts(c.CredentialBlob, c.CredentialBlobSize as usize).to_vec()
+        };
         CredFree(out as *const _);
         String::from_utf8(bytes).ok()
     }
@@ -69,6 +74,8 @@ mod tests {
         assert_eq!(read(&target).as_deref(), Some("jeton secret é"));
         write(&target, "autre").unwrap();
         assert_eq!(read(&target).as_deref(), Some("autre"));
+        write(&target, "").unwrap();
+        assert_eq!(read(&target).as_deref(), Some(""));
         delete(&target);
         assert_eq!(read(&target), None);
     }

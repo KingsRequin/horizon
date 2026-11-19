@@ -14,14 +14,61 @@ use serde_json::Value as Json;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 /// Canal vers le fil des scripts (posé au démarrage des plugins).
 static JS: OnceLock<Sender<ToJs>> = OnceLock::new();
 /// Le fil des scripts a fini (réponse à `ToJs::Quit`).
 static QUIT_DONE: AtomicBool = AtomicBool::new(false);
+/// Messages des scripts en attente du fil de l'interface : traités par lots (un seul réveil),
+/// au plus [`MAX_QUEUE`] (au-delà, perdus : un script qui en produit autant est fautif).
+static QUEUE: Mutex<Vec<FromJs>> = Mutex::new(Vec::new());
+static SCHEDULED: AtomicBool = AtomicBool::new(false);
+const MAX_QUEUE: usize = 5000;
+/// Taille maximale de `main.js` (lu sur le fil de l'interface).
+const MAX_MAIN: u64 = 1024 * 1024;
+
+/// Seau à jetons : `capacity` d'un coup, puis `per_sec` par seconde.
+struct Bucket {
+    capacity: f64,
+    per_sec: f64,
+    tokens: f64,
+    at: Instant,
+}
+
+impl Bucket {
+    fn new(capacity: f64, per_sec: f64, now: Instant) -> Bucket {
+        Bucket { capacity, per_sec, tokens: capacity, at: now }
+    }
+
+    /// Prend un jeton s'il en reste.
+    fn take(&mut self, now: Instant) -> bool {
+        let dt = now.saturating_duration_since(self.at).as_secs_f64();
+        self.tokens = (self.tokens + dt * self.per_sec).min(self.capacity);
+        self.at = now;
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+/// Débits d'un plugin : lignes de journal, alertes, liens ouverts.
+struct Rates {
+    log: Bucket,
+    alert: Bucket,
+    open: Bucket,
+}
+
+impl Rates {
+    fn new(now: Instant) -> Rates {
+        Rates { log: Bucket::new(40.0, 20.0, now), alert: Bucket::new(1.0, 0.2, now), open: Bucket::new(1.0, 1.0, now) }
+    }
+}
 
 /// Un script chargé.
 struct Loaded {
@@ -36,6 +83,23 @@ struct Loaded {
 
 thread_local! {
     static LOADED: RefCell<HashMap<String, Loaded>> = RefCell::default();
+    static RATES: RefCell<HashMap<String, Rates>> = RefCell::default();
+}
+
+/// Le débit `which` du plugin `id` permet encore un message.
+fn allowed(id: &str, which: fn(&mut Rates) -> &mut Bucket) -> bool {
+    let now = Instant::now();
+    RATES.with_borrow_mut(|r| which(r.entry(id.to_owned()).or_insert_with(|| Rates::new(now))).take(now))
+}
+
+/// Le plugin `id` n'est plus chargé : son activité dans l'îlot et ses entrées de palette partent.
+fn forget(app: &AppHandle, id: &str) {
+    LOADED.with_borrow_mut(|l| l.remove(id));
+    RATES.with_borrow_mut(|r| r.remove(id));
+    crate::ui::island::clear_plugin(id);
+    app.state::<Plugins>().set_palette(id, Vec::new());
+    super::view::set_script_error(id, None);
+    send(ToJs::Unload(id.to_owned()));
 }
 
 fn send(msg: ToJs) {
@@ -52,10 +116,38 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
             QUIT_DONE.store(true, Ordering::SeqCst);
             return;
         }
-        let a = a.clone();
-        let _ = slint::invoke_from_event_loop(move || from_js(&a, m));
+        {
+            let mut q = crate::util::lock(&QUEUE);
+            if q.len() >= MAX_QUEUE {
+                return;
+            }
+            q.push(m);
+        }
+        if !SCHEDULED.swap(true, Ordering::SeqCst) {
+            let a = a.clone();
+            let _ = slint::invoke_from_event_loop(move || drain(&a));
+        }
     })?;
     JS.set(tx).map_err(|_| anyhow::anyhow!("fil des scripts déjà lancé"))
+}
+
+/// Traite les messages en attente ; le temps passé est compté dans le budget de chaque plugin.
+fn drain(app: &AppHandle) {
+    SCHEDULED.store(false, Ordering::SeqCst);
+    let batch = std::mem::take(&mut *crate::util::lock(&QUEUE));
+    let plugins = app.state::<Plugins>();
+    for m in batch {
+        let id = match &m {
+            FromJs::UiSet { id, .. } | FromJs::UiOn { id, .. } | FromJs::Island { id, .. } | FromJs::Alert { id, .. } => Some(id.clone()),
+            FromJs::Palette { id, .. } => Some(id.clone()),
+            _ => None,
+        };
+        let t = Instant::now();
+        from_js(app, m);
+        if let Some(id) = id {
+            plugins.record_cost(&id, t.elapsed().as_micros() as u64);
+        }
+    }
 }
 
 /// Fermeture d'Horizon : `unload` des scripts (500 ms au plus).
@@ -101,13 +193,12 @@ pub fn reconcile(app: &AppHandle) {
     let plugins = app.state::<Plugins>();
     let gone: Vec<String> = LOADED.with_borrow(|l| l.keys().filter(|k| !wanted.contains_key(*k)).cloned().collect());
     for id in gone {
-        LOADED.with_borrow_mut(|l| l.remove(&id));
-        send(ToJs::Unload(id));
+        forget(app, &id);
     }
     for (id, list) in wanted {
         let Some((manifest, dir, generation, _)) = plugins.loadable(&id) else {
-            if LOADED.with_borrow_mut(|l| l.remove(&id)).is_some() {
-                send(ToJs::Unload(id));
+            if LOADED.with_borrow(|l| l.contains_key(&id)) {
+                forget(app, &id);
             }
             continue;
         };
@@ -123,10 +214,25 @@ pub fn reconcile(app: &AppHandle) {
                     send(ToJs::Instances { id, list });
                 }
             }
-            _ => {
-                let main = std::fs::read_to_string(dir.join("main.js")).ok();
+            reloaded => {
+                let path = dir.join("main.js");
+                let main = match std::fs::metadata(&path) {
+                    Ok(m) if m.len() > MAX_MAIN => {
+                        super::view::set_script_error(&id, Some("fichier trop gros (1 Mo au plus)".into()));
+                        None
+                    }
+                    Ok(_) => std::fs::read_to_string(&path).ok(),
+                    Err(_) => None,
+                };
+                if reloaded.is_some() {
+                    // Nouvelle version : coût et plantages comptés de zéro.
+                    plugins.reset_counts(&id);
+                }
+                // Valeurs et rappels de la version en place gardés : si la nouvelle ne se
+                // charge pas, l'ancienne continue (le fil des scripts la garde aussi).
                 LOADED.with_borrow_mut(|l| {
-                    l.insert(id.clone(), Loaded { generation, instances: list.clone(), dir, values: Vec::new(), callbacks: Vec::new() })
+                    let (values, callbacks) = l.remove(&id).map(|x| (x.values, x.callbacks)).unwrap_or_default();
+                    l.insert(id.clone(), Loaded { generation, instances: list.clone(), dir, values, callbacks })
                 });
                 match main {
                     Some(main) => {
@@ -198,8 +304,16 @@ pub fn surface_created(plugin: &str, key: &str, surface: &Surface) {
 fn from_js(app: &AppHandle, m: FromJs) {
     match m {
         FromJs::UiSet { id, instance, prop, value } => {
+            // Gardée (pour les exemplaires créés ensuite) seulement si la propriété existe et
+            // que l'exemplaire visé existe : sinon le cache grandirait sans fin.
+            if !super::view::has_property(&id, &prop) {
+                return;
+            }
             let Some(dir) = LOADED.with_borrow_mut(|l| {
                 let x = l.get_mut(&id)?;
+                if instance.as_ref().is_some_and(|i| !x.instances.iter().any(|k| &k.id == i)) {
+                    return None;
+                }
                 x.values.retain(|v| !(v.0 == instance && v.1 == prop));
                 x.values.push((instance.clone(), prop.clone(), value.clone()));
                 Some(x.dir.clone())
@@ -223,11 +337,19 @@ fn from_js(app: &AppHandle, m: FromJs) {
                 }
             }
         }
-        FromJs::Log { id, level, text } => log::log!(level, "plugin {id} : {text}"),
-        FromJs::Crash { id, message } => {
+        FromJs::Log { id, level, text } => {
+            if allowed(&id, |r| &mut r.log) {
+                log::log!(level, "plugin {id} : {text}");
+            }
+        }
+        FromJs::Crash { id, message, import } => {
             log::warn!("plugin {id} : {message}");
+            if import {
+                super::view::set_script_error(&id, Some(message.clone()));
+            }
             app.state::<Plugins>().script_crashed(app, &id, message);
         }
+        FromJs::Loaded { id } => super::view::set_script_error(&id, None),
         FromJs::Cost { id, us } => app.state::<Plugins>().record_cost(&id, us),
         FromJs::Island { id, key, spec } => {
             let activity = spec.map(|s| crate::ui::island::Activity {
@@ -239,6 +361,7 @@ fn from_js(app: &AppHandle, m: FromJs) {
             });
             crate::ui::island::set_activity(format!("{id}:{key}"), activity);
         }
+        FromJs::Alert { id, .. } if !allowed(&id, |r| &mut r.alert) => log::debug!("plugin {id} : alerte ignorée (trop fréquente)"),
         FromJs::Alert { id, spec } => {
             let icon = crate::ui::icons::static_name(spec["icon"].as_str().unwrap_or_default()).unwrap_or("squaresFour");
             let alert = crate::alerts::Alert::icon(icon, crate::alerts::Severity::Info, text(&spec["title"], 120), text(&spec["body"], 200));
@@ -260,7 +383,8 @@ fn from_js(app: &AppHandle, m: FromJs) {
                 .unwrap_or_default();
             app.state::<Plugins>().set_palette(&id, list);
         }
-        FromJs::Open { url } => {
+        FromJs::Open { id, .. } if !allowed(&id, |r| &mut r.open) => log::debug!("plugin {id} : lien ignoré (trop fréquent)"),
+        FromJs::Open { url, .. } => {
             if let Err(e) = crate::web::url_open(&url) {
                 log::warn!("plugin : lien {url} : {e}");
             }
@@ -288,4 +412,19 @@ pub fn event(app: &AppHandle, name: &str, payload: &Json) {
 /// Entrée de palette d'un plugin choisie.
 pub fn palette_choice(id: &str, entry: &str) {
     send(ToJs::Event { id: id.to_owned(), name: "palette".to_owned(), payload: Json::String(entry.to_owned()) });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bucket_limits_the_rate() {
+        let t0 = Instant::now();
+        let mut b = Bucket::new(2.0, 1.0, t0);
+        assert!(b.take(t0) && b.take(t0));
+        assert!(!b.take(t0));
+        assert!(b.take(t0 + Duration::from_millis(1100)));
+        assert!(!b.take(t0 + Duration::from_millis(1100)));
+    }
 }

@@ -9,6 +9,10 @@ pub const WINDOW_MS: u64 = 60_000;
 pub const MAX_LOAD: f32 = 0.02;
 /// Plantages de script tolérés dans la fenêtre (le dernier fait désactiver).
 pub const MAX_CRASHES: usize = 3;
+/// Fenêtre courte : un excès franc est arrêté sans attendre la minute entière.
+pub const SHORT_MS: u64 = 5_000;
+/// Part d'un cœur au-delà de laquelle le plugin est trop gourmand sur la fenêtre courte.
+pub const MAX_SHORT_LOAD: f32 = 0.5;
 
 /// Verdict du budget.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,9 +49,14 @@ impl Budget {
 
     /// Part d'un cœur utilisée sur la dernière fenêtre.
     pub fn load(&self, now_ms: u64) -> f32 {
-        let start = now_ms.saturating_sub(WINDOW_MS);
+        self.load_over(now_ms, WINDOW_MS)
+    }
+
+    /// Part d'un cœur utilisée sur les `span_ms` dernières millisecondes.
+    fn load_over(&self, now_ms: u64, span_ms: u64) -> f32 {
+        let start = now_ms.saturating_sub(span_ms);
         let us: u64 = self.samples.iter().filter(|(t, _)| *t > start && *t <= now_ms).map(|(_, c)| c).sum();
-        us as f32 / (WINDOW_MS * 1000) as f32
+        us as f32 / (span_ms * 1000) as f32
     }
 
     /// Verdict à `now_ms`.
@@ -57,7 +66,11 @@ impl Budget {
             return Verdict::Crashing;
         }
         let full = self.since.is_some_and(|s| now_ms.saturating_sub(s) >= WINDOW_MS);
-        if full && self.load(now_ms) > MAX_LOAD { Verdict::TooHeavy } else { Verdict::Ok }
+        if (full && self.load(now_ms) > MAX_LOAD) || self.load_over(now_ms, SHORT_MS) > MAX_SHORT_LOAD {
+            Verdict::TooHeavy
+        } else {
+            Verdict::Ok
+        }
     }
 
     /// Repart de zéro (plugin réactivé ou rechargé).
@@ -124,6 +137,20 @@ mod tests {
             spaced.crash(1_000 + i * 31_000);
         }
         assert_eq!(spaced.verdict(63_000), Verdict::Ok);
+    }
+
+    #[test]
+    fn burst_is_caught_within_seconds() {
+        let mut b = Budget::default();
+        for s in 1..=3 {
+            b.record(s * 1000, 1_000_000);
+        }
+        assert_eq!(b.verdict(3_000), Verdict::TooHeavy);
+        let mut light = Budget::default();
+        for s in 1..=5 {
+            light.record(s * 1000, 100_000);
+        }
+        assert_eq!(light.verdict(5_000), Verdict::Ok);
     }
 
     #[test]

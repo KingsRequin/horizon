@@ -145,24 +145,22 @@ pub(super) fn run(rx: &Receiver<ToJs>, me: &Sender<ToJs>, out: &dyn Fn(FromJs)) 
 /// Traite un message ; vrai pour `Quit`.
 fn handle(plugins: &mut HashMap<String, Plugin>, msg: ToJs, me: &Sender<ToJs>, out: &dyn Fn(FromJs)) -> bool {
     match msg {
-        ToJs::Load { id, main, instances, permissions } => {
-            if let Some(old) = plugins.remove(&id) {
-                old.unload(out);
-            }
-            match Plugin::new(&id, instances, permissions, me.clone()) {
-                Ok(p) => {
-                    p.invoke(out, |ctx| {
-                        let mut opts = EvalOptions::default();
-                        opts.global = true;
-                        opts.strict = true;
-                        opts.filename = Some("main.js".to_owned());
-                        ctx.eval_with_options::<(), _>(main, opts)
-                    });
-                    plugins.insert(id, p);
+        ToJs::Load { id, main, instances, permissions } => match Plugin::new(&id, instances, permissions, me.clone()) {
+            Ok(p) => match p.load_main(main, out) {
+                // La nouvelle version ne se charge pas : l'ancienne (s'il y en a une) reste.
+                Some(message) => {
+                    out(FromJs::Crash { id: id.clone(), message, import: true });
+                    plugins.entry(id).or_insert(p);
                 }
-                Err(e) => out(FromJs::Crash { id, message: format!("moteur JavaScript : {e}") }),
-            }
-        }
+                None => {
+                    if let Some(old) = plugins.insert(id.clone(), p) {
+                        old.unload(out);
+                    }
+                    out(FromJs::Loaded { id });
+                }
+            },
+            Err(e) => out(FromJs::Crash { id, message: format!("moteur JavaScript : {e}"), import: true }),
+        },
         ToJs::Unload(id) => {
             if let Some(p) = plugins.remove(&id) {
                 p.unload(out);
@@ -283,6 +281,39 @@ impl Plugin {
         self.invoke_until(Instant::now() + CALL_LIMIT, out, f);
     }
 
+    /// Évalue le script principal ; son erreur éventuelle (sans l'envoyer).
+    fn load_main(&self, main: String, out: &dyn Fn(FromJs)) -> Option<String> {
+        let start = Instant::now();
+        self.deadline.set(Some(start + CALL_LIMIT));
+        let mut crash = self.ctx.with(|ctx| {
+            let mut opts = EvalOptions::default();
+            opts.global = true;
+            opts.strict = true;
+            opts.filename = Some("main.js".to_owned());
+            ctx.eval_with_options::<(), _>(main, opts).err().map(|e| describe(&ctx, e))
+        });
+        while crash.is_none() && self.rt.is_job_pending() {
+            match self.rt.execute_pending_job() {
+                Ok(true) => {}
+                Ok(false) => break,
+                Err(e) => crash = Some(e.0.with(|ctx| describe(&ctx, rquickjs::Error::Exception))),
+            }
+        }
+        self.deadline.set(None);
+        let produced = {
+            let mut h = self.hooks.borrow_mut();
+            h.out_bytes = 0;
+            std::mem::take(&mut h.out)
+        };
+        if crash.is_none() {
+            for m in produced {
+                out(m);
+            }
+        }
+        out(FromJs::Cost { id: self.id.clone(), us: start.elapsed().as_micros() as u64 });
+        crash
+    }
+
     /// Comme [`Plugin::invoke`], interrompu à `deadline` (au plus [`CALL_LIMIT`] plus tard).
     fn invoke_until(&self, deadline: Instant, out: &dyn Fn(FromJs), f: impl FnOnce(&Ctx) -> rquickjs::Result<()>) {
         let start = Instant::now();
@@ -307,7 +338,7 @@ impl Plugin {
         }
         out(FromJs::Cost { id: self.id.clone(), us: start.elapsed().as_micros() as u64 });
         if let Some(message) = crash {
-            out(FromJs::Crash { id: self.id.clone(), message });
+            out(FromJs::Crash { id: self.id.clone(), message, import: false });
         }
     }
 
@@ -321,7 +352,7 @@ impl Plugin {
         let handlers = self.hooks.borrow().on.get(name).cloned().unwrap_or_default();
         for f in handlers {
             if Instant::now() >= deadline {
-                out(FromJs::Crash { id: self.id.clone(), message: format!("on(\"{name}\") : temps dépassé") });
+                out(FromJs::Crash { id: self.id.clone(), message: format!("on(\"{name}\") : temps dépassé"), import: false });
                 return;
             }
             self.invoke_until(deadline, out, |ctx| {
@@ -482,7 +513,7 @@ fn push(ctx: &Ctx, h: &Rc<RefCell<Hooks>>, m: FromJs) -> rquickjs::Result<()> {
         FromJs::Island { spec, .. } => spec.as_ref().map_or(0, |s| s.to_string().len()),
         FromJs::Alert { spec, .. } => spec.to_string().len(),
         FromJs::Palette { entries, .. } => entries.to_string().len(),
-        FromJs::Open { url } => url.len(),
+        FromJs::Open { url, .. } => url.len(),
         _ => 0,
     };
     let mut hk = h.borrow_mut();
@@ -843,7 +874,7 @@ fn install_shell<'js>(ctx: &Ctx<'js>, horizon: &Object<'js>, id: &str, hooks: &R
     )?;
     horizon.set("palette", palette)?;
 
-    let h = hooks.clone();
+    let (h, pid) = (hooks.clone(), id.to_owned());
     horizon.set(
         "open",
         Function::new(ctx.clone(), move |ctx: Ctx<'js>, url: String| -> rquickjs::Result<()> {
@@ -851,7 +882,7 @@ fn install_shell<'js>(ctx: &Ctx<'js>, horizon: &Object<'js>, id: &str, hooks: &R
             // l'utilisateur a acceptés).
             let allowed = h.borrow().perms.allows_http(&url);
             let Some(url) = allowed else { return Err(missing(&ctx, &format!("http {url} (pour open)"))) };
-            push(&ctx, &h, FromJs::Open { url })
+            push(&ctx, &h, FromJs::Open { id: pid.clone(), url })
         })?,
     )?;
     Ok(())

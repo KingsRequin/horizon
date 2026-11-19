@@ -24,6 +24,28 @@ const FADE_OUT: Duration = Duration::from_millis(120);
 const PHONE_SEQ: i32 = -1;
 /// Numéro fixe de l'îlot d'une activité de plugin.
 const ACTIVITY_SEQ: i32 = -2;
+/// Activités au plus par plugin (les plus anciennes partent).
+const MAX_ACTIVITIES: usize = 8;
+
+/// Pose (`Some`) ou retire (`None`) l'activité `key` (« plugin:clé »), au plus
+/// [`MAX_ACTIVITIES`] par plugin.
+fn put_activity(list: &mut Vec<(String, Activity)>, key: String, a: Option<Activity>) {
+    list.retain(|(k, _)| *k != key);
+    let Some(a) = a else { return };
+    let prefix = format!("{}:", key.split(':').next().unwrap_or_default());
+    while list.iter().filter(|(k, _)| k.starts_with(&prefix)).count() >= MAX_ACTIVITIES {
+        if let Some(i) = list.iter().position(|(k, _)| k.starts_with(&prefix)) {
+            list.remove(i);
+        }
+    }
+    list.push((key, a));
+}
+
+/// Retire toutes les activités du plugin `id`.
+fn remove_plugin_activities(list: &mut Vec<(String, Activity)>, id: &str) {
+    let prefix = format!("{id}:");
+    list.retain(|(k, _)| !k.starts_with(&prefix));
+}
 
 /// Activité durable d'un plugin dans l'îlot (`horizon.island.show`), comme un appel.
 #[derive(Debug, Clone, PartialEq)]
@@ -263,12 +285,14 @@ fn on_phone(p: Option<PhoneView>) {
 
 /// Activité durable d'un plugin (`None` : terminée). Chronomètre : redessin chaque seconde.
 pub fn set_activity(key: String, a: Option<Activity>) {
-    STATE.with_borrow_mut(|s| {
-        s.activities.retain(|(k, _)| *k != key);
-        if let Some(a) = a {
-            s.activities.push((key, a));
-        }
-    });
+    STATE.with_borrow_mut(|s| put_activity(&mut s.activities, key, a));
+    ensure_ticking();
+    apply_all();
+}
+
+/// Le plugin `id` n'est plus chargé : ses activités quittent l'îlot.
+pub fn clear_plugin(id: &str) {
+    STATE.with_borrow_mut(|s| remove_plugin_activities(&mut s.activities, id));
     ensure_ticking();
     apply_all();
 }
@@ -392,6 +416,21 @@ mod tests {
         assert_eq!((v.title.as_str(), v.mark, v.claude, v.action_tip), ("deskbar", Mark::App("Claude".into()), true, "Afficher le terminal"));
         assert_eq!(shown(None, Some(&p), None, 2_000).unwrap().title, "Léo");
         assert_eq!(shown(None, None, None, 0), None);
+    }
+
+    #[test]
+    fn activities_are_capped_and_removed_with_their_plugin() {
+        let act = |t: &str| Activity { icon: "watch", title: t.into(), subtitle: String::new(), since_ms: None, attention: false };
+        let mut list = Vec::new();
+        for i in 0..20 {
+            put_activity(&mut list, format!("a:{i}"), Some(act("x")));
+        }
+        put_activity(&mut list, "b:1".into(), Some(act("b")));
+        assert_eq!(list.iter().filter(|(k, _)| k.starts_with("a:")).count(), MAX_ACTIVITIES);
+        remove_plugin_activities(&mut list, "a");
+        assert_eq!(list.len(), 1);
+        put_activity(&mut list, "b:1".into(), None);
+        assert!(list.is_empty());
     }
 
     #[test]

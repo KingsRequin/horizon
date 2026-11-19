@@ -8,7 +8,34 @@
 use serde_json::Value as Json;
 use slint::{Brush, Color, Image, ModelRc, SharedString, VecModel};
 use slint_interpreter::{Struct, Value, ValueType};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Éléments au plus d'un tableau venu d'un script (au-delà : coupé).
+pub const MAX_ITEMS: usize = 1000;
+/// Côté maximal d'une image de plugin (px), et son poids maximal.
+pub const MAX_IMAGE: u32 = 4096;
+const MAX_IMAGE_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Un élément de `path` sous `dir` est un lien (lien symbolique, jonction) : refusé, il
+/// pourrait mener ailleurs, jusqu'à un partage réseau.
+pub fn has_link_below(dir: &Path, path: &Path) -> bool {
+    let Ok(rel) = path.strip_prefix(dir) else { return true };
+    let mut cur = dir.to_path_buf();
+    rel.components().any(|c| {
+        cur.push(c);
+        std::fs::symlink_metadata(&cur).is_ok_and(|m| m.file_type().is_symlink())
+    })
+}
+
+/// Chemin `rel` du dossier `dir` s'il y reste : relatif, sans `..`, lecteur, réseau ni lien.
+pub fn inside(dir: &Path, rel: &str) -> Option<PathBuf> {
+    let n = rel.replace('\\', "/");
+    if n.is_empty() || n.starts_with('/') || n.contains(':') || n.split('/').any(|c| c == ".." || c.is_empty()) {
+        return None;
+    }
+    let path = dir.join(&n);
+    (!has_link_below(dir, &path)).then_some(path)
+}
 
 /// Couleur `#rrggbb` ou `#rrggbbaa`.
 fn color(s: &str) -> Option<Color> {
@@ -23,16 +50,16 @@ fn color(s: &str) -> Option<Color> {
 
 /// Image `rel` du dossier `dir` du plugin (chemin vérifié avant tout accès au disque).
 pub fn plugin_image(dir: &Path, rel: &str) -> Option<Image> {
-    let n = rel.replace('\\', "/");
-    if n.is_empty() || n.starts_with('/') || n.contains(':') || n.split('/').any(|c| c == ".." || c.is_empty()) {
+    let path = inside(dir, rel)?;
+    // Taille vérifiée avant de décoder (une image piégée occuperait des gigaoctets).
+    if std::fs::metadata(&path).ok()?.len() > MAX_IMAGE_BYTES {
         return None;
     }
-    let path = dir.join(&n);
-    let (Ok(full), Ok(root)) = (path.canonicalize(), dir.canonicalize()) else { return None };
-    if !full.starts_with(&root) {
+    let (w, h) = image::image_dimensions(&path).ok()?;
+    if w > MAX_IMAGE || h > MAX_IMAGE {
         return None;
     }
-    Image::load_from_path(&full).ok()
+    Image::load_from_path(&path).ok()
 }
 
 /// Valeur Slint de `v` pour une propriété de type `ty` (`None` : ne convient pas).
@@ -51,7 +78,7 @@ pub fn json_to_value(v: &Json, ty: ValueType, dir: &Path) -> Option<Value> {
             rel => plugin_image(dir, rel)?,
         }),
         ValueType::Model => {
-            let items: Vec<Value> = v.as_array()?.iter().map(guess).collect();
+            let items: Vec<Value> = v.as_array()?.iter().take(MAX_ITEMS).map(guess).collect();
             Value::Model(ModelRc::new(VecModel::from(items)))
         }
         ValueType::Struct => guess(v),
@@ -69,7 +96,7 @@ fn guess(v: &Json) -> Value {
             Some(c) => Value::Brush(Brush::SolidColor(c)),
             None => Value::String(s.as_str().into()),
         },
-        Json::Array(a) => Value::Model(ModelRc::new(VecModel::from(a.iter().map(guess).collect::<Vec<_>>()))),
+        Json::Array(a) => Value::Model(ModelRc::new(VecModel::from(a.iter().take(MAX_ITEMS).map(guess).collect::<Vec<_>>()))),
         Json::Object(o) => Value::Struct(o.iter().map(|(k, v)| (k.replace('_', "-"), guess(v))).collect::<Struct>()),
     }
 }
@@ -115,6 +142,36 @@ mod tests {
         assert_eq!(value_to_json(&json_to_value(&json!("#aabbcc"), ValueType::Brush, dir).unwrap()), json!("#aabbccff"));
         assert!(json_to_value(&json!("x"), ValueType::Number, dir).is_none());
         assert!(json_to_value(&json!("rouge"), ValueType::Brush, dir).is_none());
+    }
+
+    #[test]
+    fn long_arrays_are_cut() {
+        let v = Json::Array((0..5000).map(|i| json!(i)).collect());
+        let Some(Value::Model(m)) = json_to_value(&v, ValueType::Model, Path::new(".")) else { panic!() };
+        use slint::Model;
+        assert_eq!(m.row_count(), MAX_ITEMS);
+    }
+
+    #[test]
+    fn huge_or_linked_images_are_refused() {
+        let dir = std::env::temp_dir().join(format!("horizon-convert-big-{}", std::process::id()));
+        let elsewhere = std::env::temp_dir().join(format!("horizon-convert-ailleurs-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("assets")).unwrap();
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        image::RgbaImage::from_pixel(MAX_IMAGE + 1, 1, image::Rgba([1, 2, 3, 255])).save(dir.join("assets/large.png")).unwrap();
+        assert!(plugin_image(&dir, "assets/large.png").is_none());
+        // Jonction (sans droits particuliers) vers un dossier hors du plugin.
+        image::RgbaImage::from_pixel(2, 2, image::Rgba([1, 2, 3, 255])).save(elsewhere.join("a.png")).unwrap();
+        let link = dir.join("lien");
+        let made = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J", &link.to_string_lossy(), &elsewhere.to_string_lossy()])
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if made {
+            assert!(plugin_image(&dir, "lien/a.png").is_none(), "image lue à travers une jonction");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&elsewhere);
     }
 
     #[test]

@@ -69,7 +69,10 @@ pub enum FromJs {
     UiOn { id: String, name: String },
     Log { id: String, level: log::Level, text: String },
     /// Exception non rattrapée, interruption, mémoire épuisée (message avec `main.js:<ligne>`).
-    Crash { id: String, message: String },
+    /// `import` : au chargement du script (l'ancienne version, s'il y en avait une, reste).
+    Crash { id: String, message: String, import: bool },
+    /// Le script s'est chargé sans erreur.
+    Loaded { id: String },
     /// Temps passé dans un rappel (µs).
     Cost { id: String, us: u64 },
     /// `horizon.island.show` (`Some`) ou `hide` (`None`) : activité durable `key` de l'îlot.
@@ -79,7 +82,7 @@ pub enum FromJs {
     /// `horizon.palette.set` : entrées du plugin dans la palette.
     Palette { id: String, entries: Json },
     /// `horizon.open` : lien https vérifié.
-    Open { url: String },
+    Open { id: String, url: String },
     /// Le fil s'est arrêté (après `ToJs::Quit`).
     Quit,
 }
@@ -121,7 +124,7 @@ mod tests {
         let end = Instant::now() + Duration::from_secs(3);
         loop {
             match rx.recv_deadline(end).expect("message attendu") {
-                FromJs::Cost { .. } | FromJs::Log { .. } => {}
+                FromJs::Cost { .. } | FromJs::Log { .. } | FromJs::Loaded { .. } => {}
                 m => return m,
             }
         }
@@ -173,10 +176,22 @@ mod tests {
     }
 
     #[test]
+    fn broken_reload_keeps_the_previous_script() {
+        let (s, rx) = engine();
+        load(&s, "a", r#"horizon.ui.on("ping", () => horizon.ui.set("pong", 1));"#, vec![]);
+        next(&rx);
+        load(&s, "a", "horizon.ui.on(\"ping\", () => horizon.ui.set(\"pong\", 2));\nfaute(;\n", vec![]);
+        assert!(matches!(next(&rx), FromJs::Crash { import: true, .. }));
+        s.send(ToJs::Callback { id: "a".into(), instance: "w".into(), name: "ping".into(), args: vec![] }).unwrap();
+        assert_eq!(next(&rx), set("a", "pong", json!(1)));
+    }
+
+    #[test]
     fn throw_at_import_reports_line() {
         let (s, rx) = engine();
         load(&s, "a", "let a = 1;\nlet b = 2;\nthrow new Error('boum');\n", vec![]);
-        let FromJs::Crash { message, .. } = next(&rx) else { panic!("plantage attendu") };
+        let FromJs::Crash { message, import, .. } = next(&rx) else { panic!("plantage attendu") };
+        assert!(import);
         assert!(message.contains("boum") && message.contains("main.js:3"), "{message}");
     }
 
@@ -375,7 +390,7 @@ mod tests {
         assert!(matches!(next(&rx), FromJs::Island { ref key, spec: None, .. } if key == "appel"));
         assert!(matches!(next(&rx), FromJs::Alert { .. }));
         assert!(matches!(next(&rx), FromJs::Palette { .. }));
-        assert_eq!(next(&rx), FromJs::Open { url: "https://example.com/aide".into() });
+        assert_eq!(next(&rx), FromJs::Open { id: "a".into(), url: "https://example.com/aide".into() });
         assert_eq!(next(&rx), set("a", "refused", json!(2)));
     }
 

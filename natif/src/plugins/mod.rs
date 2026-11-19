@@ -156,6 +156,12 @@ impl Plugins {
         lock(&self.crashes).get(id).cloned()
     }
 
+    /// Nouvelle version du plugin `id` : coût et plantages comptés de zéro.
+    pub fn reset_counts(&self, id: &str) {
+        lock(&self.budgets).remove(id);
+        lock(&self.crashes).remove(id);
+    }
+
     /// Plugins chargés qui dépassent leur budget : (id, raison).
     fn over_budget(&self) -> Vec<(String, Disabled)> {
         use horizon_core::plugin::budget::Verdict;
@@ -309,26 +315,72 @@ fn changed(app: &AppHandle) {
     let _ = app.emit(EV_PLUGINS, ());
 }
 
-/// Date de modification la plus récente (ms) de chaque sous-dossier de `root` (ses fichiers et
-/// ceux de `assets/`).
+/// Signature des fichiers d'un plugin : `plugin.json`, `main.js`, les `.slint` (sous-dossiers
+/// compris) et `assets/` ; chemin, taille et date de chacun. Un autre fichier (données qu'une
+/// appli réécrit) ne compte pas ; les liens ne sont pas suivis.
+fn signature(dir: &Path) -> u64 {
+    use std::hash::{Hash, Hasher};
+    const MAX_DEPTH: usize = 4;
+    const MAX_FILES: usize = 500;
+    let mut files: Vec<(String, u64, u128)> = Vec::new();
+    let mut stack = vec![(dir.to_path_buf(), 0usize)];
+    while let Some((d, depth)) = stack.pop() {
+        for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+            let Ok(meta) = std::fs::symlink_metadata(e.path()) else { continue };
+            if meta.file_type().is_symlink() || files.len() >= MAX_FILES {
+                continue;
+            }
+            let rel = e.path().strip_prefix(dir).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+            if meta.is_dir() {
+                if depth < MAX_DEPTH {
+                    stack.push((e.path(), depth + 1));
+                }
+                continue;
+            }
+            let followed = rel == "plugin.json" || rel == "main.js" || rel.ends_with(".slint") || rel.starts_with("assets/");
+            if followed {
+                let at = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis());
+                files.push((rel, meta.len(), at));
+            }
+        }
+    }
+    files.sort();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    files.hash(&mut h);
+    h.finish()
+}
+
+/// Signature de chaque sous-dossier de `root` (les liens ne sont pas suivis).
 fn snapshot(root: &Path) -> Snapshot {
-    let newest = |dir: &Path| -> u64 {
-        let files = std::fs::read_dir(dir).into_iter().flatten().flatten();
-        let assets = std::fs::read_dir(dir.join("assets")).into_iter().flatten().flatten();
-        files
-            .chain(assets)
-            .filter_map(|f| f.metadata().ok()?.modified().ok()?.duration_since(UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as u64)
-            .max()
-            .unwrap_or(0)
-    };
     std::fs::read_dir(root)
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
-        .filter_map(|e| Some((e.file_name().into_string().ok()?, newest(&e.path()))))
+        .filter(|e| std::fs::symlink_metadata(e.path()).is_ok_and(|m| m.is_dir()))
+        .filter_map(|e| Some((e.file_name().into_string().ok()?, signature(&e.path()))))
         .collect()
+}
+
+/// Fichier de la sentinelle de plantage : le plugin dont l'interface est en cours de création
+/// ou de premier rendu. Resté là au démarrage, il a fait tomber Horizon : il est désactivé.
+pub(crate) fn sentinel_path() -> PathBuf {
+    crate::state::app_dir().join("plugins-en-cours.txt")
+}
+
+pub(crate) fn sentinel_arm(path: &Path, id: &str) {
+    let _ = std::fs::write(path, id);
+}
+
+pub(crate) fn sentinel_disarm(path: &Path) {
+    let _ = std::fs::remove_file(path);
+}
+
+/// Plugin laissé par la sentinelle (la retire).
+fn sentinel_take(path: &Path) -> Option<String> {
+    let id = std::fs::read_to_string(path).ok()?;
+    sentinel_disarm(path);
+    let id = id.trim().to_owned();
+    (!id.is_empty()).then_some(id)
 }
 
 /// Identifiants des widgets intégrés (interdits aux plugins).
@@ -350,6 +402,12 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
         }
         publish(&r);
         log::info!("plugins : {} dans {}", r.entries.len(), root.display());
+    }
+    // Horizon est tombé pendant la création ou le premier rendu d'un plugin : il est désactivé.
+    if let Some(id) = sentinel_take(&sentinel_path()) {
+        log::error!("plugin {id} : Horizon s'est arrêté pendant son affichage, plugin désactivé");
+        app.state::<Plugins>().set_disabled(app, &id, Some(Disabled::Crashing));
+        lock(&app.state::<Plugins>().crashes).insert(id, "Horizon s'est arrêté pendant son affichage".to_owned());
     }
     if !first.is_empty() {
         changed(app);
@@ -407,6 +465,47 @@ mod tests {
         assert_eq!(instance_of_panel("plugin:w1a"), "w1a");
         assert_eq!(instance_of_panel("plugin:essai:w1a"), "w1a");
         assert_eq!(crate::popup::base_of("plugin:essai:w1a"), PANEL_KIND);
+    }
+
+    fn tmp(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("horizon-plugins-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn signature_follows_plugin_files_only() {
+        let d = tmp("sig");
+        std::fs::write(d.join("plugin.json"), "{}").unwrap();
+        std::fs::write(d.join("widget.slint"), "a").unwrap();
+        let s0 = signature(&d);
+        // Fichier de données qu'une appli réécrit : ignoré.
+        std::fs::write(d.join("data.txt"), "x").unwrap();
+        assert_eq!(signature(&d), s0);
+        // Fichier .slint d'un sous-dossier : suivi.
+        std::fs::create_dir_all(d.join("parts")).unwrap();
+        std::fs::write(d.join("parts/p.slint"), "b").unwrap();
+        let s1 = signature(&d);
+        assert_ne!(s1, s0);
+        // Suppression d'un fichier : vue.
+        std::fs::remove_file(d.join("widget.slint")).unwrap();
+        assert_ne!(signature(&d), s1);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn sentinel_names_the_plugin_that_crashed() {
+        let d = tmp("sentinelle");
+        let f = d.join("sentinelle.txt");
+        assert_eq!(sentinel_take(&f), None);
+        sentinel_arm(&f, "lourd");
+        assert_eq!(sentinel_take(&f).as_deref(), Some("lourd"));
+        assert_eq!(sentinel_take(&f), None);
+        sentinel_arm(&f, "lourd");
+        sentinel_disarm(&f);
+        assert_eq!(sentinel_take(&f), None);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

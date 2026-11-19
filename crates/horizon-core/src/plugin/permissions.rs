@@ -9,7 +9,7 @@ use url::Url;
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Permissions {
-    /// Connexions locales (`ws://` ou `http://` vers `127.0.0.1`/`localhost`), préfixes d'URL.
+    /// Connexions locales (`ws://` vers `127.0.0.1`/`localhost`), préfixes d'URL.
     pub connect: Vec<String>,
     /// Fichiers lisibles (chemins exacts, `%LOCALAPPDATA%` et `%APPDATA%` permis).
     pub files: Vec<String>,
@@ -50,19 +50,17 @@ fn covers(entry: &Url, url: &Url) -> bool {
         && segments(url).starts_with(&segments(entry))
 }
 
-/// Connexion locale permise (`ws://`/`http://` vers un hôte local).
+/// Connexion locale permise (`ws://` vers un hôte local).
 fn local(u: &Url) -> bool {
-    matches!(u.scheme(), "ws" | "http") && u.host_str().is_some_and(|h| LOCAL_HOSTS.contains(&h))
+    u.scheme() == "ws" && u.host_str().is_some_and(|h| LOCAL_HOSTS.contains(&h))
 }
 
-/// Entrée `connect` valide : `ws://`/`http://` vers un hôte local.
+/// Entrée `connect` valide : `ws://` vers un hôte local.
 pub(super) fn valid_connect(entry: &str) -> Result<(), String> {
     match parse(entry) {
         Some(u) if local(&u) => Ok(()),
-        Some(u) if matches!(u.scheme(), "ws" | "http") => {
-            Err(format!("« {entry} » : seules les connexions vers 127.0.0.1 ou localhost sont permises"))
-        }
-        _ => Err(format!("« {entry} » : adresse ws:// ou http:// attendue")),
+        Some(u) if u.scheme() == "ws" => Err(format!("« {entry} » : seules les connexions vers 127.0.0.1 ou localhost sont permises")),
+        _ => Err(format!("« {entry} » : adresse ws:// attendue")),
     }
 }
 
@@ -200,6 +198,13 @@ mod tests {
         assert!(p.allows_connect("ws://127.0.0.1:28651").is_none());
         let short = Permissions { connect: vec!["ws://127.0.0.1:2865".into()], ..Default::default() };
         assert!(short.allows_connect("ws://127.0.0.1:28650").is_none());
+    }
+
+    #[test]
+    fn connect_is_websocket_only() {
+        assert!(valid_connect("http://127.0.0.1:8080").is_err());
+        let p = Permissions { connect: vec!["ws://127.0.0.1:8080".into()], ..Default::default() };
+        assert!(p.allows_connect("http://127.0.0.1:8080").is_none());
     }
 
     #[test]

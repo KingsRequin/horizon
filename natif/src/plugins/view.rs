@@ -24,6 +24,17 @@ use std::time::Duration;
 const FRAME: Duration = Duration::from_millis(50);
 /// Suffixe de la clé du panneau d'un exemplaire.
 pub const PANEL_SUFFIX: &str = "#panel";
+/// Taille logique maximale d'un widget et d'un panneau de plugin.
+const WIDGET_MAX: (f32, f32) = (1200.0, 200.0);
+const PANEL_MAX: (f32, f32) = (900.0, 1200.0);
+/// Création ou rendu plus long : compté comme un plantage (le fil de l'interface a gelé).
+const SLOW: Duration = Duration::from_millis(250);
+
+/// Taille voulue bornée (largeur, hauteur) d'un exemplaire.
+fn bounded(p: (f32, f32), panel: bool) -> (f32, f32) {
+    let max = if panel { PANEL_MAX } else { WIDGET_MAX };
+    (slint_host::bound(p.0, max.0), slint_host::bound(p.1, max.1))
+}
 
 /// Interface compilée d'un plugin, pour une génération du registre.
 struct Ui {
@@ -51,6 +62,8 @@ struct View {
     own_clicks: bool,
     /// Échelle de la fenêtre.
     scale: f32,
+    /// Premier rendu fait (la sentinelle de plantage le couvre).
+    rendered: bool,
 }
 
 #[derive(Default)]
@@ -60,6 +73,8 @@ struct State {
     /// (fenêtre, clé) → exemplaire.
     views: HashMap<(String, String), View>,
     timer: Option<Timer>,
+    /// Erreur au chargement du script de chaque plugin (montrée au survol).
+    script_errors: HashMap<String, String>,
 }
 
 thread_local! {
@@ -163,10 +178,48 @@ fn error_of(s: &State, k: &(String, String)) -> String {
     if let Some(e) = s.uis.get(&v.plugin).and_then(|u| u.error.clone()) {
         return e;
     }
+    if let Some(e) = s.script_errors.get(&v.plugin) {
+        return format!("main.js : {e}");
+    }
     if v.surface.is_none() {
         return format!("{} : interface indisponible", v.plugin);
     }
     String::new()
+}
+
+/// Erreur au chargement du script du plugin (`None` : chargé), montrée au survol.
+pub fn set_script_error(plugin: &str, error: Option<String>) {
+    let labels: Vec<String> = STATE.with_borrow_mut(|s| {
+        match error {
+            Some(e) => s.script_errors.insert(plugin.to_owned(), e),
+            None => s.script_errors.remove(plugin),
+        };
+        s.views.iter().filter(|(_, v)| v.plugin == plugin).map(|(k, _)| k.0.clone()).collect()
+    });
+    for l in labels {
+        bump(&l);
+    }
+}
+
+/// L'interface compilée du plugin (widget ou panneau) a la propriété `prop`.
+pub fn has_property(plugin: &str, prop: &str) -> bool {
+    let want = prop.replace('_', "-");
+    STATE.with_borrow(|s| {
+        s.uis.get(plugin).and_then(|u| u.compiled.clone()).is_some_and(|c| {
+            [&c.widget, &c.panel].into_iter().flatten().any(|d| d.properties().any(|(n, _)| n.replace('_', "-") == want))
+        })
+    })
+}
+
+/// Plantage compté pour une création ou un rendu trop long.
+fn too_slow(plugin: &str, what: &str, took: Duration) {
+    if took > SLOW
+        && let Some(app) = STATE.with_borrow(|s| s.app.clone())
+    {
+        let message = format!("{what} trop long ({} ms)", took.as_millis());
+        log::warn!("plugin {plugin} : {message}");
+        app.state::<Plugins>().script_crashed(&app, plugin, message);
+    }
 }
 
 fn has_panel(plugin: &str) -> bool {
@@ -218,6 +271,7 @@ fn new_view(plugin: &str, panel: bool, scale: f32) -> View {
         preferred: (0.0, 0.0),
         own_clicks: false,
         scale,
+        rendered: false,
     }
 }
 
@@ -289,6 +343,10 @@ fn refresh(label: &str) {
                 apply_theme(inst, t);
             }
         };
+        // Sentinelle : un plantage pendant la création désactivera ce plugin au démarrage suivant.
+        let sentinel = super::sentinel_path();
+        super::sentinel_arm(&sentinel, &name);
+        let t = std::time::Instant::now();
         let surface = def.and_then(|d| match Surface::new(&d, scale, theme) {
             Ok(surface) => Some(surface),
             Err(e) => {
@@ -296,13 +354,15 @@ fn refresh(label: &str) {
                 None
             }
         });
+        super::sentinel_disarm(&sentinel);
+        too_slow(&name, "création", t.elapsed());
         let mut own_clicks = false;
         let mut preferred = (0.0, 0.0);
         if let Some(surface) = &surface {
             let id = k.1.trim_end_matches(PANEL_SUFFIX).to_owned();
             surface.set_std(&StdProps { instance: id, ..StdProps::default() });
             own_clicks = matches!(surface.instance().get_property("own-clicks"), Ok(Value::Bool(true)));
-            preferred = (surface.preferred_width(), surface.preferred_height());
+            preferred = bounded((surface.preferred_width(), surface.preferred_height()), panel);
         }
         if let Some(surface) = &surface {
             super::script::surface_created(&name, &k.1, surface);
@@ -310,6 +370,7 @@ fn refresh(label: &str) {
         STATE.with_borrow_mut(|s| {
             if let Some(v) = s.views.get_mut(&k) {
                 v.generation = generation;
+                v.rendered = false;
                 v.surface = surface.map(|x| Rc::new(RefCell::new(x)));
                 v.own_clicks = own_clicks;
                 v.preferred = preferred;
@@ -397,12 +458,22 @@ fn tick() {
         panel: bool,
         placed: (f32, f32),
         preferred: (f32, f32),
+        plugin: String,
+        rendered: bool,
     }
     let jobs: Vec<Job> = STATE.with_borrow(|s| {
         s.views
             .iter()
             .filter_map(|(k, v)| {
-                Some(Job { key: k.clone(), surface: v.surface.clone()?, panel: v.panel, placed: v.placed, preferred: v.preferred })
+                Some(Job {
+                    key: k.clone(),
+                    surface: v.surface.clone()?,
+                    panel: v.panel,
+                    placed: v.placed,
+                    preferred: v.preferred,
+                    plugin: v.plugin.clone(),
+                    rendered: v.rendered,
+                })
             })
             .collect()
     });
@@ -413,21 +484,38 @@ fn tick() {
             continue;
         }
         let mut surface = job.surface.borrow_mut();
-        let preferred = (surface.preferred_width(), surface.preferred_height());
+        let preferred = bounded((surface.preferred_width(), surface.preferred_height()), job.panel);
         let size = if job.panel {
             (if job.placed.0 > 0.0 { job.placed.0 } else { preferred.0 }, if job.placed.1 > 0.0 { job.placed.1 } else { preferred.1 })
         } else {
             (preferred.0, job.placed.1)
         };
+        let max = if job.panel { PANEL_MAX } else { WIDGET_MAX };
+        let sentinel = (!job.rendered).then(super::sentinel_path);
+        if let Some(f) = &sentinel {
+            super::sentinel_arm(f, &job.plugin);
+        }
         let t = std::time::Instant::now();
-        let image = if size.0 > 0.0 && size.1 > 0.0 { surface.render(size.0, size.1) } else { None };
+        let image = if size.0 > 0.0 && size.1 > 0.0 { surface.render(size.0, size.1, max) } else { None };
         drop(surface);
+        let took = t.elapsed();
+        if let Some(f) = &sentinel {
+            super::sentinel_disarm(f);
+        }
+        too_slow(&job.plugin, "rendu", took);
         if image.is_some()
-            && let Some((app, plugin)) = STATE.with_borrow(|s| Some((s.app.clone()?, s.views.get(&job.key)?.plugin.clone())))
+            && let Some(app) = STATE.with_borrow(|s| s.app.clone())
         {
-            app.state::<Plugins>().record_cost(&plugin, t.elapsed().as_micros() as u64);
+            app.state::<Plugins>().record_cost(&job.plugin, took.as_micros() as u64);
         }
         let dirty = image.is_some() || preferred != job.preferred;
+        if image.is_some() && !job.rendered {
+            STATE.with_borrow_mut(|s| {
+                if let Some(v) = s.views.get_mut(&job.key) {
+                    v.rendered = true;
+                }
+            });
+        }
         if dirty {
             STATE.with_borrow_mut(|s| {
                 if let Some(v) = s.views.get_mut(&job.key) {
