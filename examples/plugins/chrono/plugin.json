@@ -1,0 +1,10 @@
+{
+  "id": "chrono",
+  "name": "Chrono",
+  "version": "1.0.0",
+  "api": 0,
+  "author": "KingsRequin",
+  "description": "Exemple de plugin sans script : un chronomètre en Slint pur (clic : départ ou arrêt).",
+  "icon": "timer",
+  "widget": { "squeeze": 8 }
+}

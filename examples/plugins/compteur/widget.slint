@@ -1,0 +1,24 @@
+// Widget de barre : le nombre, et un clic l'augmente (le script compte).
+import { Island, Icon, Pill, Theme } from "@horizon";
+
+export component Widget inherits Window {
+    in property <int> valeur;
+    // Le widget garde ses clics : ils ne servent pas à épingler le panneau.
+    out property <bool> own-clicks: true;
+    callback ajouter();
+    background: transparent;
+
+    VerticalLayout {
+        alignment: center;
+        Island {
+            Icon { name: "plus"; y: (parent.height - self.height) / 2; }
+            Pill { text: root.valeur; y: (parent.height - self.height) / 2; }
+        }
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.ajouter();
+        }
+    }
+}

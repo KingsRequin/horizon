@@ -147,9 +147,9 @@ dans le menu du clic droit sur une barre → *Réglages d'Horizon*.
 
 ## Feuille de route
 
-- **Plugins** : des widgets dans leur propre dossier (interface Slint + JavaScript), installés
-  depuis une bibliothèque sur GitHub et chargés sans redémarrer, avec un guide pour les écrire
-  avec une IA.
+- **Plugins** : des widgets dans leur propre dossier (interface Slint + JavaScript), chargés
+  sans redémarrer (préversion disponible, voir le [guide](docs/guide.md#plugins-préversion)) ;
+  à venir : une bibliothèque sur GitHub et un guide pour les écrire avec une IA.
 - **Discord vocal** par le RPC local officiel (qui parle, micro coupé, volume par personne).
 - **Traductions.**
 

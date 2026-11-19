@@ -157,6 +157,32 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   rechercher maintenant, ou installer. Si la nouvelle version ne peut pas être lancée,
   l'ancienne est remise. Une compilation depuis les sources ne se met pas à jour seule.
 
+## Plugins (préversion)
+
+Un plugin ajoute un widget (et son panneau) sans toucher à Horizon : un dossier
+`%APPDATA%\Horizon\plugins\<id>\` avec `plugin.json`, `widget.slint`, éventuellement
+`panel.slint` et `main.js`. Horizon le voit en moins d'une seconde, sans redémarrer, et le
+recharge à chaque modification d'un de ses fichiers. Deux exemples :
+[`examples/plugins/`](../examples/plugins) (un compteur avec script, panneau et réglage ; un
+chronomètre en Slint seul).
+
+- **Ajouter un plugin** : copier son dossier dans `plugins`, puis l'ajouter à une barre en mode
+  édition (*Ajouter un widget*). Page « État » : une ligne par plugin.
+- **Accord** : un plugin qui veut se connecter à une application du PC, lire un fichier, joindre
+  un site ou recevoir des événements d'Horizon le déclare ; rien n'est chargé tant que ces
+  demandes n'ont pas été acceptées (page « État » › *Autoriser*, avec la liste en clair). Une
+  mise à jour du plugin qui demande plus redemande l'accord.
+- **Bac à sable** : le script n'a que l'objet `horizon` (ni fichiers, ni réseau, ni programmes
+  hors de ce qui est déclaré), 50 ms par appel et 32 Mo au plus. Images et polices par chemin
+  sont refusées dans l'interface.
+- **Budget** : un plugin qui prend plus de 2 % d'un cœur pendant une minute, ou dont le script
+  plante trois fois en une minute, est désactivé (alerte dans l'îlot) ; page « État » :
+  *Réactiver*. Un plugin absent de toutes les barres ne coûte rien.
+- **Réglages** : ceux que le plugin déclare apparaissent dans *Réglages…* de son widget ; un
+  secret (jeton, mot de passe) est gardé dans le Gestionnaire d'identifiants de Windows.
+- **Préversion** : l'API (`"api": 0`) peut encore changer ; elle sera figée à l'ouverture de la
+  bibliothèque de plugins.
+
 ## Installation
 
 Voir le [README](../README.md#installation) ; depuis les sources : [CONTRIBUTING.md](../CONTRIBUTING.md).

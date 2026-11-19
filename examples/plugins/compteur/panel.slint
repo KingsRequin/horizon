@@ -1,0 +1,24 @@
+// Panneau (survol du widget) : la valeur et une ligne pour la remettre à zéro.
+import { PanelBase, ListRow, Theme } from "@horizon";
+
+export component Panel inherits Window {
+    in property <int> valeur;
+    callback zero();
+    background: transparent;
+
+    PanelBase {
+        title: "Compteur";
+        Text {
+            text: "Valeur : " + root.valeur;
+            color: Theme.text;
+            font-size: Theme.fs-body;
+        }
+        ListRow {
+            icon: "arrowCounterClockwise";
+            title: "Remettre à zéro";
+            clicked => {
+                root.zero();
+            }
+        }
+    }
+}

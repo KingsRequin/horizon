@@ -1,0 +1,39 @@
+// Plugin sans script : tout tient dans l'interface (minuteur de Slint).
+import { Island, Icon, Theme } from "@horizon";
+
+export component Widget inherits Window {
+    out property <bool> own-clicks: true;
+    property <bool> marche;
+    property <int> secondes;
+    background: transparent;
+
+    Timer {
+        interval: 1s;
+        running: root.marche;
+        triggered => {
+            root.secondes += 1;
+        }
+    }
+
+    VerticalLayout {
+        alignment: center;
+        Island {
+            Icon {
+                name: root.marche ? "pause" : "play";
+                y: (parent.height - self.height) / 2;
+            }
+            Text {
+                text: Math.floor(root.secondes / 60) + ":" + (Math.mod(root.secondes, 60) < 10 ? "0" : "") + Math.mod(root.secondes, 60);
+                color: Theme.text;
+                font-size: Theme.fs-body;
+                vertical-alignment: center;
+            }
+        }
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.marche = !root.marche;
+        }
+    }
+}

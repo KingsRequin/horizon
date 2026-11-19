@@ -408,4 +408,20 @@ mod tests {
         assert_eq!(instance_of_panel("plugin:essai:w1a"), "w1a");
         assert_eq!(crate::popup::base_of("plugin:essai:w1a"), PANEL_KIND);
     }
+
+    #[test]
+    fn examples_compile() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/plugins");
+        let mut seen = 0;
+        for dir in std::fs::read_dir(&root).unwrap().flatten().map(|e| e.path()) {
+            let json = std::fs::read_to_string(dir.join("plugin.json")).unwrap();
+            let m = horizon_core::plugin::parse_manifest(&json, &builtin()).unwrap_or_else(|e| panic!("{} : {e}", dir.display()));
+            assert_eq!(dir.file_name().unwrap().to_str(), Some(m.id.as_str()));
+            if let Err(e) = slint_host::compile(&dir, m.widget.is_some(), m.panel) {
+                panic!("{} : {e:?}", dir.display());
+            }
+            seen += 1;
+        }
+        assert!(seen >= 2, "exemples absents");
+    }
 }

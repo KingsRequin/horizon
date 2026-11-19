@@ -1,0 +1,15 @@
+{
+  "id": "compteur",
+  "name": "Compteur",
+  "version": "1.0.0",
+  "api": 0,
+  "author": "KingsRequin",
+  "description": "Exemple de plugin : un compteur par exemplaire, remis à zéro depuis son panneau.",
+  "icon": "plus",
+  "widget": { "squeeze": 8 },
+  "panel": true,
+  "permissions": {},
+  "settings": [
+    { "key": "pas", "type": "number", "label": "Pas du compteur", "default": 1, "min": 1, "max": 10 }
+  ]
+}

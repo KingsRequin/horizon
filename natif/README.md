@@ -633,3 +633,16 @@ de la version Tauri.
 6. **Vérifier** : `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test
    --workspace`, puis l'exe en vrai (voir « Lancer ») et des captures BitBlt des quatre écrans
    comparées à la version Tauri.
+
+## Plugins (`src/plugins/`)
+
+Hôte des plugins : `registry.rs` (dossier surveillé toutes les 500 ms, changement pris après
+300 ms de calme, accord des permissions dans `plugins.json`), `slint_host.rs` (compilation par
+`slint-interpreter`, bibliothèque `@horizon` servie depuis `ui/plugin-api/horizon.slint`,
+imports vérifiés par l'analyseur de Slint, rendu hors écran), `view.rs` (exemplaires dans les
+barres et les panneaux, global `PluginFrames` de `ui/plugin-view.slint`, 20 images/s au plus),
+`js/` (QuickJS : un runtime par plugin, API `horizon`, entrées/sorties sous permissions),
+`script.rs` (scripts chargés selon la disposition), `events.rs` (événements d'Horizon),
+`convert.rs` (JSON ↔ valeurs Slint). Logique pure : `horizon_core::plugin` (manifeste,
+permissions, réglages, budget). Essai réel sans toucher à sa configuration : `APPDATA` et
+`HORIZON_PLUGINS_DIR` vers un dossier à part, après `horizon.exe --quit`.
