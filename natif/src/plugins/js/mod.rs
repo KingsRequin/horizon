@@ -355,21 +355,36 @@ mod tests {
     #[test]
     fn island_alert_palette_open() {
         let (s, rx) = engine();
-        load(
+        let perms = Permissions { http: vec!["https://example.com/".into()], ..Permissions::default() };
+        load_with(
             &s,
             "a",
             r#"horizon.island.show({ id: "appel", icon: "phoneCall", title: "Léo" });
                horizon.island.hide("appel");
                horizon.alert({ title: "Batterie faible", body: "Montre : 15 %" });
                horizon.palette.set([{ id: "off", label: "Éteindre" }]);
-               horizon.open("https://example.com/aide");"#,
+               horizon.open("https://example.com/aide");
+               let refused = 0;
+               try { horizon.open("https://autre.example.org/"); } catch (e) { refused++; }
+               try { horizon.http.get("https://example.com/", { headers: { Host: "autre.example.org" } }); } catch (e) { refused++; }
+               horizon.ui.set("refused", refused);"#,
             vec![],
+            perms,
         );
         assert!(matches!(next(&rx), FromJs::Island { ref key, spec: Some(_), .. } if key == "appel"));
         assert!(matches!(next(&rx), FromJs::Island { ref key, spec: None, .. } if key == "appel"));
         assert!(matches!(next(&rx), FromJs::Alert { .. }));
         assert!(matches!(next(&rx), FromJs::Palette { .. }));
         assert_eq!(next(&rx), FromJs::Open { url: "https://example.com/aide".into() });
+        assert_eq!(next(&rx), set("a", "refused", json!(2)));
+    }
+
+    #[test]
+    fn headers_allowlist() {
+        assert!(io::header_allowed("Authorization") && io::header_allowed("X-Api-Key") && io::header_allowed("accept"));
+        for h in ["Host", "Connection", "Transfer-Encoding", "Content-Length", "Proxy-Authorization", "Upgrade", "TE", "X-", "X-a b"] {
+            assert!(!io::header_allowed(h), "{h}");
+        }
     }
 
     #[test]

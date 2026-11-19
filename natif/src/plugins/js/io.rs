@@ -4,7 +4,7 @@
 //! (`ToJs::Io`).
 
 use super::{Io, ToJs};
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use crossbeam_channel::{Receiver, Sender, bounded};
 use horizon_core::backoff::Backoff;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -17,6 +17,16 @@ pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_RESPONSE: u64 = 2 * 1024 * 1024;
 /// Délai d'une requête HTTP.
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+/// Messages en attente d'envoi au plus, par connexion.
+pub const OUTBOX: usize = 64;
+
+/// En-tête qu'un script peut poser : quelques-uns usuels et les `X-…` ; jamais ceux qui
+/// changent la destination ou le découpage de la requête (`Host`, `Connection`, `Proxy-*`…).
+pub fn header_allowed(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    matches!(n.as_str(), "accept" | "accept-language" | "authorization" | "content-type" | "if-none-match" | "if-modified-since")
+        || (n.starts_with("x-") && n.len() > 2 && n.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'))
+}
 
 /// Connexion WebSocket d'un script : envois, arrêt.
 pub struct Conn {
@@ -33,7 +43,7 @@ impl Drop for Conn {
 /// Ouvre (et rouvre au besoin) une connexion vers `url` ; ses événements arrivent au fil des
 /// scripts. S'arrête quand la [`Conn`] est lâchée.
 pub fn connect(id: &str, handle: u32, url: String, back: Sender<ToJs>) -> Conn {
-    let (outbox, rx) = unbounded::<String>();
+    let (outbox, rx) = bounded::<String>(OUTBOX);
     let stop = Arc::new(AtomicBool::new(false));
     let s = stop.clone();
     let id = id.to_owned();

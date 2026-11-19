@@ -682,7 +682,9 @@ fn install_io<'js>(ctx: &Ctx<'js>, horizon: &Object<'js>, id: &str, hooks: &Rc<R
                     if text.len() > io::MAX_MESSAGE {
                         return Err(rquickjs::Exception::throw_range(&ctx, "send : message trop grand (1 Mo au plus)"));
                     }
-                    let _ = outbox.send(text);
+                    if outbox.try_send(text).is_err() {
+                        return Err(rquickjs::Exception::throw_range(&ctx, "send : trop de messages en attente"));
+                    }
                     Ok(())
                 })?,
             )?;
@@ -728,6 +730,9 @@ fn install_io<'js>(ctx: &Ctx<'js>, horizon: &Object<'js>, id: &str, hooks: &Rc<R
                     },
                     None => Vec::new(),
                 };
+                if let Some((k, _)) = headers.iter().find(|(k, v)| !io::header_allowed(k) || v.len() > 4096) {
+                    return Err(rquickjs::Exception::throw_type(&ctx, &format!("http : en-tête « {k} » refusé")));
+                }
                 let mut hk = h.borrow_mut();
                 let Some(url) = hk.perms.allows_http(&url) else { return Err(missing(&ctx, &format!("http {url}"))) };
                 if hk.pending.len() >= MAX_PENDING {
@@ -842,11 +847,11 @@ fn install_shell<'js>(ctx: &Ctx<'js>, horizon: &Object<'js>, id: &str, hooks: &R
     horizon.set(
         "open",
         Function::new(ctx.clone(), move |ctx: Ctx<'js>, url: String| -> rquickjs::Result<()> {
-            let ok = url::Url::parse(&url).ok().filter(|u| u.scheme() == "https" && u.host_str().is_some() && u.username().is_empty() && u.password().is_none());
-            let Some(u) = ok else {
-                return Err(rquickjs::Exception::throw_type(&ctx, "open : seuls les liens https:// sont permis"));
-            };
-            push(&ctx, &h, FromJs::Open { url: u.to_string() })
+            // Même liste que `http` : le plugin n'ouvre que les sites qu'il a déclarés (et que
+            // l'utilisateur a acceptés).
+            let allowed = h.borrow().perms.allows_http(&url);
+            let Some(url) = allowed else { return Err(missing(&ctx, &format!("http {url} (pour open)"))) };
+            push(&ctx, &h, FromJs::Open { url })
         })?,
     )?;
     Ok(())
