@@ -11,6 +11,7 @@ pub mod capture;
 pub mod claude_sessions;
 pub mod claude_usage;
 pub mod config;
+pub mod discord_rpc;
 pub mod dnd;
 pub mod geometry;
 pub mod git_status;

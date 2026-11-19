@@ -109,6 +109,13 @@ impl Settings {
              bar_pulse = {}
              # Versions publiées : nouvelle version cherchée sur GitHub, installée au démarrage suivant.
              auto_update = {}
+
+             [discord]
+             # Widget Discord vocal : ta propre application Discord (portail des développeurs, avec
+             # http://localhost dans « RPC Origins »). Vide : StreamKit, l'application de Discord pour
+             # les overlays, sans rien à régler (certaines commandes peuvent alors être refusées).
+             client_id = {}
+             client_secret = {}
 ",
             f.capture_to_claude,
             f.headset_switch,
@@ -121,6 +128,8 @@ impl Settings {
             f.osd_track,
             f.bar_pulse,
             f.auto_update,
+            quoted(&self.discord.client_id),
+            quoted(&self.discord.client_secret),
         );
         o
     }

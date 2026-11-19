@@ -126,7 +126,7 @@ fn status_message(v: &Voice, wanted: Option<bool>, sent: Option<bool>) -> Option
 /// Envoie le statut voulu s'il n'est pas encore parvenu au plugin.
 fn sync_status(app: &AppHandle, i: &mut Inner) {
     if let Some(m) = status_message(&i.voice, i.dnd_wanted, i.dnd_sent) {
-        crate::relay::send(app, m);
+        crate::discord::send(app, m);
         i.dnd_sent = i.dnd_wanted;
     }
 }
@@ -147,7 +147,7 @@ pub fn on_voice(app: &AppHandle, raw: Value) {
         }
         if v.needs_hello() && i.last_hello.is_none_or(|t| t.elapsed() >= HELLO_EVERY) {
             i.last_hello = Some(Instant::now());
-            crate::relay::send(app, json!({ "type": "hello" }));
+            crate::discord::send(app, json!({ "type": "hello" }));
         }
         sync_status(app, &mut i);
         changed
@@ -192,7 +192,7 @@ fn toggle_message(v: &Voice, what: &str) -> Result<Value, String> {
 /// Bascule le micro (`what` = "mute") ou le son (`what` = "deaf") dans Discord ; l'état
 /// affiché ne change qu'au retour du plugin.
 pub fn voice_toggle(app: AppHandle, what: String) -> Result<(), String> {
-    crate::relay::send(&app, toggle_message(&voice_state(app.clone()), &what)?);
+    crate::discord::send(&app, toggle_message(&voice_state(app.clone()), &what)?);
     Ok(())
 }
 
@@ -208,21 +208,21 @@ fn call_message(v: &Voice, cap: &str, msg: Value) -> Result<Value, String> {
 }
 
 pub fn voice_leave(app: AppHandle) -> Result<(), String> {
-    crate::relay::send(&app, call_message(&voice_state(app.clone()), "leave", json!({ "type": "voice_leave" }))?);
+    crate::discord::send(&app, call_message(&voice_state(app.clone()), "leave", json!({ "type": "voice_leave" }))?);
     Ok(())
 }
 
 /// Volume local d'un participant (0 à 200, 100 = normal, comme Discord).
 pub fn voice_user_volume(app: AppHandle, id: String, volume: f64) -> Result<(), String> {
     let msg = json!({ "type": "user_volume", "id": id, "volume": volume.clamp(0.0, 200.0).round() });
-    crate::relay::send(&app, call_message(&voice_state(app.clone()), "user_volume", msg)?);
+    crate::discord::send(&app, call_message(&voice_state(app.clone()), "user_volume", msg)?);
     Ok(())
 }
 
 /// Sourdine locale d'un participant.
 pub fn voice_user_mute(app: AppHandle, id: String, mute: bool) -> Result<(), String> {
     let msg = json!({ "type": "user_mute", "id": id, "mute": mute });
-    crate::relay::send(&app, call_message(&voice_state(app.clone()), "user_volume", msg)?);
+    crate::discord::send(&app, call_message(&voice_state(app.clone()), "user_volume", msg)?);
     Ok(())
 }
 

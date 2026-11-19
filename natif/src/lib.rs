@@ -12,6 +12,7 @@ pub mod autohide;
 pub mod bars;
 pub mod brands;
 pub mod comfort;
+pub mod discord;
 pub mod dnd;
 pub mod drag;
 pub mod edit;
@@ -80,6 +81,7 @@ const STARTS: &[(&str, Start)] = &[
     ("icône de notification", tray::start),
     ("palette de commandes", palette::start),
     ("relais Discord", relay::start),
+    ("Discord", discord::start),
     ("mode nuit", comfort::start),
     ("ne pas déranger", dnd::start),
     ("minuteur", timer::start),
@@ -165,6 +167,7 @@ pub fn run() {
     app.manage(foreground::ForegroundHub::default());
     app.manage(prisme::Prisme::default());
     app.manage(relay::Relay::default());
+    app.manage(discord::Discord::default());
     app.manage(popup::PopupState::default());
     app.manage(mixer::Mixer::default());
     app.manage(dnd::DndHub::default());

@@ -22,6 +22,8 @@ pub struct Relay(OnceLock<WsClient>);
 pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     let a = app.clone();
     let client = crate::wsclient::spawn("relais-discord", URL, move |ev, _| match ev {
+        // Le RPC de Discord alimente déjà le widget : le relais se tait.
+        _ if a.state::<crate::discord::Discord>().active() => {}
         WsEvent::Message(m) => {
             let Ok(v) = serde_json::from_str::<serde_json::Value>(m) else { return };
             match v["type"].as_str() {
