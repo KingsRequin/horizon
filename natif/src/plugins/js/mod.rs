@@ -208,6 +208,24 @@ mod tests {
     }
 
     #[test]
+    fn hostile_values_are_bounded() {
+        let (s, rx) = engine();
+        load(
+            &s,
+            "a",
+            r#"horizon.timer.every(Infinity, () => {});
+               horizon.timer.every(NaN, () => {});
+               horizon.timer.every(1e300, () => {});
+               let refused = 0;
+               try { horizon.ui.set("big", "x".repeat(2 * 1024 * 1024)); } catch (e) { refused++; }
+               try { for (let i = 0; i < 100; i++) horizon.on("dnd", () => {}); } catch (e) { refused++; }
+               horizon.ui.set("refused", refused);"#,
+            vec![],
+        );
+        assert_eq!(next(&rx), set("a", "refused", json!(2)));
+    }
+
+    #[test]
     fn events_reach_handlers() {
         let (s, rx) = engine();
         load(&s, "a", r#"horizon.on("dnd", (p) => horizon.ui.set("dnd", p.active));"#, vec![]);

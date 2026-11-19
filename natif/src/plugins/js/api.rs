@@ -18,6 +18,17 @@ use std::time::{Duration, Instant};
 
 type Saved = Persistent<Function<'static>>;
 
+/// Gestionnaires gardés au plus (par événement, rappels Slint, `onChange`), minuteurs au plus.
+const MAX_HANDLERS: usize = 64;
+const MAX_TIMERS: usize = 32;
+/// Intervalle maximal d'un minuteur.
+const TIMER_MAX: Duration = Duration::from_secs(24 * 3600);
+/// Taille maximale d'une valeur de `ui.set` (JSON) et d'un texte de journal.
+const MAX_VALUE: usize = 1024 * 1024;
+const MAX_LOG: usize = 4096;
+/// Messages produits au plus par rappel.
+const MAX_OUT: usize = 1000;
+
 /// Minuteur d'un script.
 struct Timer {
     id: u32,
@@ -127,7 +138,7 @@ fn handle(plugins: &mut HashMap<String, Plugin>, msg: ToJs, out: &dyn Fn(FromJs)
             let end = Instant::now() + UNLOAD_LIMIT;
             for (_, p) in plugins.drain() {
                 if Instant::now() < end {
-                    p.unload(out);
+                    p.unload_until(end, out);
                 }
             }
             return true;
@@ -146,7 +157,7 @@ fn fire_timers(plugins: &HashMap<String, Plugin>, out: &dyn Fn(FromJs)) {
                 .iter_mut()
                 .filter(|t| t.next <= now)
                 .map(|t| {
-                    t.next = now + t.every;
+                    t.next = now.checked_add(t.every).unwrap_or(now + TIMER_MAX);
                     t.f.clone()
                 })
                 .collect()
@@ -174,8 +185,13 @@ impl Plugin {
     /// Exécute `f` dans le contexte du plugin, limité dans le temps ; envoie ce qu'il a produit,
     /// son coût, et son plantage éventuel.
     fn invoke(&self, out: &dyn Fn(FromJs), f: impl FnOnce(&Ctx) -> rquickjs::Result<()>) {
+        self.invoke_until(Instant::now() + CALL_LIMIT, out, f);
+    }
+
+    /// Comme [`Plugin::invoke`], interrompu à `deadline` (au plus [`CALL_LIMIT`] plus tard).
+    fn invoke_until(&self, deadline: Instant, out: &dyn Fn(FromJs), f: impl FnOnce(&Ctx) -> rquickjs::Result<()>) {
         let start = Instant::now();
-        self.deadline.set(Some(start + CALL_LIMIT));
+        self.deadline.set(Some(deadline.min(start + CALL_LIMIT)));
         let mut crash = self.ctx.with(|ctx| f(&ctx).err().map(|e| describe(&ctx, e)));
         // Promesses résolues pendant le rappel.
         while crash.is_none() && self.rt.is_job_pending() {
@@ -198,9 +214,18 @@ impl Plugin {
 
     /// Appelle les gestionnaires `on(name)` avec `args`.
     fn emit(&self, name: &str, args: &[Json], out: &dyn Fn(FromJs)) {
+        self.emit_until(Instant::now() + CALL_LIMIT, name, args, out);
+    }
+
+    /// Comme [`Plugin::emit`], tous les gestionnaires ensemble avant `deadline`.
+    fn emit_until(&self, deadline: Instant, name: &str, args: &[Json], out: &dyn Fn(FromJs)) {
         let handlers = self.hooks.borrow().on.get(name).cloned().unwrap_or_default();
         for f in handlers {
-            self.invoke(out, |ctx| {
+            if Instant::now() >= deadline {
+                out(FromJs::Crash { id: self.id.clone(), message: format!("on(\"{name}\") : temps dépassé") });
+                return;
+            }
+            self.invoke_until(deadline, out, |ctx| {
                 let args: Vec<Value> = args.iter().map(|a| to_js(ctx, a)).collect::<rquickjs::Result<_>>()?;
                 f.restore(ctx)?.call::<_, ()>((Rest(args),))
             });
@@ -219,9 +244,10 @@ impl Plugin {
         let ids: Vec<Json> = list.iter().map(|i| Json::String(i.id.clone())).collect();
         self.hooks.borrow_mut().instances = list;
         let handlers = self.hooks.borrow().settings_change.clone();
+        let deadline = Instant::now() + CALL_LIMIT;
         for i in &changed {
             for f in &handlers {
-                self.invoke(out, |ctx| f.clone().restore(ctx)?.call::<_, ()>((i.id.clone(), to_js(ctx, &i.settings)?)));
+                self.invoke_until(deadline, out, |ctx| f.clone().restore(ctx)?.call::<_, ()>((i.id.clone(), to_js(ctx, &i.settings)?)));
             }
         }
         if ids_changed {
@@ -231,7 +257,12 @@ impl Plugin {
 
     /// Gestionnaires `unload`, puis le plugin est détruit (`Drop`).
     fn unload(self, out: &dyn Fn(FromJs)) {
-        self.emit("unload", &[], out);
+        self.unload_until(Instant::now() + CALL_LIMIT, out);
+    }
+
+    /// Comme [`Plugin::unload`], avant `deadline` (fermeture d'Horizon : temps commun).
+    fn unload_until(self, deadline: Instant, out: &dyn Fn(FromJs)) {
+        self.emit_until(deadline, "unload", &[], out);
     }
 }
 
@@ -299,6 +330,24 @@ fn log_text<'js>(ctx: &Ctx<'js>, args: Rest<Value<'js>>) -> String {
         .join(" ")
 }
 
+/// Intervalle d'un minuteur : [`TIMER_MIN`] à [`TIMER_MAX`] (valeur non finie : le minimum).
+fn timer_interval(ms: f64) -> Duration {
+    if !ms.is_finite() {
+        return TIMER_MIN;
+    }
+    Duration::try_from_secs_f64(ms.max(0.0) / 1000.0).unwrap_or(TIMER_MAX).clamp(TIMER_MIN, TIMER_MAX)
+}
+
+/// Note un message produit par le script (au plus [`MAX_OUT`] par rappel).
+fn push(ctx: &Ctx, h: &Rc<RefCell<Hooks>>, m: FromJs) -> rquickjs::Result<()> {
+    let mut hk = h.borrow_mut();
+    if hk.out.len() >= MAX_OUT {
+        return Err(rquickjs::Exception::throw_range(ctx, "trop de messages dans un même rappel"));
+    }
+    hk.out.push(m);
+    Ok(())
+}
+
 /// Installe l'objet `horizon` dans le contexte.
 fn install<'js>(ctx: &Ctx<'js>, id: &str, hooks: &Rc<RefCell<Hooks>>) -> rquickjs::Result<()> {
     let horizon = Object::new(ctx.clone())?;
@@ -310,18 +359,24 @@ fn install<'js>(ctx: &Ctx<'js>, id: &str, hooks: &Rc<RefCell<Hooks>>) -> rquickj
         Function::new(ctx.clone(), move |ctx: Ctx<'js>, prop: String, value: Value<'js>, opts: Opt<Object<'js>>| -> rquickjs::Result<()> {
             let instance = opts.0.and_then(|o| o.get::<_, Option<String>>("instance").ok().flatten());
             let value = to_json(&ctx, value);
-            h.borrow_mut().out.push(FromJs::UiSet { id: pid.clone(), instance, prop, value });
-            Ok(())
+            if value.to_string().len() > MAX_VALUE {
+                return Err(rquickjs::Exception::throw_range(&ctx, "ui.set : valeur trop grande (1 Mo au plus)"));
+            }
+            push(&ctx, &h, FromJs::UiSet { id: pid.clone(), instance, prop, value })
         })?,
     )?;
     let (h, pid) = (hooks.clone(), id.to_owned());
     ui.set(
         "on",
         Function::new(ctx.clone(), move |ctx: Ctx<'js>, name: String, f: Function<'js>| -> rquickjs::Result<()> {
-            let mut hk = h.borrow_mut();
-            hk.ui.insert(name.clone(), Persistent::save(&ctx, f));
-            hk.out.push(FromJs::UiOn { id: pid.clone(), name });
-            Ok(())
+            {
+                let mut hk = h.borrow_mut();
+                if hk.ui.len() >= MAX_HANDLERS && !hk.ui.contains_key(&name) {
+                    return Err(rquickjs::Exception::throw_range(&ctx, "ui.on : trop de rappels"));
+                }
+                hk.ui.insert(name.clone(), Persistent::save(&ctx, f));
+            }
+            push(&ctx, &h, FromJs::UiOn { id: pid.clone(), name })
         })?,
     )?;
     horizon.set("ui", ui)?;
@@ -345,8 +400,13 @@ fn install<'js>(ctx: &Ctx<'js>, id: &str, hooks: &Rc<RefCell<Hooks>>) -> rquickj
     let h = hooks.clone();
     settings.set(
         "onChange",
-        Function::new(ctx.clone(), move |ctx: Ctx<'js>, f: Function<'js>| {
-            h.borrow_mut().settings_change.push(Persistent::save(&ctx, f));
+        Function::new(ctx.clone(), move |ctx: Ctx<'js>, f: Function<'js>| -> rquickjs::Result<()> {
+            let mut hk = h.borrow_mut();
+            if hk.settings_change.len() >= MAX_HANDLERS {
+                return Err(rquickjs::Exception::throw_range(&ctx, "settings.onChange : trop de gestionnaires"));
+            }
+            hk.settings_change.push(Persistent::save(&ctx, f));
+            Ok(())
         })?,
     )?;
     horizon.set("settings", settings)?;
@@ -362,8 +422,14 @@ fn install<'js>(ctx: &Ctx<'js>, id: &str, hooks: &Rc<RefCell<Hooks>>) -> rquickj
     let h = hooks.clone();
     horizon.set(
         "on",
-        Function::new(ctx.clone(), move |ctx: Ctx<'js>, name: String, f: Function<'js>| {
-            h.borrow_mut().on.entry(name).or_default().push(Persistent::save(&ctx, f));
+        Function::new(ctx.clone(), move |ctx: Ctx<'js>, name: String, f: Function<'js>| -> rquickjs::Result<()> {
+            let mut hk = h.borrow_mut();
+            let list = hk.on.entry(name).or_default();
+            if list.len() >= MAX_HANDLERS {
+                return Err(rquickjs::Exception::throw_range(&ctx, "on : trop de gestionnaires"));
+            }
+            list.push(Persistent::save(&ctx, f));
+            Ok(())
         })?,
     )?;
 
@@ -371,13 +437,16 @@ fn install<'js>(ctx: &Ctx<'js>, id: &str, hooks: &Rc<RefCell<Hooks>>) -> rquickj
     let h = hooks.clone();
     timer.set(
         "every",
-        Function::new(ctx.clone(), move |ctx: Ctx<'js>, ms: f64, f: Function<'js>| -> u32 {
-            let every = Duration::from_secs_f64((ms / 1000.0).max(0.0)).max(TIMER_MIN);
+        Function::new(ctx.clone(), move |ctx: Ctx<'js>, ms: f64, f: Function<'js>| -> rquickjs::Result<u32> {
             let mut hk = h.borrow_mut();
+            if hk.timers.len() >= MAX_TIMERS {
+                return Err(rquickjs::Exception::throw_range(&ctx, "timer.every : trop de minuteurs"));
+            }
+            let every = timer_interval(ms);
             hk.next_timer += 1;
             let id = hk.next_timer;
             hk.timers.push(Timer { id, every, next: Instant::now() + every, f: Persistent::save(&ctx, f) });
-            id
+            Ok(id)
         })?,
     )?;
     let h = hooks.clone();
@@ -394,9 +463,14 @@ fn install<'js>(ctx: &Ctx<'js>, id: &str, hooks: &Rc<RefCell<Hooks>>) -> rquickj
         let (h, pid) = (hooks.clone(), id.to_owned());
         log.set(
             name,
-            Function::new(ctx.clone(), move |ctx: Ctx<'js>, args: Rest<Value<'js>>| {
-                let text = log_text(&ctx, args);
-                h.borrow_mut().out.push(FromJs::Log { id: pid.clone(), level, text });
+            Function::new(ctx.clone(), move |ctx: Ctx<'js>, args: Rest<Value<'js>>| -> rquickjs::Result<()> {
+                let mut text = log_text(&ctx, args);
+                if text.len() > MAX_LOG {
+                    let cut = (0..=MAX_LOG).rev().find(|i| text.is_char_boundary(*i)).unwrap_or(0);
+                    text.truncate(cut);
+                    text.push('…');
+                }
+                push(&ctx, &h, FromJs::Log { id: pid.clone(), level, text })
             })?,
         )?;
     }
