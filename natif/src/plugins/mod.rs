@@ -10,6 +10,7 @@
 mod registry;
 mod slint_host;
 mod store;
+pub mod js;
 pub mod view;
 
 pub use registry::{Entry, PluginState};

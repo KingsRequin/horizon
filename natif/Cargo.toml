@@ -58,6 +58,9 @@ slint-interpreter = { version = "=1.18.1", default-features = false, features = 
 # Son analyseur (déjà tiré par l'interpréteur) : imports des plugins vérifiés avant compilation.
 i-slint-compiler = { version = "=1.18.1", default-features = false }
 
+# Scripts des plugins : QuickJS (petit, limites de temps et de mémoire intégrées).
+rquickjs = { version = "0.14", default-features = false, features = ["std"] }
+
 [build-dependencies]
 slint-build = "~1.18"
 embed-resource = "3"
