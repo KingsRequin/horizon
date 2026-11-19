@@ -44,6 +44,7 @@ pub mod timer;
 pub mod tray;
 pub mod ui;
 pub mod undoable;
+pub mod plugins;
 pub mod update;
 pub mod util;
 pub mod web;

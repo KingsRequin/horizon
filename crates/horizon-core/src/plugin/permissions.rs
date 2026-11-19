@@ -22,11 +22,14 @@ pub struct Permissions {
 /// Hôtes permis pour `connect`.
 const LOCAL_HOSTS: [&str; 2] = ["127.0.0.1", "localhost"];
 
-/// URL analysée (WHATWG : `..`, `%2e`, casse de l'hôte déjà résolus) ; refusée si elle porte
-/// un nom d'utilisateur ou un mot de passe, ou n'a pas d'hôte.
+/// URL analysée (WHATWG : `..`, casse de l'hôte déjà résolus) ; refusée si elle porte un nom
+/// d'utilisateur ou un mot de passe, n'a pas d'hôte, ou si son chemin contient un point ou un
+/// séparateur encodé (`%2e`, `%2f`, `%5c` : un serveur qui les décode sortirait du préfixe).
 fn parse(url: &str) -> Option<Url> {
     let u = Url::parse(url).ok()?;
-    (u.username().is_empty() && u.password().is_none() && u.host_str().is_some()).then_some(u)
+    let path = u.path().to_ascii_lowercase();
+    let encoded = ["%2e", "%2f", "%5c"].iter().any(|e| path.contains(e));
+    (u.username().is_empty() && u.password().is_none() && u.host_str().is_some() && !encoded).then_some(u)
 }
 
 /// Segments du chemin, sans le dernier s'il est vide (`/v1/` → `["v1"]`).
@@ -233,6 +236,8 @@ mod tests {
             "https://api.example.com/v1/%2e%2e/admin",
             "https://api.example.com/v1/..%2fadmin/../../admin",
             "https://u:p@api.example.com/v1/",
+            "https://api.example.com/v1/..%2f..%2fadmin",
+            "https://api.example.com/v1/%2E%2E%5Cadmin",
         ] {
             assert!(p.allows_http(url).is_none(), "{url}");
         }
