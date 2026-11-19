@@ -53,6 +53,9 @@ slint = { version = "~1.18", default-features = false, features = ["std", "compa
 # `@image-url` (`image-decoders`), absents de l'API publique.
 i-slint-core = { version = "=1.18.1", default-features = false, features = ["svg", "image-decoders"] }
 
+# Plugins : interface Slint compilée à l'exécution (même version que `i-slint-core`).
+slint-interpreter = { version = "=1.18.1", default-features = false, features = ["std", "compat-1-2"] }
+
 [build-dependencies]
 slint-build = "~1.18"
 embed-resource = "3"

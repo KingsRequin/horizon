@@ -35,6 +35,24 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 type Job = Box<dyn FnOnce() + Send>;
 
+/// Fenêtre rendue dans un tampon (plugins : widget posé ensuite comme image).
+pub type Offscreen = slint::platform::software_renderer::MinimalSoftwareWindow;
+
+thread_local! {
+    /// La prochaine fenêtre créée est hors écran (`offscreen`).
+    static OFFSCREEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static LAST_OFFSCREEN: std::cell::RefCell<Option<Rc<Offscreen>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Crée ce que fait `f` (un composant) dans une fenêtre hors écran, rendue à la demande dans un
+/// tampon ; `None` si `f` n'a créé aucune fenêtre.
+pub fn offscreen<T>(f: impl FnOnce() -> T) -> (T, Option<Rc<Offscreen>>) {
+    OFFSCREEN.set(true);
+    let out = f();
+    OFFSCREEN.set(false);
+    (out, LAST_OFFSCREEN.with_borrow_mut(Option::take))
+}
+
 struct NativePlatform {
     start: Instant,
     thread: u32,
@@ -70,6 +88,11 @@ impl NativePlatform {
 
 impl Platform for NativePlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
+        if OFFSCREEN.get() {
+            let w = Offscreen::new(slint::platform::software_renderer::RepaintBufferType::NewBuffer);
+            LAST_OFFSCREEN.with_borrow_mut(|l| *l = Some(w.clone()));
+            return Ok(w);
+        }
         Ok(window::new_adapter())
     }
 

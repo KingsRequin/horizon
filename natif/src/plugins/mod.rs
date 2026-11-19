@@ -8,6 +8,9 @@
 //! (page État) ; rien n'est chargé avant.
 
 mod registry;
+// Branché par la tâche 5 (affichage dans les barres) : retiré alors.
+#[allow(dead_code)]
+mod slint_host;
 mod store;
 
 pub use registry::{Entry, PluginState};

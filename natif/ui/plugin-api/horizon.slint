@@ -1,0 +1,182 @@
+// Bibliothèque des plugins : `import { Theme, Island, Icon, … } from "@horizon";`
+// (servie par Horizon, src/plugins/slint_host.rs). C'est une partie de l'API des plugins : un
+// changement qui casse un plugin existant fait passer l'API à la version suivante.
+//
+// `Theme` suit le thème d'Horizon (style des barres, nuit, couleur d'accent) : Horizon pose ses
+// valeurs à chaque changement.
+
+export global Theme {
+    // Style « simple » des barres (sans îlot ni filet).
+    in-out property <bool> graphic: false;
+    in-out property <string> font: "Inter";
+    in-out property <string> font-mono: "JetBrains Mono";
+    in-out property <color> text: #ebe8e3;
+    in-out property <color> text-dim: #ebe8e399;
+    in-out property <color> accent: #8cc8ff;
+    in-out property <color> ok: #6fcf97;
+    in-out property <color> warn: #f2c94c;
+    in-out property <color> bad: #eb5757;
+    in-out property <color> info: #8cc8ff;
+    in-out property <color> island-bg: #14161ccc;
+    in-out property <color> island-border: #ffffff14;
+    in-out property <color> popup-bg: #14161cf2;
+    in-out property <color> hover: #ffffff14;
+    in-out property <color> press: #ffffff22;
+    in-out property <color> track: #ffffff1f;
+    in-out property <color> divider: #ffffff14;
+    in-out property <length> island-h: 28px;
+    in-out property <length> island-radius: 14px;
+    in-out property <length> inner-h: 22px;
+    in-out property <length> inner-radius: 11px;
+    in-out property <length> fs-meta: 11px;
+    in-out property <length> fs-body: 12.5px;
+    in-out property <length> fs-title: 14px;
+    // Icône Phosphor par nom (« lightbulb », « speakerHigh »…) ; image vide si inconnue.
+    pure callback icon(string) -> image;
+}
+
+// Icône Phosphor de la couleur du texte.
+export component Icon inherits Image {
+    in property <string> name;
+    in property <length> size: 16px;
+    in property <color> color: Theme.text;
+    source: Theme.icon(root.name);
+    width: root.size;
+    height: root.size;
+    colorize: root.color;
+    image-fit: contain;
+}
+
+// Îlot d'un widget de barre (comme ceux des widgets d'Horizon), centré dans la hauteur.
+export component Island inherits Rectangle {
+    in property <length> padding-x: 12px;
+    in property <length> gap: 10px;
+    height: Theme.island-h;
+    width: row.preferred-width;
+    border-radius: Theme.island-radius;
+    background: Theme.graphic ? transparent : Theme.island-bg;
+    border-width: Theme.graphic ? 0 : 1px;
+    border-color: Theme.island-border;
+    row := HorizontalLayout {
+        padding-left: Theme.graphic ? 0 : root.padding-x;
+        padding-right: Theme.graphic ? 0 : root.padding-x;
+        spacing: root.gap;
+        alignment: center;
+        @children
+    }
+}
+
+// Petite étiquette arrondie (compteur, état).
+export component Pill inherits Rectangle {
+    in property <string> text;
+    in property <color> tint: Theme.accent;
+    height: Theme.inner-h - 6px;
+    width: label.preferred-width + 12px;
+    border-radius: self.height / 2;
+    background: root.tint.with-alpha(0.18);
+    label := Text {
+        text: root.text;
+        color: root.tint;
+        font-size: Theme.fs-meta;
+        font-family: Theme.font;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+}
+
+// Icône suivie d'un texte.
+export component IconText inherits HorizontalLayout {
+    in property <string> icon;
+    in property <string> text;
+    in property <color> color: Theme.text;
+    spacing: 6px;
+    alignment: center;
+    Icon {
+        name: root.icon;
+        color: root.color;
+        y: (parent.height - self.height) / 2;
+    }
+    Text {
+        text: root.text;
+        color: root.color;
+        font-size: Theme.fs-body;
+        font-family: Theme.font;
+        vertical-alignment: center;
+    }
+}
+
+// Jauge horizontale (`value` de 0 à 1).
+export component Gauge inherits Rectangle {
+    in property <float> value;
+    in property <color> tint: Theme.accent;
+    width: 36px;
+    height: 6px;
+    border-radius: self.height / 2;
+    background: Theme.track;
+    Rectangle {
+        x: 0;
+        width: parent.width * clamp(root.value, 0, 1);
+        height: parent.height;
+        border-radius: parent.border-radius;
+        background: root.tint;
+    }
+}
+
+// Ligne de liste d'un panneau : icône, titre, sous-titre ; survol et clic.
+export component ListRow inherits Rectangle {
+    in property <string> icon;
+    in property <string> title;
+    in property <string> subtitle;
+    callback clicked();
+    height: 40px;
+    border-radius: 8px;
+    background: area.pressed ? Theme.press : area.has-hover ? Theme.hover : transparent;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
+        if root.icon != "": Icon {
+            name: root.icon;
+            y: (parent.height - self.height) / 2;
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.title;
+                color: Theme.text;
+                font-size: Theme.fs-body;
+                font-family: Theme.font;
+                overflow: elide;
+            }
+            if root.subtitle != "": Text {
+                text: root.subtitle;
+                color: Theme.text-dim;
+                font-size: Theme.fs-meta;
+                font-family: Theme.font;
+                overflow: elide;
+            }
+        }
+    }
+    area := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Contenu d'un panneau : colonne avec marges, titre facultatif.
+export component PanelBase inherits VerticalLayout {
+    in property <string> title;
+    padding: 12px;
+    spacing: 8px;
+    min-width: 260px;
+    if root.title != "": Text {
+        text: root.title;
+        color: Theme.text;
+        font-size: Theme.fs-title;
+        font-family: Theme.font;
+        font-weight: 600;
+    }
+    @children
+}
