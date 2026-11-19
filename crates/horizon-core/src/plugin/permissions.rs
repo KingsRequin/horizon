@@ -204,13 +204,14 @@ mod tests {
         let p = perms();
         for url in [
             "ws://127.0.0.1:28650@evil.com/",
-            r"ws://127.0.0.1:28650\@evil.com/",
             "ws://user@127.0.0.1:28650/",
             "ws://evil.com#@127.0.0.1:28650",
             "ws://127.0.0.1.evil.com:28650/",
         ] {
             assert!(p.allows_connect(url).is_none(), "{url}");
         }
+        // `\` vaut `/` (WHATWG) : l'URL utilisée reste sur la machine.
+        assert_eq!(p.allows_connect(r"ws://127.0.0.1:28650\@evil.com/").as_deref(), Some("ws://127.0.0.1:28650/@evil.com/"));
     }
 
     #[test]
