@@ -55,9 +55,13 @@ pub struct Manifest {
 include!(concat!(env!("OUT_DIR"), "/widgets.rs"));
 
 /// Manifeste du widget `id` ; `None` pour un genre inconnu (dossier retiré : la disposition le
-/// garde, rien n'est affiché) ou personnel dans l'édition partagée.
+/// garde, rien n'est affiché) ou personnel dans l'édition partagée. Un plugin chargeable
+/// (`plugin:<id>`) a le sien (`plugins::widget_manifest`).
 pub fn manifest(id: &str) -> Option<&'static Manifest> {
-    MANIFESTS.iter().find(|m| m.id == id && (crate::PERSONAL || !m.personal))
+    MANIFESTS
+        .iter()
+        .find(|m| m.id == id && (crate::PERSONAL || !m.personal))
+        .or_else(|| crate::plugins::widget_manifest(id))
 }
 
 /// Le widget `id` grandit avec son nombre d'éléments (`grows` de son manifeste).
@@ -139,7 +143,7 @@ pub fn by_id(id: &str) -> Option<&'static Backend> {
 
 /// Le widget `id` a un panneau (`panel.slint`), disponible dans cette édition.
 pub fn has_panel(id: &str) -> bool {
-    PANELS.contains(&id) && manifest(id).is_some()
+    (PANELS.contains(&id) && manifest(id).is_some()) || crate::plugins::has_panel(id)
 }
 
 /// Appelle `f` avec le panneau du widget de `kind` (« weather:w1 » → météo), s'il en a un.

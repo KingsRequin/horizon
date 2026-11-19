@@ -253,7 +253,8 @@ pub fn menu_add(app: &AppHandle, monitor_id: &str, zone: Zone) -> Vec<Entry> {
     crate::widgets::MANIFESTS
         .iter()
         .filter(|m| crate::widgets::manifest(m.id).is_some())
-        .filter(|m| zone != Zone::Tiles || crate::widgets::PANELS.contains(&m.id))
+        .chain(crate::plugins::widget_kinds())
+        .filter(|m| zone != Zone::Tiles || crate::widgets::has_panel(m.id))
         .map(|m| {
             let text = if present.contains(&WidgetKind::new(m.id)) { format!("{} (déjà sur cette barre)", m.label) } else { m.label.to_owned() };
             Entry::item(format!("add|{monitor_id}|{}|{}", zone_name(zone), m.id), text).with_icon(m.icon)

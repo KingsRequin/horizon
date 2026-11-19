@@ -84,6 +84,7 @@ const STARTS: &[(&str, Start)] = &[
     ("ne pas déranger", dnd::start),
     ("minuteur", timer::start),
     ("appels du téléphone", phone::start),
+    ("plugins", plugins::start),
     ("réglages", options::start),
     ("mise à jour", update::start),
     // Abonné du premier plan (démarré après les widgets).
@@ -165,6 +166,7 @@ pub fn run() {
     app.manage(accent::Accent::default());
     app.manage(palette::Palette::default());
     app.manage(update::Updater::default());
+    app.manage(plugins::Plugins::default());
     widgets::manage_all(&app);
     if let Err(e) = instance::listen(&app) {
         log::error!("écoute des lancements suivants : {e:#}");

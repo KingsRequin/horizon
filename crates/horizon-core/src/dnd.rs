@@ -22,6 +22,8 @@ pub enum AlertKind {
     /// Nouvelle version d'Horizon prête : rien d'urgent (elle s'installe au démarrage suivant,
     /// et la page État la montre), donc masquée pendant le NPD.
     Update,
+    /// Alerte d'un plugin (`horizon.alert`) : masquée pendant le NPD, comme une notification.
+    Plugin,
 }
 
 /// Options du NPD (réglages du widget Notifications).
@@ -63,7 +65,7 @@ impl DndOptions {
 pub fn allows(kind: AlertKind, active: bool, opts: &DndOptions) -> bool {
     !active
         || match kind {
-            AlertKind::Notification | AlertKind::Update => false,
+            AlertKind::Notification | AlertKind::Update | AlertKind::Plugin => false,
             AlertKind::Claude => opts.claude,
             AlertKind::Battery | AlertKind::Server => opts.battery,
             AlertKind::Timer | AlertKind::Feedback => true,
@@ -125,6 +127,13 @@ impl DndFile {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn plugin_alerts_hidden_during_dnd() {
+        let o = DndOptions { claude: true, battery: true, discord: true, light: true };
+        assert!(!allows(AlertKind::Plugin, true, &o));
+        assert!(allows(AlertKind::Plugin, false, &o));
+    }
 
     #[test]
     fn everything_passes_outside_dnd() {
