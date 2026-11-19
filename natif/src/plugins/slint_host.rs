@@ -215,7 +215,11 @@ fn compile_one(dir: &Path, file: &str, component: &str) -> Result<ComponentDefin
     if !path.is_file() {
         return Err(diag(format!("fichier absent (il faut `export component {component} inherits Window`)")));
     }
-    check_paths(dir)?;
+    let top = std::fs::read_to_string(&path).map_err(|e| diag(format!("illisible : {e}")))?;
+    let errors = check_source(file, &top);
+    if !errors.is_empty() {
+        return Err(errors);
+    }
     let mut compiler = Compiler::default();
     let api = PathBuf::from(API_DIR).join("horizon.slint");
     compiler.set_library_paths(HashMap::from([("horizon".to_owned(), api)]));
@@ -224,7 +228,14 @@ fn compile_one(dir: &Path, file: &str, component: &str) -> Result<ComponentDefin
         let answer: Option<std::io::Result<String>> = if p.components().any(|c| c.as_os_str() == API_DIR) {
             Some(Ok(HORIZON_API.to_owned()))
         } else if lexical(p).starts_with(&format!("{root}\\")) {
-            None
+            // Fichier du plugin : lu ici pour être vérifié comme le premier.
+            Some(std::fs::read_to_string(p).and_then(|text| {
+                let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                match check_source(&name, &text).first() {
+                    Some(d) => Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, d.to_string())),
+                    None => Ok(text),
+                }
+            }))
         } else {
             Some(Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "import hors du dossier du plugin")))
         };
@@ -251,69 +262,31 @@ fn compile_one(dir: &Path, file: &str, component: &str) -> Result<ComponentDefin
         .ok_or_else(|| diag(format!("il faut `export component {component} inherits Window`")))
 }
 
-/// Chemin cité dans un `.slint` (`@image-url`, `import`) : il doit rester dans le dossier du
-/// plugin. Refusés : chemin absolu, lecteur, réseau (`\\serveur` : Windows y enverrait les
-/// identifiants de la session), `..`. Les bibliothèques (`@horizon`, `std-widgets.slint`) passent.
-fn path_allowed(p: &str) -> bool {
-    if p.starts_with('@') || p == "std-widgets.slint" {
-        return true;
-    }
-    let p = p.replace('\\', "/");
-    !(p.starts_with('/') || p.contains(':') || p.split('/').any(|c| c == ".."))
-}
+/// Mots refusés dans le source d'un plugin (minuscules, cherchés partout, commentaires et
+/// chaînes compris : aucune lecture du code, donc aucun écart avec l'analyseur de Slint).
+/// `image-url` : une image lue par chemin pourrait l'être sur un partage réseau (`\\serveur`,
+/// où Windows enverrait les identifiants de la session) ; les images d'un plugin passent par
+/// Horizon (`horizon.ui.set` avec un chemin du dossier du plugin, vérifié). Polices : importées
+/// par chemin, même risque.
+const FORBIDDEN: [&str; 6] = ["image-url", ".ttf", ".otf", ".ttc", ".woff", ".pfb"];
 
-/// Vérifie les chemins cités par tous les `.slint` du dossier : les images ne passent pas par
-/// le chargeur de fichiers, elles sont donc contrôlées ici, avant la compilation. Toute chaîne
-/// qui suit `@image-url(`, `import` ou `from` (même sur la ligne suivante) est examinée.
-fn check_paths(dir: &Path) -> Result<(), Vec<Diag>> {
-    let mut errors = Vec::new();
-    let files = std::fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.path());
-    for f in files.filter(|f| f.extension().is_some_and(|e| e == "slint")) {
-        let Ok(text) = std::fs::read_to_string(&f) else { continue };
-        let name = f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        for (at, p) in quoted_paths(&text) {
-            if !path_allowed(&p) {
-                let line = text[..at].matches('\n').count() + 1;
-                errors.push(Diag { file: name.clone(), line, column: 1, message: format!("« {p} » : chemin hors du dossier du plugin") });
-            }
-        }
-    }
-    if errors.is_empty() { Ok(()) } else { Err(errors) }
-}
-
-/// Chaînes (position du mot qui les introduit, contenu brut) qui suivent `@image-url(`, `import`
-/// ou `from`, blancs et retours à la ligne sautés.
-fn quoted_paths(text: &str) -> Vec<(usize, String)> {
-    let mut out = Vec::new();
-    for word in ["@image-url(", "import", "from"] {
-        for (at, _) in text.match_indices(word) {
-            let rest = text[at + word.len()..].trim_start();
-            if rest.starts_with('"')
-                && let Some(s) = first_string(rest)
-            {
-                out.push((at, s));
-            }
-        }
-    }
-    out
-}
-
-/// Contenu brut de la chaîne `"…"` qui commence `s` (échappements gardés tels quels : `\\` y
-/// reste double, donc refusé comme chemin réseau).
-fn first_string(s: &str) -> Option<String> {
-    let mut chars = s.strip_prefix('"')?.chars();
-    let mut out = String::new();
-    while let Some(c) = chars.next() {
-        match c {
-            '"' => return Some(out),
-            '\\' => {
-                out.push(c);
-                out.push(chars.next()?);
-            }
-            c => out.push(c),
-        }
-    }
-    None
+/// Erreurs du source `text` du fichier `name` (mots refusés).
+fn check_source(name: &str, text: &str) -> Vec<Diag> {
+    let lower = text.to_lowercase();
+    FORBIDDEN
+        .iter()
+        .filter_map(|w| lower.find(w).map(|at| (w, at)))
+        .map(|(w, at)| Diag {
+            file: name.to_owned(),
+            line: lower[..at].matches('\n').count() + 1,
+            column: 1,
+            message: if *w == "image-url" {
+                "@image-url est interdit dans un plugin : passer l'image par horizon.ui.set (fichier du dossier du plugin)".to_owned()
+            } else {
+                format!("« {w} » : les polices ne peuvent pas être importées par un plugin")
+            },
+        })
+        .collect()
 }
 
 /// Attend un futur qui ne dépend d'aucun réveil extérieur (compilation Slint, fichiers lus
@@ -394,28 +367,34 @@ export component Widget inherits Window {
     }
 
     #[test]
-    fn resources_stay_in_the_plugin_folder() {
+    fn no_image_or_font_paths() {
         for bad in [
-            r#"@image-url("\\serveur\partage\x.png")"#,
-            r#"@image-url("//serveur/partage/x.png")"#,
-            r#"@image-url("C:/Windows/x.png")"#,
-            r#"@image-url("../x.png")"#,
-            r#"@image-url("assets/../../x.png")"#,
-            "@image-url(\n    \"//serveur/x.png\")",
+            r#"Image { source: @image-url("\\serveur\partage\x.png"); }"#,
+            r#"Image { source: @image-url("assets/x.png"); }"#,
+            "Image { source: @image-url( /* c */\n \"//serveur/x.png\"); }",
+            "Image { source: @Image-Url(\"x.png\"); }",
         ] {
-            let text = format!("export component Widget inherits Window {{ Image {{ source: {bad}; }} }}\n");
-            let dir = plugin("res", &[("widget.slint", &text)]);
+            let text = format!("export component Widget inherits Window {{ {bad} }}\n");
+            let dir = plugin("img", &[("widget.slint", &text)]);
             let e = compile(&dir, true, false).err().unwrap_or_else(|| panic!("accepté : {bad}"));
-            assert_eq!(e[0].line, 1, "{bad}");
-            assert!(e[0].message.contains("hors du dossier"), "{e:?}");
+            assert!(e[0].message.contains("@image-url est interdit"), "{e:?}");
+            assert_eq!(e[0].line, 1);
             let _ = std::fs::remove_dir_all(&dir);
         }
-        let text = "import \"assets/font.ttf\";\nexport component Widget inherits Window {}\n";
-        let ok = plugin("res-ok", &[("widget.slint", text)]);
-        // Police absente : erreur du compilateur, pas du contrôle des chemins.
-        let e = compile(&ok, true, false).err().unwrap_or_default();
-        assert!(e.iter().all(|d| !d.message.contains("hors du dossier")), "{e:?}");
-        let _ = std::fs::remove_dir_all(&ok);
+        let dir = plugin("font", &[("widget.slint", "import \"assets/font.TTF\";\nexport component Widget inherits Window {}\n")]);
+        let e = compile(&dir, true, false).err().expect("police refusée");
+        assert!(e[0].message.contains("polices"), "{e:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn imported_files_are_checked_too() {
+        let dir = plugin("sub", &[("widget.slint", "import { P } from \"parts/p.slint\";\nexport component Widget inherits Window { P {} }\n")]);
+        std::fs::create_dir_all(dir.join("parts")).unwrap();
+        std::fs::write(dir.join("parts/p.slint"), "export component P inherits Image { source: @image-url(\"//s/x.png\"); }\n").unwrap();
+        let e = compile(&dir, true, false).err().expect("image d'un fichier importé refusée");
+        assert!(e.iter().any(|d| d.message.contains("@image-url est interdit")), "{e:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
