@@ -152,10 +152,10 @@ fn handle(plugins: &mut HashMap<String, Plugin>, msg: ToJs, me: &Sender<ToJs>, o
                 Some(message) => {
                     out(FromJs::Crash { id: id.clone(), message, import: true });
                     let keep = plugins.get(&id).is_some_and(|old| old.hooks.borrow().perms == permissions);
-                    if !keep {
-                        if let Some(old) = plugins.insert(id, p) {
-                            old.unload(out);
-                        }
+                    if !keep
+                        && let Some(old) = plugins.insert(id, p)
+                    {
+                        old.unload(out);
                     }
                 }
                 None => {

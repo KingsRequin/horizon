@@ -22,11 +22,35 @@ use std::time::{Duration, Instant};
 static JS: OnceLock<Sender<ToJs>> = OnceLock::new();
 /// Le fil des scripts a fini (réponse à `ToJs::Quit`).
 static QUIT_DONE: AtomicBool = AtomicBool::new(false);
-/// Messages des scripts en attente du fil de l'interface : traités par lots (un seul réveil),
-/// au plus [`MAX_QUEUE`] (au-delà, perdus : un script qui en produit autant est fautif).
-static QUEUE: Mutex<Vec<FromJs>> = Mutex::new(Vec::new());
+/// Messages des scripts en attente du fil de l'interface, traités par lots (un seul réveil).
+#[derive(Default)]
+struct Pending {
+    msgs: Vec<FromJs>,
+    /// Messages en attente de chaque plugin (sa part de la file).
+    per_plugin: HashMap<String, usize>,
+    /// Plugins déjà comptés comme plantés pour avoir dépassé leur part, pendant ce lot.
+    blamed: std::collections::HashSet<String>,
+}
+
+impl Pending {
+    /// Garde un seul message de contrôle de chaque sorte (plantage, chargement) par plugin.
+    fn push_control(&mut self, m: FromJs) {
+        let same = |x: &FromJs| match (x, &m) {
+            (FromJs::Crash { id: a, .. }, FromJs::Crash { id: b, .. }) | (FromJs::Loaded { id: a }, FromJs::Loaded { id: b }) => a == b,
+            _ => false,
+        };
+        self.msgs.retain(|x| !same(x));
+        self.msgs.push(m);
+    }
+}
+
+static QUEUE: std::sync::LazyLock<Mutex<Pending>> = std::sync::LazyLock::new(Mutex::default);
 static SCHEDULED: AtomicBool = AtomicBool::new(false);
+/// Messages en attente au plus, en tout et par plugin.
 const MAX_QUEUE: usize = 5000;
+const MAX_PER_PLUGIN: usize = 1000;
+/// Longueur maximale du texte d'un plantage.
+const MAX_CRASH_TEXT: usize = 1000;
 /// Taille maximale de `main.js` (lu sur le fil de l'interface).
 const MAX_MAIN: u64 = 1024 * 1024;
 
@@ -112,30 +136,47 @@ fn send(msg: ToJs) {
 pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     let a = app.clone();
     let tx = js::spawn(move |m| {
-        // Coût et plantages vont au budget directement (jamais perdus dans la file).
-        match &m {
+        // Coût, plantages et remise à zéro vont au budget directement, dans l'ordre où le fil
+        // des scripts les produit (jamais perdus dans la file).
+        let plugins = a.state::<Plugins>();
+        let m = match m {
             FromJs::Quit => {
                 QUIT_DONE.store(true, Ordering::SeqCst);
                 return;
             }
             FromJs::Cost { id, us } => {
-                a.state::<Plugins>().record_cost(id, *us);
+                plugins.record_cost(&id, us);
                 return;
             }
-            FromJs::Crash { id, message, .. } => a.state::<Plugins>().script_crashed(&a, id, message.clone()),
-            _ => {}
-        }
+            FromJs::Crash { id, message, import } => {
+                let message: String = message.chars().take(MAX_CRASH_TEXT).collect();
+                plugins.script_crashed(&a, &id, message.clone());
+                FromJs::Crash { id, message, import }
+            }
+            FromJs::Loaded { id } => {
+                // Nouvelle version chargée : coût et plantages comptés de zéro.
+                plugins.reset_counts(&id);
+                FromJs::Loaded { id }
+            }
+            other => other,
+        };
         {
             let mut q = crate::util::lock(&QUEUE);
-            let control = matches!(m, FromJs::Crash { .. } | FromJs::Loaded { .. });
-            if q.len() >= MAX_QUEUE && !control {
-                // File pleine : le plugin qui la remplit est compté comme planté.
-                if let Some(id) = plugin_of_message(&m) {
-                    a.state::<Plugins>().script_crashed(&a, &id, "trop de messages pour l'interface".to_owned());
+            if matches!(m, FromJs::Crash { .. } | FromJs::Loaded { .. }) {
+                q.push_control(m);
+            } else if let Some(id) = plugin_of_message(&m) {
+                let mine = q.per_plugin.get(&id).copied().unwrap_or(0);
+                if mine >= MAX_PER_PLUGIN || q.msgs.len() >= MAX_QUEUE {
+                    // Seul le plugin qui dépasse sa propre part est compté comme planté (une fois
+                    // par lot) ; les autres messages en trop sont perdus.
+                    if mine >= MAX_PER_PLUGIN && q.blamed.insert(id.clone()) {
+                        plugins.script_crashed(&a, &id, "trop de messages pour l'interface".to_owned());
+                    }
+                    return;
                 }
-                return;
+                *q.per_plugin.entry(id).or_default() += 1;
+                q.msgs.push(m);
             }
-            q.push(m);
         }
         if !SCHEDULED.swap(true, Ordering::SeqCst) {
             let a = a.clone();
@@ -162,7 +203,7 @@ fn plugin_of_message(m: &FromJs) -> Option<String> {
 /// Traite les messages en attente ; le temps passé est compté dans le budget de chaque plugin.
 fn drain(app: &AppHandle) {
     SCHEDULED.store(false, Ordering::SeqCst);
-    let batch = std::mem::take(&mut *crate::util::lock(&QUEUE));
+    let batch = std::mem::take(&mut *crate::util::lock(&QUEUE)).msgs;
     let plugins = app.state::<Plugins>();
     for m in batch {
         let id = plugin_of_message(&m);
@@ -369,11 +410,7 @@ fn from_js(app: &AppHandle, m: FromJs) {
                 super::view::set_script_error(&id, Some(message));
             }
         }
-        FromJs::Loaded { id } => {
-            // Nouvelle version chargée : coût et plantages comptés de zéro.
-            app.state::<Plugins>().reset_counts(&id);
-            super::view::set_script_error(&id, None);
-        }
+        FromJs::Loaded { id } => super::view::set_script_error(&id, None),
         FromJs::Cost { .. } => {}
         FromJs::Island { id, key, spec } => {
             let activity = spec.map(|s| crate::ui::island::Activity {
@@ -441,6 +478,18 @@ pub fn palette_choice(id: &str, entry: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn control_messages_are_merged() {
+        let mut p = Pending::default();
+        for i in 0..10 {
+            p.push_control(FromJs::Crash { id: "a".into(), message: format!("{i}"), import: false });
+            p.push_control(FromJs::Loaded { id: "a".into() });
+        }
+        p.push_control(FromJs::Crash { id: "b".into(), message: "x".into(), import: false });
+        assert_eq!(p.msgs.len(), 3);
+        assert!(p.msgs.contains(&FromJs::Crash { id: "a".into(), message: "9".into(), import: false }));
+    }
 
     #[test]
     fn bucket_limits_the_rate() {
