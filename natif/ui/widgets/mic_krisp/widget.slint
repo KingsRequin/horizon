@@ -18,8 +18,6 @@ export global MicKrispData {
     in property <bool> voice-mute;
     // Nom court du micro de Windows (« CABLE Output »), pour l'infobulle.
     in property <string> device;
-    // Édition personnelle (bouton Krisp).
-    in property <bool> personal: true;
     // L'exemplaire `id` a l'option « le bouton coupe le micro de Discord ».
     pure callback discord-mute(string) -> bool;
     // Bascule le micro (de Discord si `true`, sinon de Windows), Krisp.
@@ -83,13 +81,12 @@ export component MicKrispWidget inherits WidgetFrame {
                     }
                 }
             }
-            if MicKrispData.personal: BarButton {
+            // Krisp : par le relais Discord (plugin KrispBridge) ; absent sans lui.
+            if MicKrispData.krisp != -1: BarButton {
                 y: (parent.height - self.height) / 2;
                 t: root.t;
                 enabled: root.clickable;
-                tip: MicKrispData.krisp == -1 ? "Krisp : Discord fermé ou relais absent"
-                    : "Krisp : " + (MicKrispData.krisp == 1 ? "activé" : "désactivé");
-                opacity: MicKrispData.krisp == -1 ? Theme.o-off : 1;
+                tip: "Krisp : " + (MicKrispData.krisp == 1 ? "activé" : "désactivé");
                 clicked => {
                     MicKrispData.toggle-krisp();
                 }

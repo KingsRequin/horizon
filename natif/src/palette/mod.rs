@@ -1,7 +1,7 @@
 //! Palette de commandes : raccourci clavier global (`[palette]` de `settings.toml`, défaut
 //! Ctrl+Alt+P, `RegisterHotKey` comme la version Tauri) qui ouvre, sur l'écran de la souris, une
 //! fenêtre créée au démarrage et seulement cachée ensuite (ouverture immédiate). Sources :
-//! raccourcis des barres, suggestions, actions, profils, scènes Prisme, sorties audio et micros,
+//! raccourcis des barres, suggestions, actions, profils, entrées des plugins, sorties audio et micros,
 //! hôtes du homelab, fenêtres ouvertes, applis du menu Démarrer. Classement flou dans
 //! `horizon_core::palette` ; perte du focus = fermeture.
 //!

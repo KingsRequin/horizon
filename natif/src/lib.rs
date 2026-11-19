@@ -28,13 +28,10 @@ pub mod options;
 pub mod osd;
 pub mod overflow;
 pub mod palette;
-pub mod phone;
 pub mod platform;
 pub mod popup;
 pub mod presence;
 pub mod profiles;
-pub mod prisme;
-pub mod prisme_window;
 pub mod relay;
 pub mod resume;
 pub mod settings_window;
@@ -54,10 +51,6 @@ pub mod wsclient;
 
 use host::{AppHandle, Manager};
 
-/// Édition personnelle (fonction Cargo `personal` : intégrations aux applis de l'auteur, Prisme,
-/// SharkApp, BetterDiscord) ou publique (par défaut).
-pub const PERSONAL: bool = cfg!(feature = "personal");
-
 /// Démarrage d'une fonction du cœur (fils, fenêtres, connexions).
 type Start = fn(&AppHandle) -> anyhow::Result<()>;
 
@@ -75,7 +68,6 @@ const STARTS: &[(&str, Start)] = &[
     ("tuiles (essai)", tiles::essai),
     ("mixeur audio", mixer::start),
     ("masquage en plein écran", autohide::start),
-    ("Prisme", prisme::start),
     ("couleur du fond d'écran", accent::start),
     ("affichage du volume", osd::start),
     ("icône de notification", tray::start),
@@ -85,7 +77,6 @@ const STARTS: &[(&str, Start)] = &[
     ("mode nuit", comfort::start),
     ("ne pas déranger", dnd::start),
     ("minuteur", timer::start),
-    ("appels du téléphone", phone::start),
     ("plugins", plugins::start),
     ("réglages", options::start),
     ("mise à jour", update::start),
@@ -96,9 +87,6 @@ const STARTS: &[(&str, Start)] = &[
 /// des intégrations (qui lit celui des widgets).
 const STARTS_AFTER: &[(&str, Start)] =
     &[("premier plan", foreground::start), ("nouveautés", alerts::announce_news), ("état des intégrations", status::start)];
-
-/// Démarrages du cœur réservés à l'édition personnelle.
-const PERSONAL_STARTS: [&str; 3] = ["Prisme", "relais Discord", "appels du téléphone"];
 
 /// Affiche les notifications lues pendant 60 s (diagnostic de l'identité de paquet,
 /// `horizon.exe --notif-probe` depuis PowerShell).
@@ -165,14 +153,12 @@ pub fn run() {
     app.manage(comfort::Night::default());
     app.manage(state::AppState::load());
     app.manage(foreground::ForegroundHub::default());
-    app.manage(prisme::Prisme::default());
     app.manage(relay::Relay::default());
     app.manage(discord::Discord::default());
     app.manage(popup::PopupState::default());
     app.manage(mixer::Mixer::default());
     app.manage(dnd::DndHub::default());
     app.manage(timer::TimerHub::default());
-    app.manage(phone::PhoneState::default());
     app.manage(status::Health::default());
     app.manage(accent::Accent::default());
     app.manage(palette::Palette::default());
@@ -189,17 +175,11 @@ pub fn run() {
         }
     };
     for (name, start) in STARTS {
-        if PERSONAL || !PERSONAL_STARTS.contains(name) {
-            start_one(name, *start);
-        }
+        start_one(name, *start);
     }
     widgets::start_all(&app);
     for (name, start) in STARTS_AFTER {
         start_one(name, *start);
-    }
-    // Interface de Prisme demandée au lancement (menu de l'icône de Prisme).
-    if args.iter().any(|a| a == prisme_window::ARG) {
-        prisme_window::open(&app);
     }
     if args.iter().any(|a| a == "--essai")
         && let Err(e) = ui::essai::open()
@@ -219,14 +199,5 @@ pub fn run() {
     tray::stop();
     // L'affichage du volume de Windows revient.
     osd::exit();
-    // Prisme reprend sa palette (et sa scène, si un signal ou « Ne pas déranger » la tient) ; on
-    // laisse le temps aux messages de partir.
-    if PERSONAL {
-        let p = app.state::<prisme::Prisme>();
-        p.set_focus_hold(false);
-        p.end_signal();
-        p.set_accent(None);
-        std::thread::sleep(std::time::Duration::from_millis(150));
-    }
     log::info!("arrêt d'Horizon");
 }

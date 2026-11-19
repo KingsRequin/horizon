@@ -11,16 +11,12 @@ pub const EV_LAYOUT: &str = "horizon://layout";
 pub const EV_RESUME: &str = "horizon://resume";
 /// État audio (sorties, micros, volumes des applis) pour les panneaux (`mixer.rs`).
 pub const EV_MIXER: &str = "horizon://mixer";
-/// Éclairage (Prisme).
-pub const EV_LIGHTING: &str = "horizon://lighting";
 /// « Ne pas déranger » (`dnd.rs`).
 pub const EV_DND: &str = "horizon://dnd";
 /// Minuteur et pomodoro (`timer.rs`).
 pub const EV_TIMER: &str = "horizon://timer";
 /// Alerte de l'îlot dynamique (`alerts.rs`).
 pub const EV_ALERT: &str = "horizon://alert";
-/// Appel du téléphone en cours (`phone.rs`).
-pub const EV_PHONE: &str = "horizon://phone";
 /// Intégrations en échec (`status.rs`).
 pub const EV_HEALTH: &str = "horizon://health";
 /// Volume ou média à afficher dans la barre principale (`osd.rs`).

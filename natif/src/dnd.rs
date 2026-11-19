@@ -100,7 +100,6 @@ fn apply(app: &AppHandle, active: bool) {
         crate::widgets::discord_voice::set_dnd(app, active);
     }
     // Option décochée pendant un NPD : la scène est rendue quand même à la fin.
-    app.state::<crate::prisme::Prisme>().set_focus_hold(active && opts.light);
     crate::plugins::events::emit(app, "dnd", serde_json::json!({ "active": active, "light": opts.light }));
 }
 

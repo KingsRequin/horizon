@@ -21,7 +21,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 /// La mise à jour automatique existe dans cette compilation.
-pub const ENABLED: bool = option_env!("HORIZON_RELEASE").is_some() && !crate::PERSONAL;
+pub const ENABLED: bool = option_env!("HORIZON_RELEASE").is_some();
 /// Dépôt GitHub des versions publiées.
 pub const REPO: &str = "KingsRequin/horizon";
 

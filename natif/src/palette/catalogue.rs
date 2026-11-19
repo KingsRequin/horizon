@@ -20,8 +20,6 @@ pub(super) enum Action {
     Reveal(String),
     Suggestion(String),
     Profile(String),
-    Scene(Option<String>),
-    LightToggle,
     Mic,
     Krisp,
     NextOutput,
@@ -191,20 +189,6 @@ pub(super) fn catalogue(app: &AppHandle) -> Vec<Entry> {
                 Entry::new(format!("plugin:{}:{}", p.plugin, e.id), format!("{} : {}", p.name, e.label), p.name.clone(), glyph(e.icon))
                     .keywords(format!("plugin {} {}", p.name, e.label))
                     .action("Lancer", Action::Plugin(p.plugin.clone(), e.id)),
-            );
-        }
-    }
-
-    // Scènes Prisme.
-    let light = crate::prisme::lighting_state(app.clone());
-    if light.connected {
-        out.push(Entry::new("scene:auto", "Éclairage automatique", "Prisme", glyph("lightbulb")).keywords("éclairage prisme scène règles").action("Activer", Action::Scene(None)));
-        out.push(Entry::new("scene:toggle", "Éteindre ou rallumer l’éclairage", "Prisme", glyph("power")).keywords("éclairage prisme lumière").action("Basculer", Action::LightToggle));
-        for s in light.scenes.iter().filter(|s| *s != "off") {
-            out.push(
-                Entry::new(format!("scene:{s}"), format!("Éclairage : {}", horizon_core::light_signal::scene_name(s)), "Scène Prisme", glyph("lightbulbFill"))
-                    .keywords(format!("éclairage prisme scène {s}"))
-                    .action("Activer", Action::Scene(Some(s.clone()))),
             );
         }
     }
@@ -416,8 +400,6 @@ pub(super) fn run_action(app: &AppHandle, a: Action) -> Result<(), String> {
             crate::plugins::script::palette_choice(&id, &entry);
             Ok(())
         }
-        Action::Scene(s) => crate::prisme::lighting_set_scene(app.clone(), s),
-        Action::LightToggle => crate::prisme::lighting_toggle(app.clone()),
         Action::Mic => crate::widgets::mic_krisp::mic_toggle(app.clone()),
         Action::Krisp => crate::widgets::mic_krisp::krisp_toggle(app.clone()),
         Action::NextOutput => crate::mixer::next_output(app).map(|name| {

@@ -231,7 +231,6 @@ pub fn apply_edit(s: &mut Settings, id: &str, v: &Edit) -> Result<(), String> {
         "alerts.dnd_discord" => a.dnd_discord = Some(flag()?),
         "alerts.dnd_light" => a.dnd_light = Some(flag()?),
         "alerts.headset_low" => a.headset_low = Some(int(0, 100)? as u8),
-        "alerts.devices_low" => a.devices_low = Some(int(0, 100)? as u8),
         "features.capture_to_claude" => f.capture_to_claude = flag()?,
         "features.headset_switch" => f.headset_switch = flag()? && !f.fallback_output.trim().is_empty(),
         "features.fallback_output" => {
@@ -246,7 +245,6 @@ pub fn apply_edit(s: &mut Settings, id: &str, v: &Edit) -> Result<(), String> {
         "features.wallpaper_accent" => f.wallpaper_accent = flag()?,
         "features.windows_accent" => f.windows_accent = flag()?,
         "features.game_mode" => f.game_mode = flag()?,
-        "features.phone_island" => f.phone_island = flag()?,
         "features.auto_update" => f.auto_update = flag()?,
         "night.start" => n.start = normalize_time(&text()?).ok_or_else(bad)?,
         "night.end" => n.end = normalize_time(&text()?).ok_or_else(bad)?,

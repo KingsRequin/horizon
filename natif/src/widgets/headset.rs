@@ -18,7 +18,7 @@ use crate::host::{AppHandle, Manager};
 use crate::ui::BarWindow;
 use crate::util::{Published, Waker, start_thread};
 use horizon_core::headset_switch::{HeadsetSwitch, Switch};
-use horizon_core::layout::{BarLayout, WidgetKind};
+use horizon_core::layout::BarLayout;
 use horizon_sys::headset::{Headset, Reader};
 use slint::ComponentHandle;
 use std::time::Duration;
@@ -63,7 +63,7 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
         let notified = app.clone();
         reader.on_notice(move || notified.state::<HeadsetState>().wake.wake());
         let mut last_error = String::new();
-        let mut low = LowBattery::new(WidgetKind::HEADSET, "headset");
+        let mut low = LowBattery::new("headset");
         let mut switch = HeadsetSwitch::default();
         loop {
             let fallback = crate::state::settings().features.headset_fallback().map(str::to_owned);
@@ -154,7 +154,7 @@ pub fn apply(app: &AppHandle, window: &BarWindow, h: Option<&Headset>) {
         g.set_on(false);
         return;
     };
-    let threshold = app.state::<crate::state::AppState>().read(|l| crate::state::settings().alerts.low_threshold(l, WidgetKind::HEADSET));
+    let threshold = app.state::<crate::state::AppState>().read(|l| crate::state::settings().alerts.headset_threshold(l));
     g.set_level(i32::from(h.level));
     g.set_charging(h.charging);
     g.set_low(is_low(h.level, h.charging, threshold));

@@ -32,7 +32,6 @@ import { BarStatusData } from "bar-status.slint";
 import { OsdData } from "osd.slint";
 import { PulseState } from "pulse.slint";
 // Données des widgets portés (globales de chaque fenêtre, posées par src/widgets/<id>).
-import { BatteriesData, BatteryItem } from "widgets/batteries/widget.slint";
 import { CalendarData, CalendarItem } from "widgets/calendar/widget.slint";
 import { ClaudeQuotaData, QuotaGaugeRow } from "widgets/claude_quota/widget.slint";
 import { ClaudeSessionsData, ClaudeSessionRow } from "widgets/claude_sessions/widget.slint";
@@ -40,7 +39,6 @@ import { ClockData } from "widgets/clock/widget.slint";
 import { DiscordVoiceData, VoiceAvatarRow } from "widgets/discord_voice/widget.slint";
 import { EssaimData } from "widgets/essaim/widget.slint";
 import { HeadsetData } from "widgets/headset/widget.slint";
-import { LightingData } from "widgets/lighting/widget.slint";
 import { MediaData } from "widgets/media/widget.slint";
 import { MicKrispData } from "widgets/mic_krisp/widget.slint";
 import { NotifsData } from "widgets/notifications/widget.slint";
@@ -62,12 +60,8 @@ export { ServersSettingsData, ServerRow, ShortcutsSettingsData, ShortcutRow, Sho
 export { ProfilesData, ProfileRow, ProfileApp }
 // Panneaux des widgets (`PanelView` et leurs globaux), générés par build.rs.
 export * from "@panels";
-export { BatteriesData, BatteryItem, CalendarData, CalendarItem, ClaudeQuotaData, QuotaGaugeRow }
+export { CalendarData, CalendarItem, ClaudeQuotaData, QuotaGaugeRow }
 export { ClaudeSessionsData, ClaudeSessionRow, ClockData, DiscordVoiceData, VoiceAvatarRow, EssaimData }
-export { LightingData, MediaData, MicKrispData, ServersData, ServersGroup, ServerHostRow }
+export { MediaData, MicKrispData, ServersData, ServersGroup, ServerHostRow }
 export { Spark, SystemData, WeatherData, WeatherItem, WeatherState }
-// Fenêtre de Prisme (src/prisme_window/) et ses globaux.
-export { PrismeWindow, PrismeShell, PrismeTheme, PrismeCanvas, PrismeLabel, PrismeNow, PrismeMode, PrismeChip } from "prisme/window.slint";
-export { PrismeScenes, PrismeSceneRow, PrismeParam, PrismeOption, PrismeRules, PrismeRule, PrismeSettings } from "prisme/window.slint";
-export { PrismeLayout, PrismeDevice, PrismeZone, PrismeFound } from "prisme/window.slint";
 export { HeadsetData, NotifsData, ShortcutsData, ShortcutItem, SuggestionsData, SuggestionItem, WindowsData }

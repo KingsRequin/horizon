@@ -1,5 +1,5 @@
 //! Section `[features]` : fonctions facultatives (captures vers Claude, bascule audio du
-//! casque, mode jeu, appels du téléphone, couleur du fond d'écran, mise à jour automatique).
+//! casque, mode jeu, couleur du fond d'écran, mise à jour automatique).
 
 use serde::{Deserialize, Serialize};
 
@@ -15,8 +15,6 @@ pub struct FeatureSettings {
     pub fallback_output: String,
     /// Une appli plein écran sur l'écran principal : spectre coupé, sondages espacés.
     pub game_mode: bool,
-    /// Appel du téléphone (SharkApp, `phone.json`) dans l'îlot.
-    pub phone_island: bool,
     /// Couleur d'accent tirée du fond d'écran (relu chaque minute) : barres et ambiance de
     /// Prisme hors lecture (pendant la lecture, c'est la pochette).
     pub wallpaper_accent: bool,
@@ -43,7 +41,6 @@ impl Default for FeatureSettings {
             headset_switch: false,
             fallback_output: String::new(),
             game_mode: true,
-            phone_island: true,
             wallpaper_accent: true,
             windows_accent: true,
             osd: true,

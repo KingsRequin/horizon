@@ -26,9 +26,7 @@ jobs:
             ~/.cargo/git
             target
           key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
-      - name: Clippy (public edition)
+      - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Clippy (personal edition)
-        run: cargo clippy --workspace --all-targets --features horizon-natif/personal -- -D warnings
       - name: Tests
         run: cargo test --workspace

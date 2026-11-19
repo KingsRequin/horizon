@@ -21,7 +21,6 @@ export global WidgetSettingsData {
     in property <string> kind;
     // Nom du widget (manifeste).
     in property <string> label;
-    in property <bool> personal;
     in property <string> error;
     // Micro et Krisp : le bouton coupe le micro de Discord en appel.
     in property <bool> discord-mute;
@@ -83,7 +82,7 @@ export component WidgetSettingsPage inherits Rectangle {
         if root.kind != "": SettingsHeader {
             text: WidgetSettingsData.label;
         }
-        if root.kind == "batteries" || root.kind == "headset": GlobalLink {
+        if root.kind == "headset": GlobalLink {
             what: "Seuil de l’alerte « batterie faible ».";
             section: "alertes";
             label: "Alertes";
@@ -100,9 +99,7 @@ export component WidgetSettingsPage inherits Rectangle {
             }
         }
         if root.kind == "notifications": GlobalLink {
-            what: WidgetSettingsData.personal
-                ? "« Ne pas déranger » : ce que l’îlot montre quand même, Discord et Prisme pendant le NPD."
-                : "« Ne pas déranger » : ce que l’îlot montre quand même.";
+            what: "« Ne pas déranger » : ce que l’îlot montre quand même, et ce qu’il change (Prisme…).";
             section: "alertes";
             label: "Alertes";
             open(s) => {
@@ -123,7 +120,7 @@ export component WidgetSettingsPage inherits Rectangle {
         if root.kind == "calendar": CalendarSettings { }
         if root.kind == "servers": ServersSettings { }
         if root.kind == "shortcuts": ShortcutsSettings { }
-        if root.kind != "" && !(root.kind == "batteries" || root.kind == "headset" || root.kind == "claude_sessions" || root.kind == "notifications" || root.kind == "mic_krisp" || root.kind == "weather" || root.kind == "suggestions" || root.kind == "calendar" || root.kind == "servers" || root.kind == "shortcuts"): SettingsNote {
+        if root.kind != "" && !(root.kind == "headset" || root.kind == "claude_sessions" || root.kind == "notifications" || root.kind == "mic_krisp" || root.kind == "weather" || root.kind == "suggestions" || root.kind == "calendar" || root.kind == "servers" || root.kind == "shortcuts"): SettingsNote {
             text: "Ce widget n’a pas de réglages.";
             font-size: Theme.fs-meta;
         }

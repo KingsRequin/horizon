@@ -12,8 +12,7 @@ et comment l'installer : `README.md` (`README.en.md` en anglais). Mode d'emploi 
 Lancer `cargo` depuis la racine du dépôt (`-j 2` si une compilation est tuée faute de mémoire).
 
 ```
-cargo clippy --workspace --all-targets -- -D warnings                                   (édition publique)
-cargo clippy --workspace --all-targets --features horizon-natif/personal -- -D warnings  (si PERSONAL est touché)
+cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
@@ -69,9 +68,9 @@ pure doit le nommer).
 
 ## Pièges connus
 
-- Ce qui ne sert qu'à une appli personnelle de l'auteur (SharkApp, Prisme, BetterDiscord) est
-  derrière la fonction Cargo `personal` (absente par défaut, donc des Releases) : `PERSONAL`
-  (`natif/src/lib.rs`), manifestes `"personal": true`.
+- Une seule édition. Ce qui ne sert qu'à une appli de l'auteur (Prisme, SharkApp) est un plugin
+  de la bibliothèque (`KingsRequin/horizon-plugins`), pas du code d'Horizon : `docs/PLUGINS.md`.
+  Le relais BetterDiscord (KrispBridge, port 28642) reste un repli de Discord vocal et donne Krisp.
 - Mise à jour automatique (`natif/src/update.rs`, logique pure dans
   `crates/horizon-core/src/update.rs`) : seulement dans une compilation de `scripts/package.ps1`
   (`HORIZON_RELEASE`). Une Release doit joindre `horizon.exe`, `horizon-hook.exe` et

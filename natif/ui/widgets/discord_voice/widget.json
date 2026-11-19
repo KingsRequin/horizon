@@ -1,6 +1,5 @@
 {
   "label": "Discord vocal",
   "icon": "discordLogo",
-  "squeeze": 11,
-  "personal": true
+  "squeeze": 11
 }

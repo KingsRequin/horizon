@@ -71,6 +71,7 @@ impl WidgetKind {
     pub const CLAUDE_QUOTA: WidgetKind = WidgetKind("claude_quota");
     pub const SUGGESTIONS: WidgetKind = WidgetKind("suggestions");
     pub const HEADSET: WidgetKind = WidgetKind("headset");
+    /// Éclairage et Batteries d'avant les plugins (migrés vers `PRISME_PLUGIN`, `SHARKAPP_PLUGIN`).
     pub const LIGHTING: WidgetKind = WidgetKind("lighting");
     pub const WEATHER: WidgetKind = WidgetKind("weather");
     pub const CALENDAR: WidgetKind = WidgetKind("calendar");
@@ -79,6 +80,9 @@ impl WidgetKind {
     pub const SERVERS: WidgetKind = WidgetKind("servers");
     pub const WINDOWS: WidgetKind = WidgetKind("windows");
     pub const ESSAIM: WidgetKind = WidgetKind("essaim");
+    /// Plugins de la bibliothèque qui remplacent Éclairage et Batteries.
+    pub const PRISME_PLUGIN: WidgetKind = WidgetKind("plugin:prisme");
+    pub const SHARKAPP_PLUGIN: WidgetKind = WidgetKind("plugin:sharkapp");
 
     /// Genre d'identifiant `id` (texte gardé une fois pour toute la durée du programme).
     pub fn new(id: &str) -> WidgetKind {
@@ -337,20 +341,6 @@ impl Layout {
     /// Widget du profil actif, par identifiant.
     pub fn widget(&self, id: &str) -> Option<&WidgetInstance> {
         self.widgets().find(|w| w.id == id)
-    }
-
-    /// Retire de toutes les barres, profils inactifs compris, les widgets de ces genres
-    /// (édition sans les applis personnelles) ; `true` si quelque chose a été retiré.
-    pub fn remove_kinds(&mut self, kinds: &[&str]) -> bool {
-        let mut removed = false;
-        for bar in self.bars.iter_mut().chain(self.profiles.iter_mut().flat_map(|p| p.bars.iter_mut())) {
-            for zone in [&mut bar.left, &mut bar.center, &mut bar.right, &mut bar.tiles] {
-                let before = zone.len();
-                zone.retain(|w| !kinds.contains(&w.kind.as_str()));
-                removed |= zone.len() != before;
-            }
-        }
-        removed
     }
 
     /// Tous les widgets, profils inactifs compris, modifiables.

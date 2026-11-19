@@ -1,8 +1,7 @@
 //! Îlot dynamique : un seul canal pour tout ce qui s'y montre quelques secondes — notification
-//! Windows qui arrive, « Claude attend », batterie faible du casque, du téléphone, de la
-//! montre, serveur hors ligne ou revenu, fin du minuteur, retour d'une action, « Nouveautés ».
+//! Windows qui arrive, « Claude attend », batterie faible du casque, serveur hors ligne ou revenu, fin du minuteur, retour d'une action, « Nouveautés ».
 //! « Ne pas déranger » filtre ici, et seulement ici (`allowed`). L'affichage (durée, fondu,
-//! appel du téléphone, clic) est dans `ui::island`.
+//! activités des plugins, clic) est dans `ui::island`.
 //!
 //! Repris de `app/src-tauri/src/alerts.rs`. Différences : la miniature d'une capture est en
 //! pixels (`Thumb`, pas d'URL `data:`) ; l'annonce des « Nouveautés » (`announce_news`,
@@ -11,7 +10,6 @@
 use crate::events::EV_ALERT;
 use crate::host::{AppHandle, Emitter, Manager};
 use horizon_core::dnd::AlertKind;
-use horizon_core::layout::WidgetKind;
 use horizon_core::low_battery::LowAlert;
 use serde::Serialize;
 use std::sync::Arc;
@@ -130,9 +128,18 @@ pub fn allowed(app: &AppHandle, kind: AlertKind) -> bool {
 
 /// Montre une alerte dans l'îlot, sauf si « Ne pas déranger » la masque ; vrai si elle part.
 pub fn show(app: &AppHandle, kind: AlertKind, alert: Alert) -> bool {
-    let shown = allowed(app, kind);
+    announce(app, kind, alert, true, true)
+}
+
+/// Annonce l'alerte aux plugins (événement `alert` ; `light` : signal lumineux voulu, que joue
+/// le plugin Prisme), puis la montre dans l'îlot si `island` et si « Ne pas déranger » la
+/// laisse passer ; vrai si elle y part.
+pub fn announce(app: &AppHandle, kind: AlertKind, alert: Alert, island: bool, light: bool) -> bool {
+    let shown = island && allowed(app, kind);
     if kind != AlertKind::Plugin {
-        let payload = serde_json::json!({ "kind": crate::plugins::events::alert_name(kind), "title": alert.title, "shown": shown });
+        let payload = serde_json::json!({
+            "kind": crate::plugins::events::alert_name(kind), "title": alert.title, "shown": shown, "light": light,
+        });
         crate::plugins::events::emit(app, "alert", payload);
     }
     if !shown {
@@ -143,22 +150,21 @@ pub fn show(app: &AppHandle, kind: AlertKind, alert: Alert) -> bool {
     true
 }
 
-/// Batterie d'un appareil suivi par le widget `kind` (seuil de la section « Alertes »).
+/// Batterie du casque (seuil de la section « Alertes »).
 pub struct LowBattery {
-    kind: WidgetKind,
     icon: &'static str,
     alert: LowAlert,
 }
 
 impl LowBattery {
-    pub fn new(kind: WidgetKind, icon: &'static str) -> LowBattery {
-        LowBattery { kind, icon, alert: LowAlert::default() }
+    pub fn new(icon: &'static str) -> LowBattery {
+        LowBattery { icon, alert: LowAlert::default() }
     }
 
     /// Nouvelle mesure de l'appareil `name` ; annonce le passage sous le seuil.
     pub fn update(&mut self, app: &AppHandle, name: &str, level: u8, charging: bool) {
         let alerts = crate::state::settings().alerts;
-        let threshold = app.state::<crate::state::AppState>().read(|l| alerts.low_threshold(l, self.kind));
+        let threshold = app.state::<crate::state::AppState>().read(|l| alerts.headset_threshold(l));
         let Some(t) = threshold else { return };
         if self.alert.update(level, charging, t) {
             log::info!("{name} : batterie faible ({level} %)");

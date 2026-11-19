@@ -3,7 +3,7 @@
 //!
 //! Catalogues générés dans `$OUT_DIR` :
 //! - `widgets.rs` (inclus par `src/widgets/mod.rs`) : `MANIFESTS`, le `widget.json` de chaque
-//!   dossier `ui/widgets/<id>/` (nom, icône, rang de masquage…) ; `PERSONAL_WIDGETS` et
+//!   dossier `ui/widgets/<id>/` (nom, icône, rang de masquage…) ; et
 //!   `SQUEEZE_ORDER` en sont tirés ; `PANELS`, les widgets qui ont un `panel.slint` ;
 //! - `icons.rs` (inclus par `src/ui/icons.rs`) : `ICONS`, chaque `icons/phosphor/<nom>.svg` ;
 //! - `panel-view.slint` (importé sous le nom `@panel-view`) : `PanelView` (fenêtre surgissante,
@@ -83,16 +83,12 @@ fn icons(dir: &Path, out: &mut String) -> Vec<String> {
     names
 }
 
-/// `MANIFESTS`, `PERSONAL_WIDGETS`, `SQUEEZE_ORDER`, `PANELS`. Renvoie les identifiants des
+/// `MANIFESTS`, `SQUEEZE_ORDER`, `PANELS`. Renvoie les identifiants des
 /// widgets qui ont un panneau.
 fn widgets(dir: &Path, icons: &[String], out: &mut String) -> Vec<String> {
     let ui_dir = dir.join("ui/widgets");
     println!("cargo:rerun-if-changed={}", ui_dir.display());
-    // Édition publique (sans la fonction `personal`, voir `PERSONAL` de lib.rs) : noms sans les
-    // applis personnelles.
-    let share = std::env::var_os("CARGO_FEATURE_PERSONAL").is_none();
     let mut manifests = String::new();
-    let mut personal = String::new();
     let mut squeeze: Vec<(u64, String)> = Vec::new();
     let mut panels = Vec::new();
     for d in entries(&ui_dir) {
@@ -106,7 +102,6 @@ fn widgets(dir: &Path, icons: &[String], out: &mut String) -> Vec<String> {
             "widget « {id} » : minuscules, chiffres et _ seulement"
         );
         let label = json["label"].as_str().unwrap_or_else(|| panic!("{} : « label » manquant", manifest.display()));
-        let label = json["shareLabel"].as_str().filter(|_| share).unwrap_or(label);
         let icon = json["icon"].as_str().unwrap_or_else(|| panic!("{} : « icon » manquant", manifest.display()));
         assert!(icons.iter().any(|i| i == icon), "{} : icône « {icon} » absente de icons/phosphor", manifest.display());
         let rank = json["squeeze"].as_u64();
@@ -120,15 +115,10 @@ fn widgets(dir: &Path, icons: &[String], out: &mut String) -> Vec<String> {
         assert!(json["grows"].is_null() || grows.is_some(), "{} : « grows » = largeur minimale en px", manifest.display());
         writeln!(
             manifests,
-            "    Manifest {{ id: {id:?}, label: {label:?}, icon: {icon:?}, squeeze: {rank:?}, clickable_on_hover: {}, grows: {grows:?}, personal: {}, personal_settings: {} }},",
+            "    Manifest {{ id: {id:?}, label: {label:?}, icon: {icon:?}, squeeze: {rank:?}, clickable_on_hover: {}, grows: {grows:?} }},",
             flag("clickableOnHover"),
-            flag("personal"),
-            flag("personalSettings"),
         )
         .unwrap();
-        if flag("personal") {
-            writeln!(personal, "    {id:?},").unwrap();
-        }
         if d.join("panel.slint").is_file() {
             panels.push(id);
         }
@@ -136,9 +126,6 @@ fn widgets(dir: &Path, icons: &[String], out: &mut String) -> Vec<String> {
     squeeze.sort();
     writeln!(out, "\n/// Manifeste (`widget.json`) de chaque widget, par identifiant.").unwrap();
     writeln!(out, "pub const MANIFESTS: &[Manifest] = &[\n{manifests}];").unwrap();
-    writeln!(out, "\n/// Widgets liés aux applis personnelles (`\"personal\": true`), absents de l'édition partagée.")
-        .unwrap();
-    writeln!(out, "pub const PERSONAL_WIDGETS: &[&str] = &[\n{personal}];").unwrap();
     writeln!(out, "\n/// Ordre de masquage d'une barre trop chargée, du plus secondaire au moins secondaire.").unwrap();
     let order: Vec<String> = squeeze.into_iter().map(|(_, id)| format!("{id:?}")).collect();
     writeln!(out, "pub const SQUEEZE_ORDER: &[&str] = &[{}];", order.join(", ")).unwrap();

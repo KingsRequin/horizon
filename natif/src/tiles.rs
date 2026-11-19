@@ -365,12 +365,12 @@ mod tests {
         let mut l = layout();
         let id = add_tile_in(&mut l, "m", "system").unwrap();
         assert_eq!(l.bars[0].tiles.iter().map(|w| w.kind.as_str()).collect::<Vec<_>>(), ["media", "system"]);
-        assert!(add_tile_in(&mut l, "m", "batteries").is_err(), "sans panneau");
+        assert!(add_tile_in(&mut l, "m", "headset").is_err(), "sans panneau");
         assert!(add_tile_in(&mut l, "m", "inconnu").is_err());
         assert!(add_tile_in(&mut l, "autre", "media").is_err(), "écran inconnu");
         assert!(remove_tile_in(&mut l, "c").is_err(), "pas une tuile");
         remove_tile_in(&mut l, &id).unwrap();
         assert_eq!(l.bars[0].tiles.len(), 1);
-        assert!(tile_choices().contains(&"media") && !tile_choices().contains(&"batteries"));
+        assert!(tile_choices().contains(&"media") && !tile_choices().contains(&"headset"));
     }
 }

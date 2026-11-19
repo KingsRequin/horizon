@@ -141,7 +141,6 @@ pub fn bind(app: &AppHandle, window: &SettingsWindow) {
         s.window = Some(window.as_weak());
     });
     let g = window.global::<WidgetSettingsData>();
-    g.set_personal(crate::PERSONAL);
     g.on_set_discord_mute(|v| {
         save(serde_json::json!({ "discordMute": v }));
         if let Some(w) = self::window() {

@@ -17,7 +17,6 @@
 import { Theme, StyleTokens } from "theme.slint";
 import { Slot, SlotView } from "components.slint";
 import { DashedBox } from "dashed.slint";
-import { BatteriesWidget } from "widgets/batteries/widget.slint";
 import { CalendarWidget } from "widgets/calendar/widget.slint";
 import { ClaudeQuotaWidget } from "widgets/claude_quota/widget.slint";
 import { ClaudeSessionsWidget } from "widgets/claude_sessions/widget.slint";
@@ -25,7 +24,6 @@ import { ClockWidget } from "widgets/clock/widget.slint";
 import { DiscordVoiceWidget } from "widgets/discord_voice/widget.slint";
 import { EssaimWidget } from "widgets/essaim/widget.slint";
 import { HeadsetWidget } from "widgets/headset/widget.slint";
-import { LightingWidget } from "widgets/lighting/widget.slint";
 import { MediaWidget } from "widgets/media/widget.slint";
 import { MicKrispWidget } from "widgets/mic_krisp/widget.slint";
 import { NotificationsWidget } from "widgets/notifications/widget.slint";
@@ -69,9 +67,9 @@ export component WidgetView inherits Rectangle {
     property <length> placeholder-w: placeholder-text.preferred-width + 16px;
 
     property <string> kind: root.slot.kind;
-    property <bool> ported: kind == "batteries" || kind == "calendar" || kind == "claude_quota" ||
+    property <bool> ported: kind == "calendar" || kind == "claude_quota" ||
         kind == "claude_sessions" || kind == "clock" || kind == "discord_voice" ||
-        kind == "essaim" || kind == "headset" || kind == "lighting" || kind == "media" ||
+        kind == "essaim" || kind == "headset" || kind == "media" ||
         kind == "mic_krisp" || kind == "notifications" || kind == "servers" ||
         kind == "shortcuts" || kind == "suggestions" || kind == "system" || kind == "weather" ||
         kind == "windows" || root.slot.plugin;
@@ -110,15 +108,6 @@ export component WidgetView inherits Rectangle {
     row := HorizontalLayout {
         width: root.natural;
         height: parent.height;
-        if kind == "batteries": BatteriesWidget {
-            t: root.t;
-            slot: root.slot;
-            dim: root.dim;
-            interactive: root.live;
-            clickable: root.live-click;
-            compact: root.compact;
-            wide: root.wide;
-        }
         if kind == "calendar": CalendarWidget {
             t: root.t;
             slot: root.slot;
@@ -174,15 +163,6 @@ export component WidgetView inherits Rectangle {
             wide: root.wide;
         }
         if kind == "headset": HeadsetWidget {
-            t: root.t;
-            slot: root.slot;
-            dim: root.dim;
-            interactive: root.live;
-            clickable: root.live-click;
-            compact: root.compact;
-            wide: root.wide;
-        }
-        if kind == "lighting": LightingWidget {
             t: root.t;
             slot: root.slot;
             dim: root.dim;

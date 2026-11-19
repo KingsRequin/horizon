@@ -1,8 +1,8 @@
-# Prépare une version publiée d'Horizon (édition publique), celle des Releases GitHub :
-#   - compile Horizon et son hook Claude Code en release, sans la fonction `personal` et avec
+# Prépare une version publiée d'Horizon, celle des Releases GitHub :
+#   - compile Horizon et son hook Claude Code en release avec
 #     HORIZON_RELEASE=1 (mise à jour automatique active, voir natif/src/update.rs), dans un
 #     dossier de compilation à part (« <dossier habituel>-share ») pour ne pas toucher à une
-#     compilation personnelle ;
+#     compilation locale ;
 #   - réunit les exécutables, les scripts d'installation et le paquet des notifications dans
 #     <Out>\Horizon, avec Installer.cmd, Desinstaller.cmd, LISEZMOI.txt et README.txt ;
 #   - en fait <Out>\Horizon-<version>.zip ;
