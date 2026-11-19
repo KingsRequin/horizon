@@ -7,7 +7,9 @@
 //! la première fois, ou qui demande de nouvelles permissions, attend l'accord de l'utilisateur
 //! (page État) ; rien n'est chargé avant.
 
+mod convert;
 mod registry;
+pub mod script;
 mod slint_host;
 mod store;
 pub mod js;
@@ -70,6 +72,10 @@ pub fn plugins_dir() -> PathBuf {
 #[derive(Default)]
 pub struct Plugins {
     registry: Mutex<Registry>,
+    /// Coût et plantages de chaque plugin (scripts et rendu).
+    budgets: Mutex<std::collections::HashMap<String, horizon_core::plugin::budget::Budget>>,
+    /// Dernier plantage de script de chaque plugin (page État).
+    crashes: Mutex<std::collections::HashMap<String, String>>,
 }
 
 /// Ce que montre la page État pour un plugin.
@@ -95,6 +101,17 @@ impl Plugins {
         let r = lock(&self.registry);
         let e = r.entries.get(id).filter(|e| e.state == PluginState::Ok)?;
         Some((e.manifest.clone()?, e.dir.clone(), e.generation, e.error.clone()))
+    }
+
+    /// Temps passé par le script ou le rendu du plugin `id` (µs).
+    pub fn script_cost(&self, id: &str, us: u64) {
+        lock(&self.budgets).entry(id.to_owned()).or_default().record(horizon_core::time::now_ms(), us);
+    }
+
+    /// Le script du plugin `id` a planté.
+    pub fn script_crashed(&self, _app: &AppHandle, id: &str, message: String) {
+        lock(&self.budgets).entry(id.to_owned()).or_default().crash(horizon_core::time::now_ms());
+        lock(&self.crashes).insert(id.to_owned(), message);
     }
 
     /// Tous les plugins connus.
@@ -248,6 +265,7 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     if !first.is_empty() {
         changed(app);
     }
+    script::start(app)?;
     let a = app.clone();
     start_thread("plugins-dossier", move || {
         let t0 = Instant::now();

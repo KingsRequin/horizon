@@ -232,6 +232,8 @@ fn reload(app: &AppHandle) {
     for l in labels {
         refresh(&l);
     }
+    // Aucun exemplaire affiché : les scripts suivent quand même la disposition.
+    super::script::reconcile(app);
 }
 
 /// Interface à jour du plugin `id` (recompilée si le registre a une nouvelle génération).
@@ -302,6 +304,9 @@ fn refresh(label: &str) {
             own_clicks = matches!(surface.instance().get_property("own-clicks"), Ok(Value::Bool(true)));
             preferred = (surface.preferred_width(), surface.preferred_height());
         }
+        if let Some(surface) = &surface {
+            super::script::surface_created(&name, &k.1, surface);
+        }
         STATE.with_borrow_mut(|s| {
             if let Some(v) = s.views.get_mut(&k) {
                 v.generation = generation;
@@ -311,8 +316,16 @@ fn refresh(label: &str) {
             }
         });
     }
+    super::script::reconcile(&app);
     bump(label);
     start_timer();
+}
+
+/// Exemplaires rendus du plugin `plugin` : (clé, surface).
+pub(super) fn surfaces_of(plugin: &str) -> Vec<(String, Rc<RefCell<Surface>>)> {
+    STATE.with_borrow(|s| {
+        s.views.iter().filter(|(_, v)| v.plugin == plugin).filter_map(|(k, v)| Some((k.1.clone(), v.surface.clone()?))).collect()
+    })
 }
 
 /// Thème d'Horizon (style de la fenêtre) recopié dans le global `Theme` de `@horizon`.

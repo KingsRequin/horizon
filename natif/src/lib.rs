@@ -200,6 +200,8 @@ pub fn run() {
     }
     // Place réservée rendue, icône retirée.
     widgets::exit_all(&app);
+    // Les scripts des plugins disent au revoir (500 ms au plus).
+    plugins::script::quit();
     bars::close_all(&app);
     ui::popup::stop();
     ui::tooltip::close();
