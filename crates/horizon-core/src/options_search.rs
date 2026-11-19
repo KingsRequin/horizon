@@ -15,16 +15,10 @@ pub struct SearchEntry {
     pub label: &'static str,
     /// Mots qui ne sont pas dans le libellé mais qu'on pourrait taper.
     pub keywords: &'static str,
-    /// Seulement dans l'édition personnelle.
-    pub personal: bool,
 }
 
 const fn e(section: &'static str, group: &'static str, label: &'static str, keywords: &'static str) -> SearchEntry {
-    SearchEntry { section, group, label, keywords, personal: false }
-}
-
-const fn p(section: &'static str, group: &'static str, label: &'static str, keywords: &'static str) -> SearchEntry {
-    SearchEntry { section, group, label, keywords, personal: true }
+    SearchEntry { section, group, label, keywords }
 }
 
 /// Libellé de chaque section, dans l'ordre de la navigation.
@@ -65,15 +59,13 @@ pub const ENTRIES: &[SearchEntry] = &[
     e("son", "Casque éteint", "Basculer le son quand le casque s’éteint", "casque sortie audio enceintes"),
     e("son", "Casque éteint", "Sortie de repli", "enceintes écran audio"),
     e("alertes", "Quand Claude attend ou a terminé", "Montrer le projet et le message dans l’îlot", "claude session terminal"),
-    p("alertes", "Quand Claude attend ou a terminé", "Signal lumineux par Prisme", "lumière rgb éclairage"),
+    e("alertes", "Quand Claude attend ou a terminé", "Signal lumineux (plugin Prisme)", "lumière rgb éclairage"),
     e("alertes", "Captures d’écran vers Claude", "Proposer chaque nouvelle capture à la session Claude qui attend", "capture image screenshot"),
     e("alertes", "Pendant « Ne pas déranger »", "« Claude attend »", "dnd silence"),
     e("alertes", "Pendant « Ne pas déranger »", "Les alertes d’état", "dnd batterie serveur"),
-    p("alertes", "« Ne pas déranger » change aussi", "Discord en « Ne pas déranger »", "statut"),
-    p("alertes", "« Ne pas déranger » change aussi", "Prisme : scène « focus »", "lumière éclairage"),
+    e("alertes", "« Ne pas déranger » change aussi", "Discord en « Ne pas déranger »", "statut"),
+    e("alertes", "« Ne pas déranger » change aussi", "Plugin Prisme : scène « focus »", "lumière éclairage"),
     e("alertes", "Batterie faible", "Casque", "seuil pourcentage"),
-    p("alertes", "Batterie faible", "Téléphone et montre", "seuil pourcentage"),
-    p("alertes", "Appels du téléphone", "Montrer l’appel en cours dans l’îlot", "sharkapp sonnerie"),
     e("minuteur", "Durées proposées", "Durées proposées", "minutes chronomètre"),
     e("minuteur", "Pomodoro", "Travail", "pomodoro minutes"),
     e("minuteur", "Pomodoro", "Pause", "pomodoro minutes"),
@@ -107,16 +99,14 @@ pub fn fold(s: &str) -> String {
         .collect()
 }
 
-/// Réglages où se retrouve chaque mot de `query` (vide : aucun), dans l'ordre de la fenêtre ;
-/// les entrées de l'édition personnelle seulement si `personal`.
-pub fn search(query: &str, personal: bool) -> Vec<&'static SearchEntry> {
+/// Réglages où se retrouve chaque mot de `query` (vide : aucun), dans l'ordre de la fenêtre.
+pub fn search(query: &str) -> Vec<&'static SearchEntry> {
     let words: Vec<String> = fold(query).split_whitespace().map(str::to_owned).collect();
     if words.is_empty() {
         return Vec::new();
     }
     ENTRIES
         .iter()
-        .filter(|e| personal || !e.personal)
         .filter(|e| {
             let hay = fold(&format!("{} {} {} {}", e.label, e.group, section_label(e.section), e.keywords));
             words.iter().all(|w| hay.contains(w.as_str()))
@@ -137,29 +127,23 @@ mod tests {
 
     #[test]
     fn accents_and_case_do_not_matter() {
-        let hits = search("LUMINOSITE", false);
+        let hits = search("LUMINOSITE");
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].section, "apparence");
-        assert_eq!(search("éCRAN plein", false).first().map(|e| e.label), Some("Masquer au-dessus d’une appli en plein écran"));
+        assert_eq!(search("éCRAN plein").first().map(|e| e.label), Some("Masquer au-dessus d’une appli en plein écran"));
     }
 
     #[test]
     fn every_word_must_match() {
-        assert!(search("casque", false).len() >= 2);
-        assert_eq!(search("casque repli", false).len(), 1);
-        assert!(search("casque introuvable", false).is_empty());
-        assert!(search("   ", false).is_empty());
-    }
-
-    #[test]
-    fn personal_entries_only_in_the_personal_edition() {
-        assert!(search("prisme", false).is_empty());
-        assert!(!search("prisme", true).is_empty());
+        assert!(search("casque").len() >= 2);
+        assert_eq!(search("casque repli").len(), 1);
+        assert!(search("casque introuvable").is_empty());
+        assert!(search("   ").is_empty());
     }
 
     #[test]
     fn section_name_and_keywords_are_searched() {
-        assert!(search("son et media", false).iter().all(|e| e.section == "son"));
-        assert_eq!(search("osd", false).len(), 1);
+        assert!(search("son et media").iter().all(|e| e.section == "son"));
+        assert_eq!(search("osd").len(), 1);
     }
 }

@@ -15,11 +15,6 @@ name = "horizon_natif"
 name = "horizon"
 path = "src/main.rs"
 
-[features]
-# Intégrations aux applis personnelles de l'auteur (Prisme, SharkApp, relais Discord de
-# BetterDiscord) : absentes de l'édition publique, celle qu'on obtient par défaut.
-personal = []
-
 [dependencies]
 horizon-core.workspace = true
 horizon-sys.workspace = true

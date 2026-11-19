@@ -1,6 +1,6 @@
 //! Minuteur et pomodoro (panneau de l'horloge). L'état vit ici, partagé par toutes les barres et
 //! conservé quand elles se rechargent ; les barres affichent le compte à rebours à partir de
-//! l'échéance. Fin ou changement de phase : alerte dans l'îlot et bref signal Prisme.
+//! l'échéance. Fin ou changement de phase : alerte dans l'îlot (et événement `timer` des plugins : Prisme y joue un bref signal).
 //!
 //! Repris de `app/src-tauri/src/timer.rs`, avec les calculs d'affichage de `app/src/lib/timer.ts`
 //! (temps restant, part écoulée, titre, durée libre saisie).
@@ -18,7 +18,6 @@ use std::time::Duration;
 
 /// Le fil se réveille au moins à ce rythme : une veille ne fait pas manquer l'échéance.
 const MAX_SLEEP: Duration = Duration::from_secs(30);
-const LIGHT_SIGNAL: Duration = Duration::from_millis(1500);
 /// Durée la plus longue d'un minuteur (`horizon_core::timer::MAX_MINUTES`).
 const MAX_MINUTES: u32 = 600;
 
@@ -83,7 +82,6 @@ fn announce(app: &AppHandle, ev: TimerEvent) {
     log::info!("minuteur : {title} ({body})");
     crate::plugins::events::emit(app, "timer", serde_json::json!({ "state": "done", "title": title }));
     crate::alerts::show(app, AlertKind::Timer, Alert::icon("timer", Severity::Attention, title, body));
-    crate::prisme::signal(app, LIGHT_SIGNAL);
 }
 
 /// Fil des échéances : dort jusqu'à la prochaine (au plus `MAX_SLEEP`) ou jusqu'à un

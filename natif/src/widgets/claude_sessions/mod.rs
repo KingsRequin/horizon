@@ -47,8 +47,6 @@ pub const BACKEND: Backend = Backend {
     ..Backend::NONE
 };
 
-/// Durée du signal lumineux.
-const LIGHT_SIGNAL: Duration = Duration::from_millis(1500);
 /// Délai maximal d'un `git status` (gros dépôt, disque lent).
 const GIT_TIMEOUT: Duration = Duration::from_secs(4);
 /// Consommation : relecture au plus toutes les 5 s (hooks en rafale), et au moins chaque
@@ -122,13 +120,10 @@ fn alert(app: &AppHandle, a: Alert) {
         return;
     }
     let opts = alert_options(app);
-    if opts.island {
+    if opts.island || opts.light {
         let island = alerts::Alert::app("Claude", "", Severity::Attention, a.name, a.message)
             .with_action(Action::Session { id: a.session_id });
-        alerts::show(app, AlertKind::Claude, island);
-    }
-    if opts.light {
-        crate::prisme::signal(app, LIGHT_SIGNAL);
+        alerts::announce(app, AlertKind::Claude, island, opts.island, opts.light);
     }
 }
 

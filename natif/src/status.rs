@@ -1,5 +1,5 @@
 //! Page « État » des réglages : l'état réel de chaque intégration (hooks Claude, relais
-//! Discord, Prisme, notifications Windows, batteries de SharkApp, quota, raccourci de la
+//! Discord, notifications Windows, quota, raccourci de la
 //! palette, fichiers de réglages, fils système relancés, démarrages ratés, mises à jour), les derniers
 //! avertissements du journal et quelques actions. Un fil relit ces états (sans le journal)
 //! toutes les 15 s : tant qu'une intégration est en échec, un témoin s'affiche sur l'icône de
@@ -19,8 +19,6 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 const PERIOD: Duration = Duration::from_secs(15);
-/// Mesure de batterie plus ancienne : SharkApp ne met plus le fichier à jour.
-const BATTERY_STALE_MS: i64 = 2 * 3_600_000;
 /// Avertissements du journal montrés, et taille de la fin du journal relue.
 const WARNINGS: usize = 3;
 const LOG_TAIL: u64 = 64 * 1024;
@@ -109,7 +107,6 @@ const COVERED: [&str; 2] = ["sessions Claude Code", "notifications"];
 
 fn checks(app: &AppHandle) -> Vec<Check> {
     let health = app.state::<Health>();
-    let now = horizon_core::time::now_ms();
     let mut out = Vec::new();
 
     // Hooks de Claude Code.
@@ -151,25 +148,14 @@ fn checks(app: &AppHandle) -> Vec<Check> {
         Check::new("discord_rpc", "Discord vocal", Level::Off, if ds.is_empty() { "démarrage…".to_owned() } else { ds })
     });
 
-    // Applis personnelles (absentes de l’édition partagée).
-    if crate::PERSONAL {
-        // Relais Discord (plugin KrispBridge).
-        let v = crate::widgets::discord_voice::voice_state(app.clone());
+    // Relais Discord (plugin BetterDiscord KrispBridge) : seulement s'il répond (Krisp).
+    let v = crate::widgets::discord_voice::voice_state(app.clone());
+    if v.available {
         let version = v.rest.get("version").and_then(|x| x.as_str()).map(|s| format!(" · KrispBridge {s}")).unwrap_or_default();
-        out.push(if !v.available {
-            Check::new("discord", "Relais Discord", Level::Off, "Discord fermé, ou relais absent (port 28642)")
-        } else if !v.bridged {
-            Check::new("discord", "Relais Discord", Level::Off, format!("connecté, mais le relais ne transmet pas les commandes{version}"))
-        } else {
+        out.push(if v.bridged {
             Check::new("discord", "Relais Discord", Level::Ok, format!("connecté, commandes transmises{version}"))
-        });
-
-        // Prisme.
-        let l = app.state::<crate::prisme::Prisme>().lighting();
-        out.push(if l.connected {
-            Check::new("prisme", "Prisme", Level::Ok, "connecté")
         } else {
-            Check::new("prisme", "Prisme", Level::Off, "ne tourne pas (éclairage, signaux)").action("prisme", "Lancer Prisme")
+            Check::new("discord", "Relais Discord", Level::Off, format!("connecté, mais le relais ne transmet pas les commandes{version}"))
         });
     }
 
@@ -181,36 +167,6 @@ fn checks(app: &AppHandle) -> Vec<Check> {
         (None, (_, true)) => Check::new("notifications", "Notifications Windows", Level::Error, "lecture impossible, nouvel essai automatique"),
         _ => Check::new("notifications", "Notifications Windows", Level::Ok, "lues"),
     });
-
-    // SharkApp (absent de l’édition partagée).
-    if crate::PERSONAL {
-        // Batteries de SharkApp.
-        let b = crate::widgets::batteries::batteries_state(app);
-        let latest = [&b.phone, &b.watch].into_iter().flatten().map(|x| x.at_ms).max();
-        let file = crate::widgets::batteries::path().is_some_and(|p| p.exists());
-        out.push(match latest {
-            _ if !file => Check::new("batteries", "Batteries (SharkApp)", Level::Off, "aucun fichier de SharkApp"),
-            Some(t) if now as i64 - t > BATTERY_STALE_MS => {
-                Check::new("batteries", "Batteries (SharkApp)", Level::Off, "mesures anciennes : SharkApp ne les met plus à jour")
-            }
-            Some(_) => Check::new("batteries", "Batteries (SharkApp)", Level::Ok, "à jour"),
-            None => Check::new("batteries", "Batteries (SharkApp)", Level::Off, "aucune mesure dans le fichier"),
-        }
-        .at("dernière mesure", latest.map(|t| t as u64)));
-
-        // Appels du téléphone (SharkApp) : fichier facultatif.
-        let phone_file = crate::phone::path().is_some_and(|p| p.exists());
-        let updated = crate::phone::last(app).map(|f| f.updated_ms).filter(|&t| t > 0);
-        out.push(match updated {
-            _ if !phone_file => Check::new("phone", "Appels du téléphone (SharkApp)", Level::Off, "aucun fichier phone.json de SharkApp"),
-            Some(t) if now.saturating_sub(t) > horizon_core::phone::STALE_MS => {
-                Check::new("phone", "Appels du téléphone (SharkApp)", Level::Ok, "au repos")
-            }
-            Some(_) => Check::new("phone", "Appels du téléphone (SharkApp)", Level::Ok, "à jour"),
-            None => Check::new("phone", "Appels du téléphone (SharkApp)", Level::Off, "fichier illisible ou vide"),
-        }
-        .at("dernière mise à jour", updated));
-    }
 
     // Quota Claude : une erreur ne compte comme panne que si le widget est affiché.
     let (error, fetched) = crate::widgets::claude_quota::health(app);
@@ -414,10 +370,6 @@ pub fn open_log() {
 /// Action d'une ligne de la page « État ».
 pub fn status_action(app: &AppHandle, id: &str) -> Result<(), String> {
     match id {
-        "prisme" => {
-            let target = horizon_sys::launch::find_app("Prisme").ok_or("Prisme introuvable dans le menu Démarrer")?;
-            horizon_sys::launch::launch(&target);
-        }
         "notifications" => horizon_sys::launch::launch("ms-settings:privacy-notifications"),
         "settings_file" => horizon_sys::launch::reveal(&crate::state::app_dir().join("settings.toml").display().to_string()),
         "layout_file" => horizon_sys::launch::reveal(&app.state::<AppState>().layout_path.display().to_string()),

@@ -22,16 +22,19 @@ pub(crate) const MIGRATION_TOP_HOVER: &str = "top-hover";
 pub(crate) const MIGRATION_WINDOWS: &str = "windows";
 /// Marque de la migration qui ajoute le widget Essaim (curseur animé) à la barre principale.
 pub(crate) const MIGRATION_ESSAIM: &str = "essaim";
+/// Marque de la migration qui remplace Éclairage et Batteries (intégrés d'avant) par les
+/// plugins Prisme et SharkApp, à la même place.
+pub(crate) const MIGRATION_PLUGINS: &str = "plugins-prisme-sharkapp";
 type Migration = (&'static str, fn(&mut BarLayout));
 
 /// Migrations qui n'ajoutent aucun widget (rien à annoncer dans « Nouveautés »).
-const SILENT: [&str; 2] = [MIGRATION_CAMEL_CASE, MIGRATION_TOP_HOVER];
+const SILENT: [&str; 3] = [MIGRATION_CAMEL_CASE, MIGRATION_TOP_HOVER, MIGRATION_PLUGINS];
 
 /// Migrations, dans l'ordre : marque gardée dans `Layout::migrations` et ajout appliqué à
 /// chaque barre. Une disposition neuve les reçoit toutes, déjà marquées ; une disposition
 /// ancienne reçoit celles qu'elle n'a pas encore (`Layout::migrate`). Une nouvelle migration
 /// s'ajoute ici seulement.
-pub(super) const MIGRATIONS: [Migration; 9] = [
+pub(super) const MIGRATIONS: [Migration; 10] = [
     (MIGRATION_SUGGESTIONS, BarLayout::add_suggestions),
     (MIGRATION_HEADSET, BarLayout::add_headset),
     (MIGRATION_WIDGETS_2, BarLayout::add_widgets_2),
@@ -41,6 +44,7 @@ pub(super) const MIGRATIONS: [Migration; 9] = [
     (MIGRATION_TOP_HOVER, BarLayout::top_hover),
     (MIGRATION_WINDOWS, BarLayout::add_windows),
     (MIGRATION_ESSAIM, BarLayout::add_essaim),
+    (MIGRATION_PLUGINS, BarLayout::migrate_to_plugins),
 ];
 
 /// Clés de réglages renommées pour suivre la convention camelCase de tous les autres
@@ -72,7 +76,7 @@ impl BarLayout {
         if self.role != BarRole::Main || self.widgets().any(|w| w.kind == WidgetKind::ESSAIM) {
             return;
         }
-        match self.right.iter().position(|w| w.kind == WidgetKind::LIGHTING) {
+        match self.right.iter().position(|w| w.kind == WidgetKind::LIGHTING || w.kind == WidgetKind::PRISME_PLUGIN) {
             Some(i) => self.right.insert(i + 1, widget(WidgetKind::ESSAIM, Value::Null)),
             None => self.insert_before(Zone::Right, WidgetKind::ESSAIM, &[WidgetKind::SYSTEM, WidgetKind::CLOCK]),
         }
@@ -83,6 +87,21 @@ impl BarLayout {
     fn top_hover(&mut self) {
         if self.role == BarRole::Top && self.interaction == Interaction::Info {
             self.interaction = Interaction::Hover;
+        }
+    }
+
+    /// Éclairage → plugin Prisme, Batteries → plugin SharkApp (même identifiant, même place ;
+    /// le seuil d'alerte de Batteries devient le réglage `seuil` du plugin).
+    fn migrate_to_plugins(&mut self) {
+        for w in self.widgets_mut() {
+            if w.kind == WidgetKind::LIGHTING {
+                w.kind = WidgetKind::PRISME_PLUGIN;
+                w.settings = Value::Null;
+            } else if w.kind == WidgetKind::BATTERIES {
+                let seuil = w.settings.get("lowAlert").cloned();
+                w.kind = WidgetKind::SHARKAPP_PLUGIN;
+                w.settings = seuil.map_or(Value::Null, |s| serde_json::json!({ "seuil": s }));
+            }
         }
     }
 
@@ -118,8 +137,9 @@ impl BarLayout {
             BarRole::Main => {
                 self.insert_before(Zone::Left, WidgetKind::DISCORD_VOICE, &[]);
                 self.insert_before(Zone::Left, WidgetKind::CALENDAR, &[]);
-                self.insert_before(Zone::Right, WidgetKind::BATTERIES, &[WidgetKind::MIC_KRISP, WidgetKind::SYSTEM, WidgetKind::CLOCK]);
-                self.insert_before(Zone::Right, WidgetKind::LIGHTING, &[WidgetKind::SYSTEM, WidgetKind::CLOCK]);
+                // Batteries et Éclairage sont devenus les plugins SharkApp et Prisme.
+                self.insert_before(Zone::Right, WidgetKind::SHARKAPP_PLUGIN, &[WidgetKind::MIC_KRISP, WidgetKind::SYSTEM, WidgetKind::CLOCK]);
+                self.insert_before(Zone::Right, WidgetKind::PRISME_PLUGIN, &[WidgetKind::SYSTEM, WidgetKind::CLOCK]);
                 self.insert_before(Zone::Right, WidgetKind::WEATHER, &[WidgetKind::CLOCK]);
             }
             BarRole::Top => {

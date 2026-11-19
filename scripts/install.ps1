@@ -6,10 +6,8 @@
 #   - installe les hooks Claude Code (suivi des sessions), sauf avec -NoClaudeHooks.
 # -From <dossier> : installe les exécutables déjà compilés de ce dossier, sans compiler (paquet
 # de scripts\package.ps1, où « Installer.cmd » lance ce script).
-# -Personal : édition personnelle de l'auteur (fonction Cargo `personal` : Prisme, SharkApp,
-# relais Discord de BetterDiscord) ; sans lui, l'édition publique.
 # Désinstaller : scripts\uninstall.ps1
-param([switch]$NoBuild, [switch]$NoClaudeHooks, [switch]$Personal, [string]$From)
+param([switch]$NoBuild, [switch]$NoClaudeHooks, [string]$From)
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -31,8 +29,7 @@ if (-not $NoBuild) {
   Write-Host "Compilation d'Horizon et de son hook Claude Code…"
   Push-Location $repo
   try {
-    $features = if ($Personal) { @('--features', 'horizon-natif/personal') } else { @() }
-    & cargo build --release -p horizon-natif -p horizon-hook @features
+    & cargo build --release -p horizon-natif -p horizon-hook
     if ($LASTEXITCODE) { throw "compilation d'Horizon échouée" }
   } finally { Pop-Location }
 }

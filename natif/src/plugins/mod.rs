@@ -311,8 +311,6 @@ fn widget_of(m: &PluginManifest) -> Option<&'static Manifest> {
             squeeze: key.3,
             clickable_on_hover: key.5,
             grows: key.4,
-            personal: false,
-            personal_settings: false,
         }))
     }))
 }

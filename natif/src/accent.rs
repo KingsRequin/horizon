@@ -66,8 +66,6 @@ fn update(app: &AppHandle, f: impl FnOnce(&mut AccentSources)) {
     if let Some(c) = bars {
         let _ = app.emit(EV_ACCENT, c);
     }
-    // Prisme filtre lui-même les répétitions.
-    app.state::<crate::prisme::Prisme>().set_accent(prisme);
     crate::plugins::events::emit(app, "accent", serde_json::json!({ "color": prisme.map(crate::plugins::events::hex) }));
 }
 

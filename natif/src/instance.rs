@@ -96,10 +96,6 @@ fn received(args: &[String]) {
     if args.iter().any(|a| a == "--quit") {
         app.exit(0);
     }
-    // Interface de Prisme (menu de l'icône de Prisme : `horizon.exe --prisme`).
-    if args.iter().any(|a| a == crate::prisme_window::ARG) {
-        crate::prisme_window::open(&app);
-    }
     // Alerte d'essai de l'îlot dynamique (`--alerte-essai <genre>`).
     if let Some(i) = args.iter().position(|a| a == "--alerte-essai") {
         crate::alerts::essai(&app, args.get(i + 1).map_or("", String::as_str));

@@ -7,7 +7,6 @@
 //! (`ui/widgets/<id>/panel.slint`, trouvé par `build.rs` : [`PANELS`]) est relié par
 //! [`Backend::panel`].
 
-pub mod batteries;
 pub mod calendar;
 pub mod claude_quota;
 pub mod claude_sessions;
@@ -15,7 +14,6 @@ pub mod clock;
 pub mod discord_voice;
 pub mod essaim;
 pub mod headset;
-pub mod lighting;
 pub mod media;
 pub mod mic_krisp;
 pub mod notifications;
@@ -46,21 +44,17 @@ pub struct Manifest {
     /// Grandit avec son nombre d'éléments : limité quand la barre manque de place, il montre
     /// « +N » et le reste au survol. Sa plus petite largeur (« +N » seul, px logiques).
     pub grows: Option<u16>,
-    /// Ne sert qu'avec une appli personnelle (absent de l'édition partagée).
-    pub personal: bool,
-    /// Édition partagée : pas de « Réglages… ».
-    pub personal_settings: bool,
 }
 
 include!(concat!(env!("OUT_DIR"), "/widgets.rs"));
 
 /// Manifeste du widget `id` ; `None` pour un genre inconnu (dossier retiré : la disposition le
-/// garde, rien n'est affiché) ou personnel dans l'édition partagée. Un plugin chargeable
+/// garde, rien n'est affiché). Un plugin chargeable
 /// (`plugin:<id>`) a le sien (`plugins::widget_manifest`).
 pub fn manifest(id: &str) -> Option<&'static Manifest> {
     MANIFESTS
         .iter()
-        .find(|m| m.id == id && (crate::PERSONAL || !m.personal))
+        .find(|m| m.id == id)
         .or_else(|| crate::plugins::widget_manifest(id))
 }
 
@@ -158,7 +152,6 @@ pub fn panel_hook(kind: &str, f: impl FnOnce(&Panel) -> Option<()>) {
 
 /// Widgets portés (ordre alphabétique).
 pub const BACKENDS: &[&Backend] = &[
-    &batteries::BACKEND,
     &calendar::BACKEND,
     &claude_quota::BACKEND,
     &claude_sessions::BACKEND,
@@ -166,7 +159,6 @@ pub const BACKENDS: &[&Backend] = &[
     &discord_voice::BACKEND,
     &essaim::BACKEND,
     &headset::BACKEND,
-    &lighting::BACKEND,
     &media::BACKEND,
     &mic_krisp::BACKEND,
     &notifications::BACKEND,
@@ -215,7 +207,6 @@ pub const LAYOUT_BOUND: &[&str] = &["calendar", "clock", "media", "mic_krisp", "
 /// Widgets qui ont une page de réglages (« Réglages… » de leurs menus) : ceux qui ont un
 /// `Settings.svelte` dans la version Tauri (pages : `ui/widget-settings/`, `ui::widget_settings`).
 const SETTINGS: &[&str] = &[
-    "batteries",
     "calendar",
     "claude_sessions",
     "headset",
@@ -227,13 +218,12 @@ const SETTINGS: &[&str] = &[
     "weather",
 ];
 
-/// Le widget `id` a des réglages dans cette édition (`settings` du registre de la version
-/// Tauri : pas dans l'édition partagée s'il est marqué `personalSettings`).
+/// Le widget `id` a des réglages (`settings` du registre de la version Tauri).
 pub fn has_settings(id: &str) -> bool {
     if horizon_core::plugin::id_of_kind(id).is_some() {
         return crate::plugins::has_settings(id);
     }
-    SETTINGS.contains(&id) && manifest(id).is_some_and(|m| crate::PERSONAL || !m.personal_settings)
+    SETTINGS.contains(&id) && manifest(id).is_some()
 }
 
 /// Portée des abonnements posés par la liaison du widget `id` à la barre `label`.
@@ -324,12 +314,11 @@ mod tests {
 
     #[test]
     fn catalogue_matches_the_widget_folders() {
-        assert_eq!(MANIFESTS.len(), 18);
+        assert_eq!(MANIFESTS.len(), 16);
         let clock = manifest("clock").unwrap();
         assert_eq!((clock.label, clock.icon, clock.squeeze), ("Horloge", "clock", None));
         assert_eq!(SQUEEZE_ORDER.first(), Some(&"suggestions"), "masqué le premier");
         assert_eq!(SQUEEZE_ORDER.last(), Some(&"system"));
-        assert!(PERSONAL_WIDGETS.contains(&"lighting"));
         assert!(manifest("inconnu").is_none());
     }
 

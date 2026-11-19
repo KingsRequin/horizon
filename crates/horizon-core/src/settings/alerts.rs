@@ -1,6 +1,6 @@
 //! Section `[alerts]` : alertes et « Ne pas déranger », réglages globaux. Avant elle, ces
 //! options étaient lues dans le premier widget de chaque genre (Notifications pour le NPD,
-//! Sessions Claude Code pour « Claude attend », Casque et Batteries pour les seuils) : une
+//! Sessions Claude Code pour « Claude attend », Casque pour le seuil) : une
 //! clé absente du fichier garde cette valeur, jusqu'au premier enregistrement depuis la
 //! fenêtre « Réglages d'Horizon ».
 
@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 pub struct AlertSettings {
     /// « Claude attend » : projet et message dans l'îlot.
     pub claude_island: Option<bool>,
-    /// « Claude attend » : signal lumineux par Prisme.
+    /// « Claude attend » : signal lumineux (événement `alert` des plugins, Prisme le joue).
     pub claude_light: Option<bool>,
     /// Pendant « Ne pas déranger », l'îlot montre quand même « Claude attend ».
     pub dnd_claude: Option<bool>,
@@ -23,12 +23,10 @@ pub struct AlertSettings {
     pub dnd_battery: Option<bool>,
     /// « Ne pas déranger » passe Discord en « Ne pas déranger ».
     pub dnd_discord: Option<bool>,
-    /// « Ne pas déranger » tient la scène `focus` de Prisme.
+    /// « Ne pas déranger » tient la scène `focus` de Prisme (événement `dnd` des plugins).
     pub dnd_light: Option<bool>,
     /// Seuil de batterie faible du casque, en % (0 = pas d'alerte).
     pub headset_low: Option<u8>,
-    /// Seuil de batterie faible du téléphone et de la montre, en % (0 = pas d'alerte).
-    pub devices_low: Option<u8>,
 }
 
 /// Seuil réglé : 0 = alerte coupée.
@@ -54,20 +52,17 @@ impl AlertSettings {
         AlertOptions { island: self.claude_island.unwrap_or(old.island), light: self.claude_light.unwrap_or(old.light) }
     }
 
-    /// Seuil de batterie faible des appareils suivis par le widget `kind` (`Headset` ou
-    /// `Batteries`) ; `None` = pas d'alerte.
-    pub fn low_threshold(&self, layout: &Layout, kind: WidgetKind) -> Option<u8> {
-        let set = if kind == WidgetKind::HEADSET { self.headset_low } else { self.devices_low };
-        match set {
+    /// Seuil de batterie faible du casque ; `None` = pas d'alerte.
+    pub fn headset_threshold(&self, layout: &Layout) -> Option<u8> {
+        match self.headset_low {
             Some(v) => threshold(v),
-            None => low_battery::threshold_in(layout, kind),
+            None => low_battery::threshold_in(layout, WidgetKind::HEADSET),
         }
     }
 
     /// Toutes les valeurs, celles d'avant comprises (pour la fenêtre de réglages).
     pub fn resolved(&self, layout: &Layout) -> AlertSettings {
         let (dnd, claude) = (self.dnd(layout), self.claude(layout));
-        let low = |kind| self.low_threshold(layout, kind).unwrap_or(0);
         AlertSettings {
             claude_island: Some(claude.island),
             claude_light: Some(claude.light),
@@ -75,15 +70,13 @@ impl AlertSettings {
             dnd_battery: Some(dnd.battery),
             dnd_discord: Some(dnd.discord),
             dnd_light: Some(dnd.light),
-            headset_low: Some(low(WidgetKind::HEADSET)),
-            devices_low: Some(low(WidgetKind::BATTERIES)),
+            headset_low: Some(self.headset_threshold(layout).unwrap_or(0)),
         }
     }
 
     /// Seuils ramenés à 100 % au plus.
     pub(super) fn bounded(mut self) -> AlertSettings {
         self.headset_low = self.headset_low.map(|v| v.min(100));
-        self.devices_low = self.devices_low.map(|v| v.min(100));
         self
     }
 }
@@ -119,12 +112,12 @@ mod tests {
             b.right.retain(|w| !matches!(w.kind, WidgetKind::CLAUDE_SESSIONS | WidgetKind::HEADSET));
         }
         assert_eq!(AlertSettings::default().claude(&l), AlertOptions { island: false, light: false });
-        assert_eq!(AlertSettings::default().low_threshold(&l, WidgetKind::HEADSET), None);
+        assert_eq!(AlertSettings::default().headset_threshold(&l), None);
         let a = AlertSettings { claude_island: Some(true), headset_low: Some(20), ..AlertSettings::default() };
         assert!(a.claude(&l).island);
-        assert_eq!(a.low_threshold(&l, WidgetKind::HEADSET), Some(20));
-        let off = AlertSettings { devices_low: Some(0), ..AlertSettings::default() };
-        assert_eq!(off.low_threshold(&l, WidgetKind::BATTERIES), None);
+        assert_eq!(a.headset_threshold(&l), Some(20));
+        let off = AlertSettings { headset_low: Some(0), ..AlertSettings::default() };
+        assert_eq!(off.headset_threshold(&l), None);
     }
 
     #[test]
@@ -132,7 +125,6 @@ mod tests {
         let l = with(WidgetKind::HEADSET, json!({ "lowAlert": 30 }));
         let r = AlertSettings::default().resolved(&l);
         assert_eq!(r.headset_low, Some(30));
-        assert_eq!(r.devices_low, Some(low_battery::DEFAULT_THRESHOLD));
         assert_eq!(r.dnd_light, Some(false));
         assert_eq!(r.claude_island, Some(true));
     }

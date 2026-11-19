@@ -47,7 +47,6 @@ fn discord_mute_ids(layout: &BarLayout) -> Vec<String> {
 
 pub fn bind(app: &AppHandle, window: &BarWindow, label: &str, layout: &BarLayout) {
     let data = window.global::<MicKrispData>();
-    data.set_personal(crate::PERSONAL);
     let ids = discord_mute_ids(layout);
     data.on_discord_mute(move |id| ids.iter().any(|i| i == id.as_str()));
     let a = app.clone();

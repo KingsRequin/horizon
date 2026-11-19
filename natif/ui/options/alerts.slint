@@ -42,10 +42,10 @@ export component AlertsSection inherits VerticalLayout {
         label: "Montrer le projet et le message dans l’îlot";
         hint: "Un clic sur l’îlot ramène le terminal de la session.";
     }
-    if OptionsData.personal: Flag {
+    Flag {
         key: "alerts.claude_light";
         checked: OptionsData.claude-light;
-        label: "Signal lumineux par Prisme (1,5 s)";
+        label: "Signal lumineux (plugin Prisme)";
         hint: "Scène « claude » de Prisme si elle existe, sinon un bref clignotement. Rien si l’éclairage est éteint.";
     }
     SettingsNote {
@@ -74,35 +74,33 @@ export component AlertsSection inherits VerticalLayout {
         key: "alerts.dnd_claude";
         checked: OptionsData.dnd-claude;
         label: "« Claude attend »";
-        hint: OptionsData.personal ? "Projet et message dans l’îlot, et signal lumineux." : "Projet et message dans l’îlot.";
+        hint: "Projet et message dans l’îlot, et signal lumineux.";
     }
     Flag {
         key: "alerts.dnd_battery";
         checked: OptionsData.dnd-battery;
         label: "Les alertes d’état";
-        hint: OptionsData.personal ? "Batterie faible (casque, téléphone, montre), serveur hors ligne." : "Batterie faible du casque, serveur hors ligne.";
+        hint: "Batterie faible du casque, serveur hors ligne.";
     }
     SettingsNote {
         text: "Les notifications ne s’affichent plus dans l’îlot (elles restent dans le panneau). La fin du minuteur s’affiche toujours.";
         above: 2px;
     }
 
-    if OptionsData.personal: VerticalLayout {
-        SettingsHeading {
-            text: "« Ne pas déranger » change aussi";
-        }
-        Flag {
-            key: "alerts.dnd_discord";
-            checked: OptionsData.dnd-discord;
-            label: "Discord en « Ne pas déranger »";
-            hint: "Le statut d’avant revient ensuite. Demande le plugin KrispBridge 1.3 et un relais qui transmet ses commandes.";
-        }
-        Flag {
-            key: "alerts.dnd_light";
-            checked: OptionsData.dnd-light;
-            label: "Prisme : scène « focus »";
-            hint: "Tenue pendant tout le « Ne pas déranger », si la scène existe ; la scène d’avant revient ensuite.";
-        }
+    SettingsHeading {
+        text: "« Ne pas déranger » change aussi";
+    }
+    Flag {
+        key: "alerts.dnd_discord";
+        checked: OptionsData.dnd-discord;
+        label: "Discord en « Ne pas déranger »";
+        hint: "Le statut d’avant revient ensuite. Demande le plugin KrispBridge 1.3 et un relais qui transmet ses commandes.";
+    }
+    Flag {
+        key: "alerts.dnd_light";
+        checked: OptionsData.dnd-light;
+        label: "Plugin Prisme : scène « focus »";
+        hint: "Tenue pendant tout le « Ne pas déranger », si la scène existe ; la scène d’avant revient ensuite.";
     }
 
     SettingsHeading {
@@ -113,25 +111,8 @@ export component AlertsSection inherits VerticalLayout {
         label: "Casque";
         value: OptionsData.headset-low;
     }
-    if OptionsData.personal: Threshold {
-        key: "alerts.devices_low";
-        label: "Téléphone et montre";
-        value: OptionsData.devices-low;
-    }
     SettingsNote {
         text: "L’îlot l’annonce une fois quand le niveau passe sous le seuil ; l’alerte revient après une remontée de 5 points ou une charge.";
         above: 2px;
-    }
-
-    if OptionsData.personal: VerticalLayout {
-        SettingsHeading {
-            text: "Appels du téléphone";
-        }
-        Flag {
-            key: "features.phone_island";
-            checked: OptionsData.phone-island;
-            label: "Montrer l’appel en cours dans l’îlot";
-            hint: "Pendant la sonnerie et l’appel : nom (ou numéro) et durée. Lu dans le fichier de SharkApp, qui met déjà la musique du PC en pause : Horizon n’y touche pas.";
-        }
     }
 }

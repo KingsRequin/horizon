@@ -285,7 +285,7 @@ chargement (sauf `alert` et `timer`).
 | `accent` | `{ color }` : couleur de la pochette en cours (sinon du fond d'écran), `#rrggbb` ou `null` |
 | `media` | `{ title, artist, playing }` |
 | `dnd` | `{ active, light }` : « Ne pas déranger » (et son option « lumière ») |
-| `alert` | `{ kind, title, shown }` : une alerte d'Horizon (`claude`, `battery`, `server`, `timer`, `notification`, `feedback`, `update`) |
+| `alert` | `{ kind, title, shown, light }` : une alerte d'Horizon (`claude`, `battery`, `server`, `timer`, `notification`, `feedback`, `update`) ; `shown` : montrée dans l'îlot ; `light` : signal lumineux voulu (réglage « Claude attend › Signal lumineux ») |
 | `timer` | `{ state: "done", title }` : fin du minuteur ou changement de phase |
 | `presence` | `{ away }` : session verrouillée ou écran éteint |
 | `foreground` | `{ exe }` : application au premier plan |

@@ -62,7 +62,6 @@ pub fn bind(app: &AppHandle, window: &SettingsWindow) {
         s.window = Some(window.as_weak());
     });
     let g = window.global::<OptionsData>();
-    g.set_personal(crate::PERSONAL);
     g.set_styles(choices(&[("islands", "Îlots", ""), ("graphic", "Graphique", "")]));
     g.set_modes(choices(&[
         ("click", "Cliquable", "Panneaux au survol, actions au clic, molette = volume"),
@@ -154,7 +153,7 @@ fn open_section(w: &SettingsWindow, section: &str) {
 fn search(text: SharedString) {
     let Some(w) = window() else { return };
     let g = w.global::<OptionsData>();
-    let hits: Vec<SearchHit> = options_search::search(&text, crate::PERSONAL)
+    let hits: Vec<SearchHit> = options_search::search(&text)
         .into_iter()
         .map(|e| SearchHit {
             section: e.section.into(),
@@ -244,7 +243,6 @@ fn fill() {
     g.set_dnd_discord(a.dnd_discord.unwrap_or(false));
     g.set_dnd_light(a.dnd_light.unwrap_or(false));
     g.set_headset_low(options::low_label(a.headset_low.unwrap_or(0)).into());
-    g.set_devices_low(options::low_label(a.devices_low.unwrap_or(0)).into());
     // Fonctions.
     let f = &s.features;
     let chosen = !f.fallback_output.trim().is_empty();
@@ -269,7 +267,6 @@ fn fill() {
     g.set_wallpaper_accent(f.wallpaper_accent);
     g.set_windows_accent(f.windows_accent);
     g.set_game_mode(f.game_mode);
-    g.set_phone_island(f.phone_island);
     g.set_auto_update(f.auto_update);
     g.set_updates(crate::update::ENABLED);
     // Nuit.
@@ -418,8 +415,8 @@ fn pick(id: &str, x: f32, y: f32) {
     let Some(view) = with(|s| s.view.clone()) else { return };
     let current = &view.settings;
     let entries: Vec<Entry> = match id {
-        "alerts.headset_low" | "alerts.devices_low" => {
-            let now = if id == "alerts.headset_low" { current.alerts.headset_low } else { current.alerts.devices_low }.unwrap_or(0);
+        "alerts.headset_low" => {
+            let now = current.alerts.headset_low.unwrap_or(0);
             options::LOW_CHOICES.iter().map(|&v| Entry::check(v.to_string(), options::low_label(v), v == now)).collect()
         }
         "features.fallback_output" => {

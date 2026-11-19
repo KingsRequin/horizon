@@ -113,11 +113,7 @@ impl AppState {
             );
         }
         let mut layout = loaded.into_layout();
-        let mut news = layout.migrate();
-        if !crate::PERSONAL {
-            layout.remove_kinds(crate::widgets::PERSONAL_WIDGETS);
-            news.retain(|k| !crate::widgets::PERSONAL_WIDGETS.contains(&k.as_str()));
-        }
+        let news = layout.migrate();
         AppState {
             layout: Mutex::new(layout),
             undo: Mutex::new(UndoStack::default()),
@@ -213,10 +209,6 @@ impl AppState {
             *l = other;
             let renamed = l.ensure_monitors(monitors);
             crate::widgets::shortcuts::fill_defaults(l);
-            if !crate::PERSONAL {
-                // Un nouvel écran reçoit la disposition de départ, qui en contient.
-                l.remove_kinds(crate::widgets::PERSONAL_WIDGETS);
-            }
             Ok(Some(renamed))
         });
         match renamed {

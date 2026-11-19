@@ -78,9 +78,8 @@ impl Settings {
         o.push_str("# « Ne pas déranger » passe Discord en « Ne pas déranger » et tient la scène « focus » de Prisme.\n");
         line(&mut o, "dnd_discord", al.dnd_discord, "true");
         line(&mut o, "dnd_light", al.dnd_light, "false");
-        o.push_str("# Batterie faible : seuil en % du casque, et du téléphone et de la montre (0 = pas d'alerte).\n");
+        o.push_str("# Batterie faible du casque : seuil en % (0 = pas d'alerte).\n");
         line(&mut o, "headset_low", al.headset_low, "15");
-        line(&mut o, "devices_low", al.devices_low, "15");
         let f = &self.features;
         let _ = write!(
             o,
@@ -95,8 +94,6 @@ impl Settings {
              fallback_output = {}
              # Appli plein écran sur l'écran principal : spectre coupé, sondages espacés.
              game_mode = {}
-             # Appel du téléphone (SharkApp) dans l'îlot.
-             phone_island = {}
              # Couleur d'accent tirée du fond d'écran (barres, ambiance de Prisme), et aussi celle
              # de Windows (windows_accent ; celle d'origine revient quand c'est coupé).
              wallpaper_accent = {}
@@ -121,7 +118,6 @@ impl Settings {
             f.headset_switch,
             quoted(&f.fallback_output),
             f.game_mode,
-            f.phone_island,
             f.wallpaper_accent,
             f.windows_accent,
             f.osd,

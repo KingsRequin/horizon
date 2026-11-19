@@ -1,17 +1,16 @@
 //! Îlot dynamique dans les barres (partie « flash » de `app/src/lib/live.svelte.ts`) : l'alerte
 //! reçue (`horizon://alert`) est montrée quelques secondes (3,2 s, ou sa durée propre), puis
-//! s'efface en fondu avant le retour du contenu habituel ; un appel du téléphone
-//! (`horizon://phone`) reste dans l'îlot tant qu'il dure (une alerte passe devant, puis l'appel
-//! revient) ; clic sur une alerte qui a une action (terminal de la session, mode édition,
+//! s'efface en fondu avant le retour du contenu habituel ; une activité durable d'un plugin (un
+//! appel du téléphone, par exemple) reste dans l'îlot tant qu'elle dure (une alerte passe devant,
+//! puis l'activité revient) ; clic sur une alerte qui a une action (terminal de la session, mode édition,
 //! capture collée). Global `FlashData` de `ui/flash.slint`, le même pour toutes les barres ; le
 //! widget qui le montre est choisi par la barre (`media-host`). Fil de l'interface.
 
 use super::{BarWindow, FlashData, icons};
 use crate::alerts::{Action, Alert, Pixels, Severity, Source};
-use crate::events::{EV_ALERT, EV_PHONE};
+use crate::events::EV_ALERT;
 use crate::host::{self, AppHandle};
 use horizon_core::layout::{BarLayout, BarStyle};
-use horizon_core::phone::{CallState, PhoneView};
 use slint::{ComponentHandle, SharedPixelBuffer};
 use std::cell::{Cell, RefCell};
 use std::time::Duration;
@@ -20,9 +19,7 @@ use std::time::Duration;
 const FLASH_MS: u64 = 3200;
 /// Fondu de sortie (`--dur-fast`).
 const FADE_OUT: Duration = Duration::from_millis(120);
-/// Numéro fixe de l'îlot d'appel : il ne rejoue pas son entrée à chaque seconde.
-const PHONE_SEQ: i32 = -1;
-/// Numéro fixe de l'îlot d'une activité de plugin.
+/// Numéro fixe de l'îlot d'une activité de plugin : il ne rejoue pas son entrée à chaque seconde.
 const ACTIVITY_SEQ: i32 = -2;
 /// Activités au plus par plugin (les plus anciennes partent).
 const MAX_ACTIVITIES: usize = 8;
@@ -73,7 +70,8 @@ fn activity_view(a: &Activity, now_ms: u64) -> View {
         body,
         claude: false,
         action_tip: "",
-        ringing: false,
+        // Activité qui demande l'attention (appel entrant) : l'îlot sonne.
+        ringing: a.attention,
     }
 }
 
@@ -129,33 +127,9 @@ fn alert_view(a: &Alert) -> View {
     }
 }
 
-/// Appel du téléphone présenté comme une alerte qui dure (`phoneAlert` de live.svelte.ts).
-fn phone_view(p: &PhoneView, now_ms: u64) -> View {
-    let (icon, body, severity) = match p.state {
-        CallState::Ringing => ("phoneIncoming", "Appel entrant…".to_owned(), Severity::Attention),
-        CallState::Active => {
-            ("phoneCall", format!("En appel · {}", super::format::clock(now_ms.saturating_sub(p.since_ms))), Severity::Info)
-        }
-        CallState::Ended | CallState::Idle => ("phoneDisconnect", "Appel terminé".to_owned(), Severity::Info),
-    };
-    View {
-        seq: PHONE_SEQ,
-        severity,
-        mark: Mark::Icon(icon),
-        title: p.label.clone(),
-        body,
-        claude: false,
-        action_tip: "",
-        ringing: p.state == CallState::Ringing,
-    }
-}
-
-/// L'alerte passagère, sinon l'appel en cours, sinon la dernière activité d'un plugin.
-fn shown(flash: Option<&Alert>, phone: Option<&PhoneView>, activity: Option<&Activity>, now_ms: u64) -> Option<View> {
-    flash
-        .map(alert_view)
-        .or_else(|| phone.map(|p| phone_view(p, now_ms)))
-        .or_else(|| activity.map(|a| activity_view(a, now_ms)))
+/// L'alerte passagère, sinon la dernière activité d'un plugin.
+fn shown(flash: Option<&Alert>, activity: Option<&Activity>, now_ms: u64) -> Option<View> {
+    flash.map(alert_view).or_else(|| activity.map(|a| activity_view(a, now_ms)))
 }
 
 #[derive(Default)]
@@ -163,7 +137,6 @@ struct State {
     flash: Option<Alert>,
     /// Fondu de sortie en cours.
     out: bool,
-    phone: Option<PhoneView>,
     /// Activités des plugins (clé « plugin:id »), la plus récente en dernier.
     activities: Vec<(String, Activity)>,
     /// Miniatures de l'alerte en cours, converties une fois.
@@ -236,7 +209,7 @@ fn apply(window: &BarWindow, view: Option<&View>, out: bool, thumbs: Option<&(sl
 fn apply_all() {
     let now = horizon_core::time::now_ms();
     let (view, out, thumbs) =
-        STATE.with_borrow(|s| (shown(s.flash.as_ref(), s.phone.as_ref(), s.activities.last().map(|a| &a.1), now), s.out, s.thumbs.clone()));
+        STATE.with_borrow(|s| (shown(s.flash.as_ref(), s.activities.last().map(|a| &a.1), now), s.out, s.thumbs.clone()));
     BARS.with_borrow_mut(|bars| {
         bars.retain(|w| w.upgrade().is_some());
         for w in bars.iter().filter_map(slint::Weak::upgrade) {
@@ -276,13 +249,6 @@ fn end_flash() {
     });
 }
 
-/// Appel du téléphone : îlot tant qu'il dure ; la durée avance chaque seconde pendant l'appel.
-fn on_phone(p: Option<PhoneView>) {
-    STATE.with_borrow_mut(|s| s.phone = p);
-    ensure_ticking();
-    apply_all();
-}
-
 /// Activité durable d'un plugin (`None` : terminée). Chronomètre : redessin chaque seconde.
 pub fn set_activity(key: String, a: Option<Activity>) {
     STATE.with_borrow_mut(|s| put_activity(&mut s.activities, key, a));
@@ -297,11 +263,9 @@ pub fn clear_plugin(id: &str) {
     apply_all();
 }
 
-/// Redessin chaque seconde tant qu'un appel ou une activité chronométrée est montré.
+/// Redessin chaque seconde tant qu'une activité chronométrée est montrée.
 fn ensure_ticking() {
-    let needed = STATE.with_borrow(|s| {
-        s.phone.as_ref().is_some_and(|p| p.state == CallState::Active) || s.activities.iter().any(|(_, a)| a.since_ms.is_some())
-    });
+    let needed = STATE.with_borrow(|s| s.activities.iter().any(|(_, a)| a.since_ms.is_some()));
     CALL.with(|t| {
         if !needed {
             t.stop();
@@ -369,12 +333,6 @@ pub fn bind(app: &AppHandle, window: &BarWindow, label: &str, bar: &BarLayout) {
                 show_flash(a);
             }
         });
-        host::listen(EV_PHONE, None, |e| {
-            if let Some(p) = e.payload::<Option<PhoneView>>() {
-                on_phone(p.clone());
-            }
-        });
-        STATE.with_borrow_mut(|s| s.phone = crate::phone::phone_state(app));
     }
     let g = window.global::<FlashData>();
     relayout(window, bar);
@@ -382,65 +340,27 @@ pub fn bind(app: &AppHandle, window: &BarWindow, label: &str, bar: &BarLayout) {
     g.on_run(move || run(&a, &l));
     BARS.with_borrow_mut(|b| b.push(window.as_weak()));
     let now = horizon_core::time::now_ms();
-    STATE.with_borrow(|s| apply(window, shown(s.flash.as_ref(), s.phone.as_ref(), s.activities.last().map(|a| &a.1), now).as_ref(), s.out, s.thumbs.as_ref()));
-    // Appel déjà en cours au lancement : sa durée avance.
-    if let Some(p) = STATE.with_borrow(|s| s.phone.clone()) {
-        on_phone(Some(p));
-    }
+    STATE.with_borrow(|s| apply(window, shown(s.flash.as_ref(), s.activities.last().map(|a| &a.1), now).as_ref(), s.out, s.thumbs.as_ref()));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn call(state: CallState) -> PhoneView {
-        PhoneView { state, label: "Léo".into(), since_ms: 1_000 }
-    }
-
     #[test]
-    fn phone_is_shown_like_an_alert_that_lasts() {
-        let v = phone_view(&call(CallState::Ringing), 5_000);
-        assert_eq!((v.mark.clone(), v.body.as_str(), v.severity, v.ringing), (Mark::Icon("phoneIncoming"), "Appel entrant…", Severity::Attention, true));
-        let v = phone_view(&call(CallState::Active), 66_000);
-        assert_eq!((v.mark.clone(), v.body.as_str(), v.severity, v.ringing), (Mark::Icon("phoneCall"), "En appel · 1:05", Severity::Info, false));
-        let v = phone_view(&call(CallState::Ended), 9_000);
-        assert_eq!((v.mark, v.body.as_str(), v.seq), (Mark::Icon("phoneDisconnect"), "Appel terminé", PHONE_SEQ));
-    }
-
-    #[test]
-    fn a_passing_alert_goes_in_front_of_the_call() {
-        let a = Alert::app("Claude", "", Severity::Attention, "deskbar".into(), "attend".into())
-            .with_action(Action::Session { id: "s".into() });
-        let p = call(CallState::Active);
-        let v = shown(Some(&a), Some(&p), None, 2_000).unwrap();
-        assert_eq!((v.title.as_str(), v.mark, v.claude, v.action_tip), ("deskbar", Mark::App("Claude".into()), true, "Afficher le terminal"));
-        assert_eq!(shown(None, Some(&p), None, 2_000).unwrap().title, "Léo");
-        assert_eq!(shown(None, None, None, 0), None);
-    }
-
-    #[test]
-    fn activities_are_capped_and_removed_with_their_plugin() {
-        let act = |t: &str| Activity { icon: "watch", title: t.into(), subtitle: String::new(), since_ms: None, attention: false };
-        let mut list = Vec::new();
-        for i in 0..20 {
-            put_activity(&mut list, format!("a:{i}"), Some(act("x")));
-        }
-        put_activity(&mut list, "b:1".into(), Some(act("b")));
-        assert_eq!(list.iter().filter(|(k, _)| k.starts_with("a:")).count(), MAX_ACTIVITIES);
-        remove_plugin_activities(&mut list, "a");
-        assert_eq!(list.len(), 1);
-        put_activity(&mut list, "b:1".into(), None);
-        assert!(list.is_empty());
-    }
-
-    #[test]
-    fn island_activity_behind_alert_and_call() {
+    fn island_activity_behind_an_alert() {
         let act = Activity { icon: "phoneCall", title: "Montre".into(), subtitle: "En charge".into(), since_ms: Some(1_000), attention: false };
         let a = Alert::icon("timer", Severity::Info, "Minuteur".into(), String::new());
-        assert_eq!(shown(Some(&a), None, Some(&act), 2_000).unwrap().title, "Minuteur");
-        assert_eq!(shown(None, Some(&call(CallState::Ringing)), Some(&act), 2_000).unwrap().title, "Léo");
-        let v = shown(None, None, Some(&act), 66_000).unwrap();
-        assert_eq!((v.title.as_str(), v.body.as_str()), ("Montre", "En charge · 1:05"));
+        assert_eq!(shown(Some(&a), Some(&act), 2_000).unwrap().title, "Minuteur");
+        let c = Alert::app("Claude", "", Severity::Attention, "deskbar".into(), "attend".into())
+            .with_action(Action::Session { id: "s".into() });
+        let v = shown(Some(&c), Some(&act), 2_000).unwrap();
+        assert_eq!((v.title.as_str(), v.mark, v.claude, v.action_tip), ("deskbar", Mark::App("Claude".into()), true, "Afficher le terminal"));
+        let v = shown(None, Some(&act), 66_000).unwrap();
+        assert_eq!((v.title.as_str(), v.body.as_str(), v.ringing), ("Montre", "En charge · 1:05", false));
+        let ring = Activity { attention: true, ..act };
+        assert!(shown(None, Some(&ring), 0).unwrap().ringing, "appel entrant : l'îlot sonne");
+        assert_eq!(shown(None, None, 0), None);
     }
 
     #[test]

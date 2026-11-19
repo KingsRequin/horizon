@@ -39,9 +39,7 @@ export component ApparenceSection inherits VerticalLayout {
         enabled: !OptionsData.locked;
         expanded: OptionsData.wallpaper-accent;
         label: "Prendre la couleur du fond d’écran quand rien ne joue";
-        hint: OptionsData.personal
-            ? "Relue chaque minute sur l’écran principal (Wallpaper Engine compris) : accent des barres, ambiance de Prisme et donc teinte d’Essaim. Pendant la lecture, c’est la pochette."
-            : "Relue chaque minute sur l’écran principal (Wallpaper Engine compris) : accent des barres. Pendant la lecture, c’est la pochette.";
+        hint: "Relue chaque minute sur l’écran principal (Wallpaper Engine compris, listes de lecture aussi) : accent des barres et des plugins (ambiance de Prisme, donc teinte d’Essaim). Pendant la lecture, c’est la pochette.";
         toggled(v) => {
             OptionsData.toggle("features.wallpaper_accent", v);
         }
