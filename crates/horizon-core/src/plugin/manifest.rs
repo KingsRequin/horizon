@@ -68,7 +68,7 @@ pub fn parse_manifest(json: &str, builtin: &[&str]) -> Result<PluginManifest, Ma
     if raw.api > API_MAX {
         return Err(err("api", format!("API {} : demande une version plus récente d'Horizon (celle-ci va jusqu'à {API_MAX})", raw.api)));
     }
-    if raw.api < API_MIN {
+    if !(API_MIN..).contains(&raw.api) {
         return Err(err("api", format!("API {} trop ancienne (Horizon demande au moins {API_MIN})", raw.api)));
     }
     let p = &raw.permissions;
