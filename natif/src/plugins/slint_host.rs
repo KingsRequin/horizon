@@ -187,6 +187,12 @@ impl Surface {
         Some(Image::from_rgba8_premultiplied(px))
     }
 
+    /// À redessiner (une valeur a changé) : un élément conditionnel (`if`) ou répété (`for`)
+    /// qui apparaît n'est créé qu'au dessin suivant, rien d'autre ne le déclencherait.
+    pub fn touch(&self) {
+        self.win.request_redraw();
+    }
+
     /// Transmet un événement de souris.
     pub fn pointer(&self, ev: Pointer) {
         let w = self.win.window();

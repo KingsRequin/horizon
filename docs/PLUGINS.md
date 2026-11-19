@@ -319,6 +319,10 @@ minuteurs rapides ; garder les calculs courts.
 
 ## 9. Pièges connus
 
+- La largeur du widget vient de sa mise en page : le contenu du `Window` doit être dans un
+  `VerticalLayout` ou un `HorizontalLayout`. Un `if` posé directement sous le `Window` n'a pas de
+  largeur (le widget reste invisible) : le mettre **dans** la mise en page
+  (`VerticalLayout { if cond: Island { … } }`).
 - Dans un `Rectangle` simple, un enfant est centré par défaut : `x: 0;` pour le coller à
   gauche.
 - Un `TouchArea` déclaré après d'autres éléments les recouvre et prend leurs clics : le placer

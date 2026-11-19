@@ -247,15 +247,15 @@ mod tests {
 
     #[test]
     fn new_permission_needs_consent_again() {
-        let entry = StoreEntry { disabled: None, accepted: Permissions::default() };
+        let entry = StoreEntry { disabled: None, accepted: Permissions::default(), library: false };
         assert!(matches!(state_of(&perms(), Some(&entry)), PluginState::NeedsConsent(_)));
     }
 
     #[test]
     fn same_permissions_stay_accepted() {
-        let entry = StoreEntry { disabled: None, accepted: perms() };
+        let entry = StoreEntry { disabled: None, accepted: perms(), library: false };
         assert_eq!(state_of(&perms(), Some(&entry)), PluginState::Ok);
-        let off = StoreEntry { disabled: Some(Disabled::User), accepted: perms() };
+        let off = StoreEntry { disabled: Some(Disabled::User), accepted: perms(), library: false };
         assert_eq!(state_of(&perms(), Some(&off)), PluginState::Disabled(Disabled::User));
     }
 }

@@ -22,6 +22,8 @@ pub struct StoreEntry {
     pub disabled: Option<Disabled>,
     /// Permissions acceptées par l'utilisateur.
     pub accepted: Permissions,
+    /// Installé depuis la bibliothèque (mis à jour par elle) ; sinon plugin local.
+    pub library: bool,
 }
 
 /// Contenu du fichier.
@@ -61,7 +63,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("plugins.json");
         let mut s = Store::new();
-        s.insert("prisme".into(), StoreEntry { disabled: Some(Disabled::TooHeavy), accepted: Permissions::default() });
+        s.insert("prisme".into(), StoreEntry { disabled: Some(Disabled::TooHeavy), accepted: Permissions::default(), library: true });
         save(&p, &s).unwrap();
         assert_eq!(load(&p), s);
         std::fs::write(&p, "pas du json").unwrap();
