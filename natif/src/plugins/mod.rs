@@ -47,6 +47,25 @@ pub const PANEL: crate::widgets::Panel = crate::widgets::Panel {
     hidden: Some(|_, host, kind| view::panel_hidden(&host.label, instance_of_panel(kind))),
 };
 
+/// Coupe un plugin qui dépasse son budget, et le dit dans l'îlot.
+fn disable_for_budget(app: &AppHandle, id: &str, reason: Disabled) {
+    let plugins = app.state::<Plugins>();
+    let name = plugins.manifest(id).map_or_else(|| id.to_owned(), |m| m.name.clone());
+    let why = match reason {
+        Disabled::TooHeavy => "trop gourmand",
+        _ => "erreurs répétées",
+    };
+    log::warn!("plugin {id} désactivé : {why}");
+    plugins.set_disabled(app, id, Some(reason));
+    let alert = crate::alerts::Alert::icon(
+        "warning",
+        crate::alerts::Severity::Attention,
+        format!("{name} désactivé"),
+        format!("{why} · page État pour le réactiver"),
+    );
+    crate::alerts::show(app, horizon_core::dnd::AlertKind::Feedback, alert);
+}
+
 /// Exemplaire d'un genre de panneau de plugin (son dernier segment).
 fn instance_of_panel(kind: &str) -> &str {
     kind.rsplit(':').next().unwrap_or_default()
@@ -123,8 +142,34 @@ impl Plugins {
     }
 
     /// Temps passé par le script ou le rendu du plugin `id` (µs).
-    pub fn script_cost(&self, id: &str, us: u64) {
+    pub fn record_cost(&self, id: &str, us: u64) {
         lock(&self.budgets).entry(id.to_owned()).or_default().record(horizon_core::time::now_ms(), us);
+    }
+
+    /// Part d'un cœur utilisée par le plugin `id` sur la dernière minute.
+    pub fn load(&self, id: &str) -> f32 {
+        lock(&self.budgets).get(id).map_or(0.0, |b| b.load(horizon_core::time::now_ms()))
+    }
+
+    /// Dernier plantage du script du plugin `id`.
+    pub fn last_crash(&self, id: &str) -> Option<String> {
+        lock(&self.crashes).get(id).cloned()
+    }
+
+    /// Plugins chargés qui dépassent leur budget : (id, raison).
+    fn over_budget(&self) -> Vec<(String, Disabled)> {
+        use horizon_core::plugin::budget::Verdict;
+        let now = horizon_core::time::now_ms();
+        let loaded: Vec<String> = lock(&self.registry).entries.iter().filter(|(_, e)| e.state == PluginState::Ok).map(|(k, _)| k.clone()).collect();
+        let budgets = lock(&self.budgets);
+        loaded
+            .into_iter()
+            .filter_map(|id| match budgets.get(&id)?.verdict(now) {
+                Verdict::Ok => None,
+                Verdict::TooHeavy => Some((id, Disabled::TooHeavy)),
+                Verdict::Crashing => Some((id, Disabled::Crashing)),
+            })
+            .collect()
     }
 
     /// Le script du plugin `id` a planté.
@@ -165,6 +210,11 @@ impl Plugins {
 
     /// Active ou désactive un plugin (`reason` : pourquoi il est désactivé ; `None` = activé).
     pub fn set_disabled(&self, app: &AppHandle, id: &str, reason: Option<Disabled>) {
+        // Réactivé ou coupé : il repart d'un budget neuf.
+        lock(&self.budgets).remove(id);
+        if reason.is_none() {
+            lock(&self.crashes).remove(id);
+        }
         self.edit_store(app, |r| r.store.entry(id.to_owned()).or_default().disabled = reason);
     }
 
@@ -193,8 +243,8 @@ impl Plugins {
 
 /// Manifestes de widget des plugins chargeables, par genre (`plugin:<id>`), pour
 /// `widgets::manifest` (appelé de tous les fils).
-/// Avec le manifeste : le plugin a un panneau.
-static WIDGETS: RwLock<BTreeMap<String, (&'static Manifest, bool)>> = RwLock::new(BTreeMap::new());
+/// Avec le manifeste : le plugin a un panneau, des réglages.
+static WIDGETS: RwLock<BTreeMap<String, (&'static Manifest, bool, bool)>> = RwLock::new(BTreeMap::new());
 
 /// Manifeste de widget du genre `kind` s'il est celui d'un plugin chargeable.
 pub fn widget_manifest(kind: &str) -> Option<&'static Manifest> {
@@ -204,6 +254,11 @@ pub fn widget_manifest(kind: &str) -> Option<&'static Manifest> {
 /// Le genre `kind` est celui d'un plugin chargeable qui a un panneau.
 pub fn has_panel(kind: &str) -> bool {
     WIDGETS.read().unwrap_or_else(|e| e.into_inner()).get(kind).is_some_and(|w| w.1)
+}
+
+/// Le genre `kind` est celui d'un plugin chargeable qui a des réglages.
+pub fn has_settings(kind: &str) -> bool {
+    WIDGETS.read().unwrap_or_else(|e| e.into_inner()).get(kind).is_some_and(|w| w.2)
 }
 
 /// Genres de widget des plugins chargeables (menu « Ajouter un widget »).
@@ -237,12 +292,12 @@ fn widget_of(m: &PluginManifest) -> Option<&'static Manifest> {
 
 /// Recopie les manifestes de widget des plugins chargeables dans [`WIDGETS`].
 fn publish(r: &Registry) {
-    let table: BTreeMap<String, (&'static Manifest, bool)> = r
+    let table: BTreeMap<String, (&'static Manifest, bool, bool)> = r
         .entries
         .values()
         .filter(|e| e.state == PluginState::Ok)
-        .filter_map(|e| e.manifest.as_deref().and_then(|m| Some((widget_of(m)?, m.panel))))
-        .map(|(w, panel)| (w.id.to_owned(), (w, panel)))
+        .filter_map(|e| e.manifest.as_deref().and_then(|m| Some((widget_of(m)?, m.panel, !m.settings.is_empty()))))
+        .map(|(w, panel, settings)| (w.id.to_owned(), (w, panel, settings)))
         .collect();
     *WIDGETS.write().unwrap_or_else(|e| e.into_inner()) = table;
 }
@@ -301,6 +356,15 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     }
     script::start(app)?;
     events::start(app)?;
+    let a = app.clone();
+    start_thread("plugins-budget", move || {
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+            for (id, reason) in a.state::<Plugins>().over_budget() {
+                disable_for_budget(&a, &id, reason);
+            }
+        }
+    })?;
     let a = app.clone();
     start_thread("plugins-dossier", move || {
         let t0 = Instant::now();

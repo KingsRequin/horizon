@@ -230,6 +230,9 @@ const SETTINGS: &[&str] = &[
 /// Le widget `id` a des réglages dans cette édition (`settings` du registre de la version
 /// Tauri : pas dans l'édition partagée s'il est marqué `personalSettings`).
 pub fn has_settings(id: &str) -> bool {
+    if horizon_core::plugin::id_of_kind(id).is_some() {
+        return crate::plugins::has_settings(id);
+    }
     SETTINGS.contains(&id) && manifest(id).is_some_and(|m| crate::PERSONAL || !m.personal_settings)
 }
 

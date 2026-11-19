@@ -1,0 +1,95 @@
+// Réglages d'un widget de plugin, générés depuis `settings` de son plugin.json
+// (src/ui/widget_settings/plugin.rs) : une ligne par réglage, selon son genre.
+
+import { SettingCheck } from "../settings/check.slint";
+import { SettingRow } from "../settings/row.slint";
+import { CommitField, NumberField, SelectField } from "../settings/field.slint";
+import { SettingsNote } from "../settings/text.slint";
+import { Theme } from "../theme.slint";
+
+// Genre : 0 case à cocher, 1 nombre, 2 texte, 3 choix, 4 couleur, 5 secret.
+export struct PluginSettingRow {
+    key: string,
+    label: string,
+    kind: int,
+    checked: bool,
+    number: int,
+    minimum: int,
+    maximum: int,
+    step: int,
+    text: string,
+    // Choix : texte de l'option retenue ; secret : vrai s'il est enregistré.
+    choice: string,
+    saved: bool,
+}
+
+export global PluginSettingsData {
+    in property <[PluginSettingRow]> rows;
+    callback set-bool(string, bool);
+    callback set-number(string, int);
+    callback set-text(string, string);
+    callback set-secret(string, string);
+    // Liste déroulante d'un choix : position du champ dans la fenêtre.
+    callback open-choice(string, length, length);
+}
+
+export component PluginSettings inherits VerticalLayout {
+    if PluginSettingsData.rows.length == 0: SettingsNote {
+        text: "Ce plugin n’a pas de réglages.";
+        font-size: Theme.fs-meta;
+    }
+    for r in PluginSettingsData.rows: VerticalLayout {
+        if r.kind == 0: SettingCheck {
+            checked: r.checked;
+            label: r.label;
+            toggled(v) => {
+                PluginSettingsData.set-bool(r.key, v);
+            }
+        }
+        if r.kind == 1: SettingRow {
+            label: r.label;
+            NumberField {
+                value: r.number;
+                minimum: r.minimum;
+                maximum: r.maximum;
+                step: r.step;
+                committed(v) => {
+                    PluginSettingsData.set-number(r.key, v);
+                }
+            }
+        }
+        if r.kind == 2 || r.kind == 4: SettingRow {
+            label: r.label;
+            hint: r.kind == 4 ? "Couleur #rrggbb" : "";
+            CommitField {
+                width: 220px;
+                value: r.text;
+                committed(v) => {
+                    PluginSettingsData.set-text(r.key, v);
+                }
+            }
+        }
+        if r.kind == 3: SettingRow {
+            label: r.label;
+            choice := SelectField {
+                width: 220px;
+                text: r.choice;
+                open(x, y) => {
+                    PluginSettingsData.open-choice(r.key, x, y);
+                }
+            }
+        }
+        if r.kind == 5: SettingRow {
+            label: r.label;
+            hint: r.saved ? "Enregistré dans le Gestionnaire d’identifiants de Windows. Saisir pour remplacer." : "Gardé dans le Gestionnaire d’identifiants de Windows.";
+            CommitField {
+                width: 220px;
+                value: "";
+                placeholder: r.saved ? "••••••••" : "";
+                committed(v) => {
+                    PluginSettingsData.set-secret(r.key, v);
+                }
+            }
+        }
+    }
+}

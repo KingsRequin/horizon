@@ -8,6 +8,7 @@ pub mod audio;
 pub mod autostart;
 pub mod bluetooth_battery;
 pub mod capture;
+pub mod credentials;
 pub mod com;
 pub mod exeicon;
 pub mod foreground;

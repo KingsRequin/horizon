@@ -419,8 +419,14 @@ fn tick() {
         } else {
             (preferred.0, job.placed.1)
         };
+        let t = std::time::Instant::now();
         let image = if size.0 > 0.0 && size.1 > 0.0 { surface.render(size.0, size.1) } else { None };
         drop(surface);
+        if image.is_some()
+            && let Some((app, plugin)) = STATE.with_borrow(|s| Some((s.app.clone()?, s.views.get(&job.key)?.plugin.clone())))
+        {
+            app.state::<Plugins>().record_cost(&plugin, t.elapsed().as_micros() as u64);
+        }
         let dirty = image.is_some() || preferred != job.preferred;
         if dirty {
             STATE.with_borrow_mut(|s| {

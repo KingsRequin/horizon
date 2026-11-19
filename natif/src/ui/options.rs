@@ -480,7 +480,7 @@ fn show_status(view: crate::status::StatusView, now: u64) {
                 Some(at) => format!("{} · {} {}", c.detail, at.label, super::time::ago(at.ms, now)),
                 None => c.detail.clone(),
             };
-            let (action_id, action_label) = c.action.unwrap_or_default();
+            let (action_id, action_label) = c.action.clone().unwrap_or_default();
             StatusRow {
                 id: c.id.clone().into(),
                 label: c.label.clone().into(),

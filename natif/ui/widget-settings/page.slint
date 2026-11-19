@@ -3,6 +3,7 @@
 // (une par fichier de ce dossier), ou un lien vers les « Réglages d'Horizon » pour les widgets
 // dont les réglages sont communs à toutes les barres. Service : src/ui/widget_settings/.
 
+import { PluginSettings } from "plugin.slint";
 import { Theme } from "../theme.slint";
 import { SettingsLayout } from "../settings/layout.slint";
 import { SettingsScroll } from "../settings/scroll.slint";
@@ -116,6 +117,7 @@ export component WidgetSettingsPage inherits Rectangle {
                 WidgetSettingsData.set-discord-mute(v);
             }
         }
+        if root.kind.starts-with("plugin:"): PluginSettings { }
         if root.kind == "weather": WeatherSettings { }
         if root.kind == "suggestions": SuggestionsSettings { }
         if root.kind == "calendar": CalendarSettings { }

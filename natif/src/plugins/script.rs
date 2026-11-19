@@ -80,7 +80,13 @@ fn instances(app: &AppHandle) -> HashMap<String, Vec<Instance>> {
         let Some(m) = plugins.manifest(&plugin) else { continue };
         let mut values = defaults(&m.settings);
         for spec in &m.settings {
-            if let Some(v) = stored.get(&spec.key) {
+            if spec.kind == horizon_core::plugin::SettingKind::Secret {
+                // Lu dans le Gestionnaire d'identifiants (jamais dans la disposition).
+                let target = crate::ui::widget_settings::plugin::secret_target(&plugin, &id, &spec.key);
+                if let Some(secret) = horizon_sys::credentials::read(&target) {
+                    values.insert(spec.key.clone(), Json::String(secret));
+                }
+            } else if let Some(v) = stored.get(&spec.key) {
                 values.insert(spec.key.clone(), coerce(spec, v));
             }
         }
@@ -222,7 +228,7 @@ fn from_js(app: &AppHandle, m: FromJs) {
             log::warn!("plugin {id} : {message}");
             app.state::<Plugins>().script_crashed(app, &id, message);
         }
-        FromJs::Cost { id, us } => app.state::<Plugins>().script_cost(&id, us),
+        FromJs::Cost { id, us } => app.state::<Plugins>().record_cost(&id, us),
         FromJs::Island { id, key, spec } => {
             let activity = spec.map(|s| crate::ui::island::Activity {
                 icon: crate::ui::icons::static_name(s["icon"].as_str().unwrap_or_default()).unwrap_or("squaresFour"),

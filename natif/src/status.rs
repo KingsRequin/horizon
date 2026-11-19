@@ -45,7 +45,7 @@ pub struct Check {
     /// Fait daté (dernier hook reçu, dernière mesure…), affiché « il y a … ».
     pub at: Option<Dated>,
     /// Action proposée : (identifiant pour `status_action`, libellé du bouton).
-    pub action: Option<(&'static str, &'static str)>,
+    pub action: Option<(String, &'static str)>,
 }
 
 #[derive(Debug, Clone)]
@@ -64,8 +64,8 @@ impl Check {
         self
     }
 
-    fn action(mut self, id: &'static str, label: &'static str) -> Check {
-        self.action = Some((id, label));
+    fn action(mut self, id: impl Into<String>, label: &'static str) -> Check {
+        self.action = Some((id.into(), label));
         self
     }
 }
@@ -259,12 +259,61 @@ fn checks(app: &AppHandle) -> Vec<Check> {
     // Mise à jour automatique (versions publiées seulement).
     out.push(update_check(app));
 
+    // Plugins.
+    out.extend(plugin_checks(app));
+
     // Présence (pause pendant une absence).
     out.push(if horizon_sys::presence::away() {
         Check::new("presence", "Présence", Level::Off, "absent (session verrouillée ou écran éteint) : en pause")
     } else {
         Check::new("presence", "Présence", Level::Ok, "présent")
     });
+    out
+}
+
+/// Une ligne par plugin (état, coût, accord à donner), et le dossier des plugins.
+fn plugin_checks(app: &AppHandle) -> Vec<Check> {
+    use crate::plugins::{Disabled, PluginState, Plugins};
+    let plugins = app.state::<Plugins>();
+    let mut out = Vec::new();
+    for p in plugins.list() {
+        let name = p.manifest.as_ref().map_or_else(|| p.id.clone(), |m| m.name.clone());
+        let label = format!("Plugin : {name}");
+        let version = p.manifest.as_ref().map(|m| format!("{} · ", m.version)).unwrap_or_default();
+        let id = format!("plugin:{}", p.id);
+        let c = match &p.state {
+            PluginState::Ok => {
+                let load = plugins.load(&p.id) * 100.0;
+                let mut detail = format!("{version}actif · {load:.1} % d’un cœur");
+                if let Some(e) = &p.error {
+                    detail.push_str(&format!(" · nouvelle version refusée (l’ancienne reste) : {e}"));
+                } else if let Some(crash) = plugins.last_crash(&p.id) {
+                    detail.push_str(&format!(" · dernière erreur du script : {crash}"));
+                }
+                let level = if p.error.is_some() { Level::Error } else { Level::Ok };
+                Check::new(&id, &label, level, detail).action(format!("plugin_disable:{}", p.id), "Désactiver")
+            }
+            PluginState::NeedsConsent(asks) => Check::new(&id, &label, Level::Off, format!("{version}attend ton accord : {}", asks.join(" ; ")))
+                .action(format!("plugin_accept:{}", p.id), "Autoriser"),
+            PluginState::Disabled(Disabled::User) => {
+                Check::new(&id, &label, Level::Off, format!("{version}désactivé")).action(format!("plugin_enable:{}", p.id), "Activer")
+            }
+            PluginState::Disabled(Disabled::TooHeavy) => Check::new(&id, &label, Level::Error, format!("{version}désactivé : trop gourmand (plus de 2 % d’un cœur)"))
+                .action(format!("plugin_enable:{}", p.id), "Réactiver"),
+            PluginState::Disabled(Disabled::Crashing) => {
+                let crash = plugins.last_crash(&p.id).unwrap_or_default();
+                Check::new(&id, &label, Level::Error, format!("{version}désactivé : erreurs répétées du script · {crash}"))
+                    .action(format!("plugin_enable:{}", p.id), "Réactiver")
+            }
+            PluginState::Broken => Check::new(&id, &label, Level::Error, p.error.clone().unwrap_or_else(|| "invalide".into()))
+                .action(format!("plugin_folder:{}", p.id), "Ouvrir le dossier"),
+        };
+        out.push(c);
+    }
+    let dir = crate::plugins::plugins_dir();
+    let count = out.len();
+    let detail = if count == 0 { format!("aucun plugin dans {}", dir.display()) } else { format!("{count} dans {}", dir.display()) };
+    out.push(Check::new("plugins", "Plugins", if count == 0 { Level::Off } else { Level::Ok }, detail).action("plugins_dir", "Ouvrir le dossier"));
     out
 }
 
@@ -388,7 +437,20 @@ pub fn status_action(app: &AppHandle, id: &str) -> Result<(), String> {
         "layout_file" => horizon_sys::launch::reveal(&app.state::<AppState>().layout_path.display().to_string()),
         "update_check" => crate::update::check_now(app),
         "update_now" => crate::update::install_now(app)?,
-        _ => return Err(format!("action inconnue : {id}")),
+        "plugins_dir" => horizon_sys::launch::launch(&crate::plugins::plugins_dir().display().to_string()),
+        other => {
+            let plugins = app.state::<crate::plugins::Plugins>();
+            match other.split_once(':') {
+                Some(("plugin_accept", p)) => plugins.accept(app, p),
+                Some(("plugin_enable", p)) => plugins.set_disabled(app, p, None),
+                Some(("plugin_disable", p)) => plugins.set_disabled(app, p, Some(crate::plugins::Disabled::User)),
+                Some(("plugin_folder", p)) => {
+                    let dir = plugins.list().into_iter().find(|i| i.id == p).map(|i| i.dir).ok_or("plugin introuvable")?;
+                    horizon_sys::launch::launch(&dir.display().to_string());
+                }
+                _ => return Err(format!("action inconnue : {id}")),
+            }
+        }
     }
     wake(app);
     Ok(())

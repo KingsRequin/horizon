@@ -12,6 +12,7 @@
 //! « Réglages d'Horizon » (`GlobalLink`).
 
 mod calendar;
+pub mod plugin;
 mod servers;
 mod shortcuts;
 mod suggestions;
@@ -150,6 +151,7 @@ pub fn bind(app: &AppHandle, window: &SettingsWindow) {
     let a = app.clone();
     g.on_open_options(move |section| crate::settings_window::open(&a, SettingsPage::Options(section.to_string())));
     calendar::bind(window);
+    plugin::bind(window);
     servers::bind(window);
     shortcuts::bind(window);
     suggestions::bind(window);
@@ -178,6 +180,7 @@ pub fn show(app: &AppHandle, window: &SettingsWindow, id: &str) {
         "shortcuts" => shortcuts::show(window, &settings),
         "suggestions" => suggestions::show(app, window),
         "weather" => weather::show(window, &settings),
+        k if horizon_core::plugin::id_of_kind(k).is_some() => plugin::show(window, k, &settings),
         _ => {}
     }
     // Genre posé en dernier : la page du genre se construit avec ses données.
