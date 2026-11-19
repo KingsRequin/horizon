@@ -28,6 +28,7 @@ pub mod night;
 pub mod notifs;
 pub mod palette;
 pub mod phone;
+pub mod plugin;
 pub mod quota;
 pub mod resume;
 pub mod series;
