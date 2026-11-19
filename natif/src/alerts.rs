@@ -130,7 +130,12 @@ pub fn allowed(app: &AppHandle, kind: AlertKind) -> bool {
 
 /// Montre une alerte dans l'îlot, sauf si « Ne pas déranger » la masque ; vrai si elle part.
 pub fn show(app: &AppHandle, kind: AlertKind, alert: Alert) -> bool {
-    if !allowed(app, kind) {
+    let shown = allowed(app, kind);
+    if kind != AlertKind::Plugin {
+        let payload = serde_json::json!({ "kind": crate::plugins::events::alert_name(kind), "title": alert.title, "shown": shown });
+        crate::plugins::events::emit(app, "alert", payload);
+    }
+    if !shown {
         log::debug!("îlot : « {} » masquée (ne pas déranger)", alert.title);
         return false;
     }

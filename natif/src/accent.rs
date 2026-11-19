@@ -68,6 +68,7 @@ fn update(app: &AppHandle, f: impl FnOnce(&mut AccentSources)) {
     }
     // Prisme filtre lui-même les répétitions.
     app.state::<crate::prisme::Prisme>().set_accent(prisme);
+    crate::plugins::events::emit(app, "accent", serde_json::json!({ "color": prisme.map(crate::plugins::events::hex) }));
 }
 
 /// Accent courant des fenêtres, pour une fenêtre qui s'ouvre (commande `accent_state`).

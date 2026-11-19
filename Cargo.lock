@@ -1663,6 +1663,7 @@ dependencies = [
  "tiny_http",
  "tungstenite",
  "ureq",
+ "url",
  "windows 0.62.2",
 ]
 

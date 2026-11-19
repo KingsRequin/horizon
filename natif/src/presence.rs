@@ -15,6 +15,7 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     start_thread("presence-hub", move || {
         for away in rx {
             log::info!("{}", if away { "absence (session verrouillée ou écran éteint) : pause" } else { "retour : reprise" });
+            crate::plugins::events::emit(&app, "presence", serde_json::json!({ "away": away }));
             app.state::<crate::widgets::media::audio::AudioHub>().wake();
             app.state::<crate::autohide::Autohide>().wake();
         }

@@ -99,7 +99,7 @@ pub fn reconcile(app: &AppHandle) {
         send(ToJs::Unload(id));
     }
     for (id, list) in wanted {
-        let Some((_, dir, generation, _)) = plugins.loadable(&id) else {
+        let Some((manifest, dir, generation, _)) = plugins.loadable(&id) else {
             if LOADED.with_borrow_mut(|l| l.remove(&id)).is_some() {
                 send(ToJs::Unload(id));
             }
@@ -123,7 +123,14 @@ pub fn reconcile(app: &AppHandle) {
                     l.insert(id.clone(), Loaded { generation, instances: list.clone(), dir, values: Vec::new(), callbacks: Vec::new() })
                 });
                 match main {
-                    Some(main) => send(ToJs::Load { id, main, instances: list }),
+                    Some(main) => {
+                        let permissions = manifest.permissions.clone();
+                        let replay = super::events::replay(&permissions);
+                        send(ToJs::Load { id: id.clone(), main, instances: list, permissions });
+                        for (name, payload) in replay {
+                            send(ToJs::Event { id: id.clone(), name, payload });
+                        }
+                    }
                     // Plugin sans script (interface seule).
                     None => send(ToJs::Unload(id)),
                 }
@@ -216,6 +223,63 @@ fn from_js(app: &AppHandle, m: FromJs) {
             app.state::<Plugins>().script_crashed(app, &id, message);
         }
         FromJs::Cost { id, us } => app.state::<Plugins>().script_cost(&id, us),
+        FromJs::Island { id, key, spec } => {
+            let activity = spec.map(|s| crate::ui::island::Activity {
+                icon: crate::ui::icons::static_name(s["icon"].as_str().unwrap_or_default()).unwrap_or("squaresFour"),
+                title: text(&s["title"], 120),
+                subtitle: text(&s["subtitle"], 160),
+                since_ms: s["since"].as_u64(),
+                attention: s["severity"].as_str() == Some("attention"),
+            });
+            crate::ui::island::set_activity(format!("{id}:{key}"), activity);
+        }
+        FromJs::Alert { id, spec } => {
+            let icon = crate::ui::icons::static_name(spec["icon"].as_str().unwrap_or_default()).unwrap_or("squaresFour");
+            let alert = crate::alerts::Alert::icon(icon, crate::alerts::Severity::Info, text(&spec["title"], 120), text(&spec["body"], 200));
+            log::info!("plugin {id} : alerte « {} »", alert.title);
+            crate::alerts::show(app, horizon_core::dnd::AlertKind::Plugin, alert);
+        }
+        FromJs::Palette { id, entries } => {
+            let list = entries
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|e| {
+                            let key = e["id"].as_str()?.chars().take(64).collect();
+                            let icon = crate::ui::icons::static_name(e["icon"].as_str().unwrap_or_default()).unwrap_or("squaresFour");
+                            Some(super::PaletteEntry { id: key, label: text(&e["label"], 80), icon })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            app.state::<Plugins>().set_palette(&id, list);
+        }
+        FromJs::Open { url } => {
+            if let Err(e) = crate::web::url_open(&url) {
+                log::warn!("plugin : lien {url} : {e}");
+            }
+        }
         FromJs::Quit => {}
     }
+}
+
+/// Texte d'un champ JSON, raccourci à `max` caractères.
+fn text(v: &Json, max: usize) -> String {
+    v.as_str().unwrap_or_default().chars().take(max).collect()
+}
+
+/// Événement d'Horizon vers les scripts chargés qui l'ont déclaré (`events::emit`).
+pub fn event(app: &AppHandle, name: &str, payload: &Json) {
+    let plugins = app.state::<Plugins>();
+    let ids: Vec<String> = LOADED.with_borrow(|l| l.keys().cloned().collect());
+    for id in ids {
+        if plugins.manifest(&id).is_some_and(|m| m.permissions.allows_event(name)) {
+            send(ToJs::Event { id, name: name.to_owned(), payload: payload.clone() });
+        }
+    }
+}
+
+/// Entrée de palette d'un plugin choisie.
+pub fn palette_choice(id: &str, entry: &str) {
+    send(ToJs::Event { id: id.to_owned(), name: "palette".to_owned(), payload: Json::String(entry.to_owned()) });
 }

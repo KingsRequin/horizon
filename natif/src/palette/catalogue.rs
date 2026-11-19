@@ -53,6 +53,8 @@ pub(super) enum Action {
     BringWindow(isize),
     /// Fenêtre au premier plan sans la déplacer.
     FocusWindow(isize),
+    /// Entrée d'un plugin : (plugin, entrée).
+    Plugin(String, String),
 }
 
 /// Icône d'une entrée, rendue par la fenêtre (`ui::palette`).
@@ -180,6 +182,17 @@ pub(super) fn catalogue(app: &AppHandle) -> Vec<Entry> {
                 .keywords("profil disposition")
                 .action("Activer", Action::Profile(p.id.clone())),
         );
+    }
+
+    // Entrées des plugins.
+    for p in app.state::<crate::plugins::Plugins>().palette_entries() {
+        for e in p.entries {
+            out.push(
+                Entry::new(format!("plugin:{}:{}", p.plugin, e.id), format!("{} : {}", p.name, e.label), p.name.clone(), glyph(e.icon))
+                    .keywords(format!("plugin {} {}", p.name, e.label))
+                    .action("Lancer", Action::Plugin(p.plugin.clone(), e.id)),
+            );
+        }
     }
 
     // Scènes Prisme.
@@ -399,6 +412,10 @@ pub(super) fn run_action(app: &AppHandle, a: Action) -> Result<(), String> {
         }
         Action::Suggestion(k) => crate::widgets::suggestions::suggestions_open(app, &k),
         Action::Profile(id) => crate::profiles::switch(app, &id),
+        Action::Plugin(id, entry) => {
+            crate::plugins::script::palette_choice(&id, &entry);
+            Ok(())
+        }
         Action::Scene(s) => crate::prisme::lighting_set_scene(app.clone(), s),
         Action::LightToggle => crate::prisme::lighting_toggle(app.clone()),
         Action::Mic => crate::widgets::mic_krisp::mic_toggle(app.clone()),

@@ -8,8 +8,10 @@
 //! [`FromJs::Crash`] (le budget les compte).
 
 mod api;
+mod io;
 
 use crossbeam_channel::{Sender, unbounded};
+use horizon_core::plugin::Permissions;
 use serde_json::Value as Json;
 use std::time::Duration;
 
@@ -32,8 +34,8 @@ pub struct Instance {
 /// Vers le fil des scripts.
 #[derive(Debug, Clone)]
 pub enum ToJs {
-    /// Charge (ou recharge) le script `main` du plugin `id`.
-    Load { id: String, main: String, instances: Vec<Instance> },
+    /// Charge (ou recharge) le script `main` du plugin `id`, avec ses permissions.
+    Load { id: String, main: String, instances: Vec<Instance>, permissions: Permissions },
     /// Appelle ses gestionnaires `unload`, puis le retire.
     Unload(String),
     /// Rappel Slint `name` d'un exemplaire (arguments en JSON).
@@ -44,6 +46,18 @@ pub enum ToJs {
     Event { id: String, name: String, payload: Json },
     /// Fermeture d'Horizon : `unload` de tous, puis fin du fil (réponse : `FromJs::Quit`).
     Quit,
+    /// Résultat d'une entrée/sortie du script (fils de `io.rs`).
+    Io { id: String, handle: u32, io: Io },
+}
+
+/// Résultat d'une entrée/sortie.
+#[derive(Debug, Clone)]
+pub enum Io {
+    WsOpen,
+    WsClosed,
+    WsText(String),
+    /// Réponse HTTP (statut, corps) ou erreur.
+    Http(Result<(u16, String), String>),
 }
 
 /// Depuis le fil des scripts.
@@ -58,6 +72,14 @@ pub enum FromJs {
     Crash { id: String, message: String },
     /// Temps passé dans un rappel (µs).
     Cost { id: String, us: u64 },
+    /// `horizon.island.show` (`Some`) ou `hide` (`None`) : activité durable `key` de l'îlot.
+    Island { id: String, key: String, spec: Option<Json> },
+    /// `horizon.alert` : alerte passagère de l'îlot.
+    Alert { id: String, spec: Json },
+    /// `horizon.palette.set` : entrées du plugin dans la palette.
+    Palette { id: String, entries: Json },
+    /// `horizon.open` : lien https vérifié.
+    Open { url: String },
     /// Le fil s'est arrêté (après `ToJs::Quit`).
     Quit,
 }
@@ -65,7 +87,8 @@ pub enum FromJs {
 /// Lance le fil des scripts ; `out` reçoit ce qu'ils produisent (depuis ce fil).
 pub fn spawn(out: impl Fn(FromJs) + Send + 'static) -> anyhow::Result<Sender<ToJs>> {
     let (tx, rx) = unbounded();
-    crate::util::start_thread("plugins-js", move || api::run(&rx, &out))?;
+    let me = tx.clone();
+    crate::util::start_thread("plugins-js", move || api::run(&rx, &me, &out))?;
     Ok(tx)
 }
 
@@ -86,7 +109,11 @@ mod tests {
     }
 
     fn load(s: &Sender<ToJs>, id: &str, main: &str, instances: Vec<Instance>) {
-        s.send(ToJs::Load { id: id.into(), main: main.into(), instances }).unwrap();
+        load_with(s, id, main, instances, Permissions::default());
+    }
+
+    fn load_with(s: &Sender<ToJs>, id: &str, main: &str, instances: Vec<Instance>, permissions: Permissions) {
+        s.send(ToJs::Load { id: id.into(), main: main.into(), instances, permissions }).unwrap();
     }
 
     /// Prochain message qui n'est ni une mesure ni un journal.
@@ -228,6 +255,129 @@ mod tests {
         assert!(matches!(next(&rx), FromJs::UiSet { ref prop, .. } if prop == "v0"));
         assert!(matches!(next(&rx), FromJs::UiSet { ref prop, .. } if prop == "v1"));
         assert_eq!(next(&rx), set("a", "refused", json!(4)));
+    }
+
+    #[test]
+    fn io_refused_without_permission() {
+        let (s, rx) = engine();
+        load(
+            &s,
+            "a",
+            r#"const errs = [];
+               try { horizon.connect("ws://127.0.0.1:28650"); } catch (e) { errs.push(e.message); }
+               try { horizon.http.get("https://example.com/"); } catch (e) { errs.push(e.message); }
+               try { horizon.files.read("C:/Windows/win.ini"); } catch (e) { errs.push(e.message); }
+               try { horizon.open("file:///C:/Windows/win.ini"); } catch (e) { errs.push(e.message); }
+               horizon.ui.set("errs", errs);"#,
+            vec![],
+        );
+        let FromJs::UiSet { value, .. } = next(&rx) else { panic!() };
+        let errs: Vec<String> = serde_json::from_value(value).unwrap();
+        assert_eq!(errs.len(), 4, "{errs:?}");
+        assert!(errs[..3].iter().all(|e| e.contains("permission manquante")), "{errs:?}");
+    }
+
+    #[test]
+    fn files_read_declared_file() {
+        let dir = std::env::temp_dir().join(format!("horizon-js-files-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("etat.json");
+        std::fs::write(&f, r#"{"batterie":42}"#).unwrap();
+        let path = f.to_string_lossy().replace('\\', "/");
+        let (s, rx) = engine();
+        let perms = Permissions { files: vec![path.clone()], ..Permissions::default() };
+        let main = format!(r#"horizon.ui.set("b", JSON.parse(horizon.files.read("{path}")).batterie);"#);
+        load_with(&s, "a", &main, vec![], perms);
+        assert_eq!(next(&rx), set("a", "b", json!(42)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn connect_talks_to_a_local_app() {
+        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = server.local_addr().unwrap().port();
+        let (got_tx, got_rx) = unbounded::<String>();
+        std::thread::spawn(move || {
+            let (stream, _) = server.accept().unwrap();
+            let mut ws = tungstenite::accept(stream).unwrap();
+            ws.send(tungstenite::Message::text("salut")).unwrap();
+            if let Ok(tungstenite::Message::Text(t)) = ws.read() {
+                let _ = got_tx.send(t.to_string());
+            }
+        });
+        let (s, rx) = engine();
+        let url = format!("ws://127.0.0.1:{port}");
+        let perms = Permissions { connect: vec![url.clone()], ..Permissions::default() };
+        let main = format!(
+            r#"const c = horizon.connect("{url}");
+               c.onMessage((m) => {{ horizon.ui.set("got", m); c.send({{ ok: true }}); }});"#
+        );
+        load_with(&s, "a", &main, vec![], perms);
+        assert_eq!(next(&rx), set("a", "got", json!("salut")));
+        assert_eq!(got_rx.recv_timeout(Duration::from_secs(3)).unwrap(), r#"{"ok":true}"#);
+    }
+
+    #[test]
+    fn connect_does_not_follow_redirects() {
+        use std::io::{Read, Write};
+        // Service déclaré qui redirige vers un autre port (non déclaré).
+        let other = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let other_port = other.local_addr().unwrap().port();
+        let (reached_tx, reached_rx) = unbounded::<()>();
+        std::thread::spawn(move || {
+            if let Ok((stream, _)) = other.accept() {
+                let _ = reached_tx.send(());
+                if let Ok(mut ws) = tungstenite::accept(stream) {
+                    let _ = ws.send(tungstenite::Message::text("détourné"));
+                }
+            }
+        });
+        let declared = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = declared.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in declared.incoming().take(3).flatten() {
+                let mut s = stream;
+                let mut buf = [0u8; 2048];
+                let _ = s.read(&mut buf);
+                let reply = format!("HTTP/1.1 302 Found\r\nLocation: ws://127.0.0.1:{other_port}/\r\nContent-Length: 0\r\n\r\n");
+                let _ = s.write_all(reply.as_bytes());
+            }
+        });
+        let (s, rx) = engine();
+        let url = format!("ws://127.0.0.1:{port}");
+        let perms = Permissions { connect: vec![url.clone()], ..Permissions::default() };
+        let main = format!(r#"horizon.connect("{url}").onMessage((m) => horizon.ui.set("got", m));"#);
+        load_with(&s, "a", &main, vec![], perms);
+        assert!(reached_rx.recv_timeout(Duration::from_millis(1500)).is_err(), "redirection suivie");
+        assert!(!matches!(rx.try_recv(), Ok(FromJs::UiSet { .. })));
+    }
+
+    #[test]
+    fn island_alert_palette_open() {
+        let (s, rx) = engine();
+        load(
+            &s,
+            "a",
+            r#"horizon.island.show({ id: "appel", icon: "phoneCall", title: "Léo" });
+               horizon.island.hide("appel");
+               horizon.alert({ title: "Batterie faible", body: "Montre : 15 %" });
+               horizon.palette.set([{ id: "off", label: "Éteindre" }]);
+               horizon.open("https://example.com/aide");"#,
+            vec![],
+        );
+        assert!(matches!(next(&rx), FromJs::Island { ref key, spec: Some(_), .. } if key == "appel"));
+        assert!(matches!(next(&rx), FromJs::Island { ref key, spec: None, .. } if key == "appel"));
+        assert!(matches!(next(&rx), FromJs::Alert { .. }));
+        assert!(matches!(next(&rx), FromJs::Palette { .. }));
+        assert_eq!(next(&rx), FromJs::Open { url: "https://example.com/aide".into() });
+    }
+
+    #[test]
+    fn palette_choice_reaches_handler() {
+        let (s, rx) = engine();
+        load(&s, "a", r#"horizon.palette.on((id) => horizon.ui.set("choisi", id));"#, vec![]);
+        s.send(ToJs::Event { id: "a".into(), name: "palette".into(), payload: json!("off") }).unwrap();
+        assert_eq!(next(&rx), set("a", "choisi", json!("off")));
     }
 
     #[test]

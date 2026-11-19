@@ -13,6 +13,11 @@ thread_local! {
     static CACHE: RefCell<HashMap<&'static str, slint::Image>> = RefCell::default();
 }
 
+/// Nom `'static` de l'icône `name` si elle est embarquée (icônes choisies par les plugins).
+pub fn static_name(name: &str) -> Option<&'static str> {
+    ICONS.iter().find(|(n, _)| *n == name).map(|(n, _)| *n)
+}
+
 /// Icône `name` ; image vide si elle n'est pas embarquée (ou illisible), signalée au journal.
 pub fn image(name: &str) -> slint::Image {
     let Some((key, svg)) = ICONS.iter().find(|(n, _)| *n == name) else {

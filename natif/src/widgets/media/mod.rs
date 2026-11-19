@@ -184,6 +184,13 @@ fn on_snapshot(app: &AppHandle, s: MediaSnapshot) {
         (send, new_track)
     };
     if send {
+        let info = payload.info.as_ref();
+        let media = serde_json::json!({
+            "title": info.map(|i| i.title.clone()),
+            "artist": info.map(|i| i.artist.clone()),
+            "playing": info.is_some_and(|i| i.playing),
+        });
+        crate::plugins::events::emit(app, "media", media);
         let _ = app.emit(EV_MEDIA, payload);
     }
     if let Some(a) = art {

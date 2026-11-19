@@ -5,8 +5,12 @@
 //! rappel, avec son coût. Les fonctions JS gardées (`ui.on`, `on`, minuteurs) sont des
 //! [`Persistent`], vidées avant la destruction du runtime.
 
-use super::{CALL_LIMIT, FromJs, Instance, MEMORY_LIMIT, TIMER_MIN, ToJs, UNLOAD_LIMIT};
-use crossbeam_channel::{Receiver, RecvTimeoutError};
+use super::io::{self, Conn};
+use super::{CALL_LIMIT, FromJs, Instance, Io, MEMORY_LIMIT, TIMER_MIN, ToJs, UNLOAD_LIMIT};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
+use horizon_core::plugin::Permissions;
+use std::path::PathBuf;
+use std::time::SystemTime;
 use rquickjs::context::EvalOptions;
 use rquickjs::function::{Opt, Rest};
 use rquickjs::{Context, Ctx, Function, Object, Persistent, Runtime, Value};
@@ -26,6 +30,17 @@ const TIMER_MAX: Duration = Duration::from_secs(24 * 3600);
 /// Taille maximale d'une valeur de `ui.set` (JSON) et d'un texte de journal.
 const MAX_VALUE: usize = 1024 * 1024;
 const MAX_LOG: usize = 4096;
+/// Connexions et requêtes en cours au plus, fichiers surveillés au plus.
+const MAX_CONNS: usize = 8;
+const MAX_PENDING: usize = 16;
+const MAX_WATCHES: usize = 8;
+/// Taille maximale d'un fichier lu.
+const MAX_FILE: u64 = 1024 * 1024;
+/// Relecture des fichiers surveillés.
+const WATCH_EVERY: Duration = Duration::from_secs(1);
+/// Entrées de palette au plus.
+const MAX_ENTRIES: usize = 50;
+
 /// Messages produits au plus par rappel, et leur taille totale.
 const MAX_OUT: usize = 1000;
 const MAX_OUT_BYTES: usize = 2 * 1024 * 1024;
@@ -42,9 +57,36 @@ struct Timer {
     f: Saved,
 }
 
+/// Connexion d'un script et ses gestionnaires.
+struct Link {
+    /// Gardée pour sa durée de vie : lâchée, elle ferme la connexion.
+    _conn: Conn,
+    on_message: Vec<Saved>,
+    on_state: Vec<Saved>,
+}
+
+/// Fichier surveillé (`files.watch`).
+struct Watch {
+    path: PathBuf,
+    /// Date vue à la dernière lecture (`None` : pas encore lu, ou absent).
+    mtime: Option<SystemTime>,
+    read_once: bool,
+    f: Saved,
+}
+
 /// Ce que le script a enregistré, et ce qu'il produit.
 #[derive(Default)]
 struct Hooks {
+    /// Permissions du plugin.
+    perms: Permissions,
+    /// Retour des fils d'entrées/sorties vers le fil des scripts.
+    back: Option<Sender<ToJs>>,
+    next_handle: u32,
+    links: HashMap<u32, Link>,
+    /// Requêtes HTTP en cours : (résoudre, rejeter).
+    pending: HashMap<u32, (Saved, Saved)>,
+    watches: Vec<Watch>,
+    next_watch: Option<Instant>,
     /// Rappels Slint écoutés (`ui.on`).
     ui: HashMap<String, Saved>,
     /// Événements (`on`) : ceux d'Horizon, `unload`, `instances`.
@@ -68,10 +110,16 @@ struct Plugin {
 }
 
 /// Boucle du fil : messages, minuteurs, jusqu'à `ToJs::Quit`.
-pub(super) fn run(rx: &Receiver<ToJs>, out: &dyn Fn(FromJs)) {
+pub(super) fn run(rx: &Receiver<ToJs>, me: &Sender<ToJs>, out: &dyn Fn(FromJs)) {
     let mut plugins: HashMap<String, Plugin> = HashMap::new();
     loop {
-        let due = plugins.values().filter_map(|p| p.hooks.borrow().timers.iter().map(|t| t.next).min()).min();
+        let due = plugins
+            .values()
+            .filter_map(|p| {
+                let h = p.hooks.borrow();
+                h.timers.iter().map(|t| t.next).chain(h.next_watch).min()
+            })
+            .min();
         let msg = match due {
             Some(at) => match rx.recv_timeout(at.saturating_duration_since(Instant::now())) {
                 Ok(m) => Some(m),
@@ -84,23 +132,24 @@ pub(super) fn run(rx: &Receiver<ToJs>, out: &dyn Fn(FromJs)) {
             },
         };
         if let Some(msg) = msg
-            && handle(&mut plugins, msg, out)
+            && handle(&mut plugins, msg, me, out)
         {
             out(FromJs::Quit);
             return;
         }
         fire_timers(&plugins, out);
+        check_watches(&plugins, out);
     }
 }
 
 /// Traite un message ; vrai pour `Quit`.
-fn handle(plugins: &mut HashMap<String, Plugin>, msg: ToJs, out: &dyn Fn(FromJs)) -> bool {
+fn handle(plugins: &mut HashMap<String, Plugin>, msg: ToJs, me: &Sender<ToJs>, out: &dyn Fn(FromJs)) -> bool {
     match msg {
-        ToJs::Load { id, main, instances } => {
+        ToJs::Load { id, main, instances, permissions } => {
             if let Some(old) = plugins.remove(&id) {
                 old.unload(out);
             }
-            match Plugin::new(&id, instances) {
+            match Plugin::new(&id, instances, permissions, me.clone()) {
                 Ok(p) => {
                     p.invoke(out, |ctx| {
                         let mut opts = EvalOptions::default();
@@ -140,6 +189,11 @@ fn handle(plugins: &mut HashMap<String, Plugin>, msg: ToJs, out: &dyn Fn(FromJs)
                 p.emit(&name, &[payload], out);
             }
         }
+        ToJs::Io { id, handle, io } => {
+            if let Some(p) = plugins.get(&id) {
+                p.io(handle, io, out);
+            }
+        }
         ToJs::Quit => {
             let end = Instant::now() + UNLOAD_LIMIT;
             for (_, p) in plugins.drain() {
@@ -174,8 +228,43 @@ fn fire_timers(plugins: &HashMap<String, Plugin>, out: &dyn Fn(FromJs)) {
     }
 }
 
+/// Relit les fichiers surveillés dont la date a changé.
+fn check_watches(plugins: &HashMap<String, Plugin>, out: &dyn Fn(FromJs)) {
+    let now = Instant::now();
+    for p in plugins.values() {
+        let changed: Vec<(Saved, Option<String>)> = {
+            let mut h = p.hooks.borrow_mut();
+            if h.next_watch.is_none_or(|t| t > now) {
+                continue;
+            }
+            h.next_watch = (!h.watches.is_empty()).then(|| now + WATCH_EVERY);
+            h.watches
+                .iter_mut()
+                .filter_map(|w| {
+                    let mtime = std::fs::metadata(&w.path).and_then(|m| m.modified()).ok();
+                    if w.read_once && mtime == w.mtime {
+                        return None;
+                    }
+                    w.mtime = mtime;
+                    w.read_once = true;
+                    Some((w.f.clone(), read_small(&w.path)))
+                })
+                .collect()
+        };
+        for (f, text) in changed {
+            p.invoke(out, |ctx| f.restore(ctx)?.call::<_, ()>((text,)));
+        }
+    }
+}
+
+/// Contenu d'un petit fichier texte (`None` : absent, illisible ou trop gros).
+fn read_small(path: &std::path::Path) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
+    (meta.len() <= MAX_FILE).then(|| std::fs::read_to_string(path).ok()).flatten()
+}
+
 impl Plugin {
-    fn new(id: &str, instances: Vec<Instance>) -> rquickjs::Result<Plugin> {
+    fn new(id: &str, instances: Vec<Instance>, perms: Permissions, back: Sender<ToJs>) -> rquickjs::Result<Plugin> {
         let rt = Runtime::new()?;
         rt.set_memory_limit(MEMORY_LIMIT);
         rt.set_max_stack_size(512 * 1024);
@@ -183,7 +272,7 @@ impl Plugin {
         let d = deadline.clone();
         rt.set_interrupt_handler(Some(Box::new(move || d.get().is_some_and(|t| Instant::now() > t))));
         let ctx = Context::full(&rt)?;
-        let hooks = Rc::new(RefCell::new(Hooks { instances, ..Hooks::default() }));
+        let hooks = Rc::new(RefCell::new(Hooks { instances, perms, back: Some(back), ..Hooks::default() }));
         ctx.with(|ctx| install(&ctx, id, &hooks))?;
         Ok(Plugin { id: id.to_owned(), hooks, deadline, ctx, rt })
     }
@@ -239,6 +328,37 @@ impl Plugin {
                 let args: Vec<Value> = args.iter().map(|a| to_js(ctx, a)).collect::<rquickjs::Result<_>>()?;
                 f.restore(ctx)?.call::<_, ()>((Rest(args),))
             });
+        }
+    }
+
+    /// Résultat d'une entrée/sortie : gestionnaires de la connexion, promesse de la requête.
+    fn io(&self, handle: u32, io: Io, out: &dyn Fn(FromJs)) {
+        match io {
+            Io::WsOpen | Io::WsClosed => {
+                let state = if matches!(io, Io::WsOpen) { "open" } else { "closed" };
+                let handlers = self.hooks.borrow().links.get(&handle).map(|l| l.on_state.clone()).unwrap_or_default();
+                for f in handlers {
+                    self.invoke(out, |ctx| f.restore(ctx)?.call::<_, ()>((state,)));
+                }
+            }
+            Io::WsText(text) => {
+                let handlers = self.hooks.borrow().links.get(&handle).map(|l| l.on_message.clone()).unwrap_or_default();
+                for f in handlers {
+                    self.invoke(out, |ctx| f.restore(ctx)?.call::<_, ()>((text.clone(),)));
+                }
+            }
+            Io::Http(result) => {
+                let Some((resolve, reject)) = self.hooks.borrow_mut().pending.remove(&handle) else { return };
+                self.invoke(out, |ctx| match result {
+                    Ok((status, text)) => {
+                        let r = Object::new(ctx.clone())?;
+                        r.set("status", status)?;
+                        r.set("text", text)?;
+                        resolve.restore(ctx)?.call::<_, ()>((r,))
+                    }
+                    Err(e) => reject.restore(ctx)?.call::<_, ()>((rquickjs::String::from_str(ctx.clone(), &e)?,)),
+                });
+            }
         }
     }
 
@@ -359,6 +479,10 @@ fn push(ctx: &Ctx, h: &Rc<RefCell<Hooks>>, m: FromJs) -> rquickjs::Result<()> {
         }
         FromJs::UiOn { name, .. } => name.len(),
         FromJs::Log { text, .. } => text.len(),
+        FromJs::Island { spec, .. } => spec.as_ref().map_or(0, |s| s.to_string().len()),
+        FromJs::Alert { spec, .. } => spec.to_string().len(),
+        FromJs::Palette { entries, .. } => entries.to_string().len(),
+        FromJs::Open { url } => url.len(),
         _ => 0,
     };
     let mut hk = h.borrow_mut();
@@ -378,9 +502,24 @@ fn check_name(ctx: &Ctx, name: &str) -> rquickjs::Result<()> {
     Ok(())
 }
 
+/// Erreur JS « permission manquante ».
+fn missing<'js>(ctx: &Ctx<'js>, what: &str) -> rquickjs::Error {
+    rquickjs::Exception::throw_type(ctx, &format!("permission manquante : {what} (à déclarer dans plugin.json)"))
+}
+
+/// Texte d'une valeur à envoyer : chaîne telle quelle, le reste en JSON.
+fn text_of<'js>(ctx: &Ctx<'js>, v: Value<'js>) -> String {
+    match v.as_string().and_then(|s| s.to_string().ok()) {
+        Some(s) => s,
+        None => to_json(ctx, v).to_string(),
+    }
+}
+
 /// Installe l'objet `horizon` dans le contexte.
 fn install<'js>(ctx: &Ctx<'js>, id: &str, hooks: &Rc<RefCell<Hooks>>) -> rquickjs::Result<()> {
     let horizon = Object::new(ctx.clone())?;
+    install_io(ctx, &horizon, id, hooks)?;
+    install_shell(ctx, &horizon, id, hooks)?;
 
     let ui = Object::new(ctx.clone())?;
     let (h, pid) = (hooks.clone(), id.to_owned());
@@ -512,5 +651,203 @@ fn install<'js>(ctx: &Ctx<'js>, id: &str, hooks: &Rc<RefCell<Hooks>>) -> rquickj
     horizon.set("log", log)?;
 
     ctx.globals().set("horizon", horizon)?;
+    Ok(())
+}
+
+/// `horizon.connect`, `horizon.http`, `horizon.files` (sous permissions).
+fn install_io<'js>(ctx: &Ctx<'js>, horizon: &Object<'js>, id: &str, hooks: &Rc<RefCell<Hooks>>) -> rquickjs::Result<()> {
+    let (h, pid) = (hooks.clone(), id.to_owned());
+    horizon.set(
+        "connect",
+        Function::new(ctx.clone(), move |ctx: Ctx<'js>, url: String| -> rquickjs::Result<Object<'js>> {
+            let (handle, outbox) = {
+                let mut hk = h.borrow_mut();
+                let Some(url) = hk.perms.allows_connect(&url) else { return Err(missing(&ctx, &format!("connect {url}"))) };
+                if hk.links.len() >= MAX_CONNS {
+                    return Err(rquickjs::Exception::throw_range(&ctx, "connect : trop de connexions"));
+                }
+                hk.next_handle += 1;
+                let handle = hk.next_handle;
+                let back = hk.back.clone().expect("retour des entrées/sorties");
+                let conn = io::connect(&pid, handle, url, back);
+                let outbox = conn.outbox.clone();
+                hk.links.insert(handle, Link { _conn: conn, on_message: Vec::new(), on_state: Vec::new() });
+                (handle, outbox)
+            };
+            let c = Object::new(ctx.clone())?;
+            c.set(
+                "send",
+                Function::new(ctx.clone(), move |ctx: Ctx<'js>, v: Value<'js>| -> rquickjs::Result<()> {
+                    let text = text_of(&ctx, v);
+                    if text.len() > io::MAX_MESSAGE {
+                        return Err(rquickjs::Exception::throw_range(&ctx, "send : message trop grand (1 Mo au plus)"));
+                    }
+                    let _ = outbox.send(text);
+                    Ok(())
+                })?,
+            )?;
+            for (name, state) in [("onMessage", false), ("onState", true)] {
+                let h = h.clone();
+                c.set(
+                    name,
+                    Function::new(ctx.clone(), move |ctx: Ctx<'js>, f: Function<'js>| -> rquickjs::Result<()> {
+                        let mut hk = h.borrow_mut();
+                        let Some(link) = hk.links.get_mut(&handle) else { return Ok(()) };
+                        let list = if state { &mut link.on_state } else { &mut link.on_message };
+                        if list.len() >= MAX_HANDLERS {
+                            return Err(rquickjs::Exception::throw_range(&ctx, "trop de gestionnaires"));
+                        }
+                        list.push(Persistent::save(&ctx, f));
+                        Ok(())
+                    })?,
+                )?;
+            }
+            let h = h.clone();
+            c.set(
+                "close",
+                Function::new(ctx.clone(), move || {
+                    h.borrow_mut().links.remove(&handle);
+                })?,
+            )?;
+            Ok(c)
+        })?,
+    )?;
+
+    let http = Object::new(ctx.clone())?;
+    for (name, post) in [("get", false), ("post", true)] {
+        let (h, pid) = (hooks.clone(), id.to_owned());
+        http.set(
+            name,
+            Function::new(ctx.clone(), move |ctx: Ctx<'js>, url: String, rest: Rest<Value<'js>>| -> rquickjs::Result<Value<'js>> {
+                let mut args = rest.0.into_iter();
+                let body = if post { Some(args.next().map(|v| text_of(&ctx, v)).unwrap_or_default()) } else { None };
+                let headers: Vec<(String, String)> = match args.next().and_then(|o| o.into_object()) {
+                    Some(o) => match o.get::<_, Option<Object>>("headers")? {
+                        Some(hd) => hd.props::<String, String>().filter_map(Result::ok).take(32).collect(),
+                        None => Vec::new(),
+                    },
+                    None => Vec::new(),
+                };
+                let mut hk = h.borrow_mut();
+                let Some(url) = hk.perms.allows_http(&url) else { return Err(missing(&ctx, &format!("http {url}"))) };
+                if hk.pending.len() >= MAX_PENDING {
+                    return Err(rquickjs::Exception::throw_range(&ctx, "http : trop de requêtes en cours"));
+                }
+                let (promise, resolve, reject) = ctx.promise()?;
+                hk.next_handle += 1;
+                let handle = hk.next_handle;
+                hk.pending.insert(handle, (Persistent::save(&ctx, resolve), Persistent::save(&ctx, reject)));
+                let back = hk.back.clone().expect("retour des entrées/sorties");
+                io::request(&pid, handle, url, body, headers, back);
+                Ok(promise.into_value())
+            })?,
+        )?;
+    }
+    horizon.set("http", http)?;
+
+    let files = Object::new(ctx.clone())?;
+    let h = hooks.clone();
+    files.set(
+        "read",
+        Function::new(ctx.clone(), move |ctx: Ctx<'js>, path: String| -> rquickjs::Result<Option<String>> {
+            let p = PathBuf::from(&path);
+            if !h.borrow().perms.allows_file(&p, &|v| std::env::var(v).ok()) {
+                return Err(missing(&ctx, &format!("files {path}")));
+            }
+            Ok(read_small(&p))
+        })?,
+    )?;
+    let h = hooks.clone();
+    files.set(
+        "watch",
+        Function::new(ctx.clone(), move |ctx: Ctx<'js>, path: String, f: Function<'js>| -> rquickjs::Result<()> {
+            let p = PathBuf::from(&path);
+            let mut hk = h.borrow_mut();
+            if !hk.perms.allows_file(&p, &|v| std::env::var(v).ok()) {
+                return Err(missing(&ctx, &format!("files {path}")));
+            }
+            if hk.watches.len() >= MAX_WATCHES {
+                return Err(rquickjs::Exception::throw_range(&ctx, "files.watch : trop de fichiers"));
+            }
+            hk.watches.push(Watch { path: p, mtime: None, read_once: false, f: Persistent::save(&ctx, f) });
+            // Première lecture au prochain tour.
+            hk.next_watch = Some(Instant::now());
+            Ok(())
+        })?,
+    )?;
+    horizon.set("files", files)?;
+    Ok(())
+}
+
+/// `horizon.island`, `horizon.alert`, `horizon.palette`, `horizon.open`.
+fn install_shell<'js>(ctx: &Ctx<'js>, horizon: &Object<'js>, id: &str, hooks: &Rc<RefCell<Hooks>>) -> rquickjs::Result<()> {
+    let island = Object::new(ctx.clone())?;
+    let (h, pid) = (hooks.clone(), id.to_owned());
+    island.set(
+        "show",
+        Function::new(ctx.clone(), move |ctx: Ctx<'js>, spec: Object<'js>| -> rquickjs::Result<()> {
+            let key: String = spec.get::<_, Option<String>>("id")?.unwrap_or_default();
+            check_name(&ctx, &key)?;
+            let spec = to_json(&ctx, spec.into_value());
+            push(&ctx, &h, FromJs::Island { id: pid.clone(), key, spec: Some(spec) })
+        })?,
+    )?;
+    let (h, pid) = (hooks.clone(), id.to_owned());
+    island.set(
+        "hide",
+        Function::new(ctx.clone(), move |ctx: Ctx<'js>, key: String| -> rquickjs::Result<()> {
+            check_name(&ctx, &key)?;
+            push(&ctx, &h, FromJs::Island { id: pid.clone(), key, spec: None })
+        })?,
+    )?;
+    horizon.set("island", island)?;
+
+    let (h, pid) = (hooks.clone(), id.to_owned());
+    horizon.set(
+        "alert",
+        Function::new(ctx.clone(), move |ctx: Ctx<'js>, spec: Object<'js>| -> rquickjs::Result<()> {
+            let spec = to_json(&ctx, spec.into_value());
+            push(&ctx, &h, FromJs::Alert { id: pid.clone(), spec })
+        })?,
+    )?;
+
+    let palette = Object::new(ctx.clone())?;
+    let (h, pid) = (hooks.clone(), id.to_owned());
+    palette.set(
+        "set",
+        Function::new(ctx.clone(), move |ctx: Ctx<'js>, list: Value<'js>| -> rquickjs::Result<()> {
+            let entries = to_json(&ctx, list);
+            if entries.as_array().is_none_or(|a| a.len() > MAX_ENTRIES) {
+                return Err(rquickjs::Exception::throw_range(&ctx, "palette.set : tableau de 50 entrées au plus"));
+            }
+            push(&ctx, &h, FromJs::Palette { id: pid.clone(), entries })
+        })?,
+    )?;
+    let h = hooks.clone();
+    palette.set(
+        "on",
+        Function::new(ctx.clone(), move |ctx: Ctx<'js>, f: Function<'js>| -> rquickjs::Result<()> {
+            let mut hk = h.borrow_mut();
+            let list = hk.on.entry("palette".to_owned()).or_default();
+            if list.len() >= MAX_HANDLERS {
+                return Err(rquickjs::Exception::throw_range(&ctx, "palette.on : trop de gestionnaires"));
+            }
+            list.push(Persistent::save(&ctx, f));
+            Ok(())
+        })?,
+    )?;
+    horizon.set("palette", palette)?;
+
+    let h = hooks.clone();
+    horizon.set(
+        "open",
+        Function::new(ctx.clone(), move |ctx: Ctx<'js>, url: String| -> rquickjs::Result<()> {
+            let ok = url::Url::parse(&url).ok().filter(|u| u.scheme() == "https" && u.host_str().is_some() && u.username().is_empty() && u.password().is_none());
+            let Some(u) = ok else {
+                return Err(rquickjs::Exception::throw_type(&ctx, "open : seuls les liens https:// sont permis"));
+            };
+            push(&ctx, &h, FromJs::Open { url: u.to_string() })
+        })?,
+    )?;
     Ok(())
 }

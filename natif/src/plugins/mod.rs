@@ -8,6 +8,7 @@
 //! (page État) ; rien n'est chargé avant.
 
 mod convert;
+pub mod events;
 mod registry;
 pub mod script;
 mod slint_host;
@@ -76,6 +77,24 @@ pub struct Plugins {
     budgets: Mutex<std::collections::HashMap<String, horizon_core::plugin::budget::Budget>>,
     /// Dernier plantage de script de chaque plugin (page État).
     crashes: Mutex<std::collections::HashMap<String, String>>,
+    /// Entrées de palette de chaque plugin.
+    palette: Mutex<BTreeMap<String, Vec<PaletteEntry>>>,
+}
+
+/// Entrée de palette posée par un script (`horizon.palette.set`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PaletteEntry {
+    pub id: String,
+    pub label: String,
+    pub icon: &'static str,
+}
+
+/// Entrées de palette d'un plugin chargeable, avec son nom.
+#[derive(Debug, Clone)]
+pub struct PluginPalette {
+    pub plugin: String,
+    pub name: String,
+    pub entries: Vec<PaletteEntry>,
 }
 
 /// Ce que montre la page État pour un plugin.
@@ -112,6 +131,21 @@ impl Plugins {
     pub fn script_crashed(&self, _app: &AppHandle, id: &str, message: String) {
         lock(&self.budgets).entry(id.to_owned()).or_default().crash(horizon_core::time::now_ms());
         lock(&self.crashes).insert(id.to_owned(), message);
+    }
+
+    /// Entrées de palette posées par le script du plugin `id`.
+    pub fn set_palette(&self, id: &str, entries: Vec<PaletteEntry>) {
+        lock(&self.palette).insert(id.to_owned(), entries);
+    }
+
+    /// Entrées de palette de tous les plugins chargeables.
+    pub fn palette_entries(&self) -> Vec<PluginPalette> {
+        let p = lock(&self.palette);
+        p.iter()
+            .filter_map(|(id, entries)| {
+                Some(PluginPalette { plugin: id.clone(), name: self.manifest(id)?.name.clone(), entries: entries.clone() })
+            })
+            .collect()
     }
 
     /// Tous les plugins connus.
@@ -266,6 +300,7 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
         changed(app);
     }
     script::start(app)?;
+    events::start(app)?;
     let a = app.clone();
     start_thread("plugins-dossier", move || {
         let t0 = Instant::now();

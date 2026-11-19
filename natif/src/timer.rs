@@ -81,6 +81,7 @@ fn announcement(ev: TimerEvent) -> (String, String) {
 fn announce(app: &AppHandle, ev: TimerEvent) {
     let (title, body) = announcement(ev);
     log::info!("minuteur : {title} ({body})");
+    crate::plugins::events::emit(app, "timer", serde_json::json!({ "state": "done", "title": title }));
     crate::alerts::show(app, AlertKind::Timer, Alert::icon("timer", Severity::Attention, title, body));
     crate::prisme::signal(app, LIGHT_SIGNAL);
 }
