@@ -1,12 +1,12 @@
-// Section « État » (app/src/settings/options/StatusSection.svelte) : l'état réel de chaque
-// intégration, les derniers avertissements du journal et quelques actions. Relue à l'ouverture,
+// Section « État » : l'état réel de chaque intégration (les plugins ont leur page), les derniers
+// avertissements du journal et quelques actions. Relue à l'ouverture,
 // toutes les 15 s tant qu'elle est affichée (src/ui/options.rs), et sur demande.
 
 import { Theme } from "../theme.slint";
 import { Icon } from "../components.slint";
 import { StatusDot } from "../widget-frame.slint";
 import { SettingsLayout } from "../settings/layout.slint";
-import { SettingsNote } from "../settings/text.slint";
+import { SettingsTitle, SettingsNote } from "../settings/text.slint";
 import { SettingsButton } from "../settings/button.slint";
 import { OptionsData, StatusRow } from "data.slint";
 
@@ -21,8 +21,7 @@ component Head inherits Rectangle {
             Text {
                 text: root.text;
                 color: SettingsLayout.t.text;
-                font-family: Theme.font-display;
-                font-size: Theme.fs-title;
+                font-size: 13px;
                 font-weight: 600;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
@@ -36,14 +35,14 @@ component CheckLine inherits Rectangle {
     in property <StatusRow> check;
     property <bool> has-action: check.action-label != "";
     property <length> act-w: root.has-action ? act.preferred-width + 11px : 0;
-    property <length> text-w: SettingsLayout.content-w - 20px - 8px - 11px - root.act-w;
-    border-radius: Theme.r-lg;
+    property <length> text-w: SettingsLayout.content-w - 32px - 8px - 11px - root.act-w;
+    border-radius: Theme.r-md;
     background: check.level == 2 ? SettingsLayout.t.bad.mix(SettingsLayout.t.surface-1, 0.10) : SettingsLayout.t.surface-1;
     HorizontalLayout {
-        padding-top: 8px;
-        padding-bottom: 8px;
-        padding-left: 10px;
-        padding-right: 10px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        padding-left: 16px;
+        padding-right: 16px;
         VerticalLayout {
             padding-right: 11px;
             alignment: center;
@@ -89,9 +88,12 @@ component CheckLine inherits Rectangle {
 }
 
 export component StatusSection inherits VerticalLayout {
-    Head {
+    SettingsTitle {
         text: "État";
-        first: true;
+        description: "Ce qui tourne en ce moment, et les derniers avertissements du journal.";
+    }
+    Head {
+        text: "Intégrations";
         SettingsButton {
             text: "Relire";
             tip: "Relire";

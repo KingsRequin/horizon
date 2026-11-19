@@ -1,0 +1,75 @@
+// Section « Son et média » : volume et lecture affichés par Horizon à la place de Windows
+// (annonce du morceau), bascule du son quand le casque s'éteint (sortie de repli). Options de
+// `[features]` de settings.toml.
+
+import { SettingsLayout } from "../settings/layout.slint";
+import { SettingsTitle, SettingsHeading, SettingsNote } from "../settings/text.slint";
+import { SettingRow } from "../settings/row.slint";
+import { SettingCheck } from "../settings/check.slint";
+import { SettingExpander } from "../settings/expander.slint";
+import { SelectField } from "../settings/field.slint";
+import { OptionsData } from "data.slint";
+
+export component SonSection inherits VerticalLayout {
+    SettingsTitle {
+        text: "Son et média";
+        description: "Volume et lecture en cours dans la barre, et casque qui s’éteint.";
+    }
+
+    SettingsHeading {
+        text: "Volume et média";
+    }
+    SettingExpander {
+        checked: OptionsData.osd;
+        enabled: !OptionsData.locked;
+        expanded: OptionsData.osd;
+        label: "Afficher le volume et la lecture dans la barre principale, à la place de Windows";
+        hint: "Touches de volume et de lecture (clavier, casque), volume changé par une autre appli. L’affichage de Windows revient en plein écran et quand l’option est coupée.";
+        toggled(v) => {
+            OptionsData.toggle("features.osd", v);
+        }
+        SettingCheck {
+            nested: true;
+            checked: OptionsData.osd && OptionsData.osd-track;
+            enabled: !OptionsData.locked && OptionsData.osd;
+            label: "Annoncer chaque nouveau morceau";
+            hint: "Pochette, titre et artiste quelques secondes au centre de la barre.";
+            toggled(v) => {
+                OptionsData.toggle("features.osd_track", v);
+            }
+        }
+    }
+
+    SettingsHeading {
+        text: "Casque éteint";
+    }
+    SettingExpander {
+        checked: OptionsData.headset-switch && OptionsData.fallback-chosen;
+        enabled: !OptionsData.locked && OptionsData.fallback-chosen;
+        expanded: true;
+        label: "Basculer le son quand le casque s’éteint, et revenir quand il se rallume";
+        hint: OptionsData.fallback-chosen
+            ? "Le casque est relu toutes les 5 s ; deux lectures « éteint » d’affilée et 15 s au moins entre deux bascules. Une sortie choisie à la main entre-temps est gardée."
+            : "Choisis d’abord la sortie de repli, dessous.";
+        toggled(v) => {
+            OptionsData.toggle("features.headset_switch", v);
+        }
+        SettingRow {
+            nested: true;
+            label: "Sortie de repli";
+            hint: "Où va le son quand le casque s’éteint (enceintes, écran).";
+            SelectField {
+                text: OptionsData.fallback-output;
+                enabled: !OptionsData.locked;
+                open(x, y) => {
+                    OptionsData.pick("features.fallback_output", x, y);
+                }
+            }
+        }
+    }
+    if OptionsData.fallback-missing: SettingsNote {
+        text: "La sortie de repli n’est pas branchée : la bascule attend son retour.";
+        tint: SettingsLayout.t.warn;
+        above: 2px;
+    }
+}

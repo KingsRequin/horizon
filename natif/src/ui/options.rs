@@ -1,11 +1,12 @@
 //! Page « Réglages d'Horizon » de la fenêtre de réglages (`ui/options/`, global `OptionsData`),
 //! sur le fil de l'interface : état lu par `options::options_get`, modifications appliquées tout
 //! de suite à l'écran et enregistrées 400 ms après la dernière (`options::options_set`), options des barres aussitôt (`options_set_bar`), raccourci de la
-//! palette saisi au clavier, page État relue toutes les 15 s tant qu'elle est affichée.
+//! palette saisi au clavier, page État relue toutes les 15 s tant qu'elle est affichée, page
+//! Plugins relue à chaque changement du registre, recherche dans les réglages.
 //! Comme OptionsApp.svelte : un changement venu d'ailleurs (`EV_OPTIONS`) relit l'état, sans
 //! écraser une modification qui attend d'être enregistrée.
 
-use super::{OptionsBar, OptionsData, SegmentChoice, SettingsWindow, StatusRow};
+use super::{OptionsBar, OptionsData, PluginTile, SearchHit, SegmentChoice, SettingsWindow, StatusRow};
 use crate::events::EV_OPTIONS;
 use crate::host::{self, AppHandle};
 use crate::options::{self, Capture, Edit, OptionsView};
@@ -19,8 +20,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 use std::time::Duration;
 
-/// Sections, dans l'ordre de la navigation.
-pub const SECTIONS: [&str; 8] = ["barres", "alertes", "fonctions", "nuit", "minuteur", "palette", "general", "etat"];
+use horizon_core::options_search::{self, SECTIONS};
 /// Enregistrement différé : une suite de frappes part en une fois.
 const SAVE_DELAY: Duration = Duration::from_millis(400);
 /// Relecture de la page État.
@@ -76,6 +76,8 @@ pub fn bind(app: &AppHandle, window: &SettingsWindow) {
         heights.into_iter().map(|(value, label, hint)| SegmentChoice { value: value.into(), label: label.into(), hint: hint.into() }).collect::<Vec<_>>(),
     )));
     g.on_go(go);
+    g.on_search(search);
+    g.on_plugin_action(|id| plugin_action(&id));
     g.on_toggle(|id, v| {
         if id == "autostart" {
             set_autostart(v);
@@ -97,6 +99,7 @@ pub fn bind(app: &AppHandle, window: &SettingsWindow) {
     g.on_status_action(|id| status_action(&id));
     g.on_open_log(crate::status::open_log);
     host::listen(EV_OPTIONS, Some(LABEL), |_| reload());
+    host::listen(crate::plugins::EV_PLUGINS, Some(LABEL), |_| load_plugins());
 }
 
 fn choices(list: &[(&str, &str, &str)]) -> ModelRc<SegmentChoice> {
@@ -105,23 +108,58 @@ fn choices(list: &[(&str, &str, &str)]) -> ModelRc<SegmentChoice> {
     ))
 }
 
-/// La page s'affiche (ouverture ou réouverture) sur `section` (inconnue : « barres »).
-pub fn show(_app: &AppHandle, window: &SettingsWindow, section: &str) {
-    let section = if SECTIONS.contains(&section) { section } else { "barres" };
-    flush();
-    window.global::<OptionsData>().set_section(section.into());
-    window.invoke_scroll_top();
-    reload();
-    follow_status(section == "etat");
+/// Section d'après son nom ; anciens noms (« fonctions », « nuit ») repris, inconnue : « barres ».
+fn section_of(name: &str) -> &'static str {
+    match name {
+        "fonctions" => "son",
+        "nuit" => "apparence",
+        _ => SECTIONS.iter().find(|(id, _)| *id == name).map_or("barres", |(id, _)| id),
+    }
 }
 
-/// Changement de section (navigation, « Changer » du raccourci sur la page État).
+/// La page s'affiche (ouverture ou réouverture) sur `section`.
+pub fn show(_app: &AppHandle, window: &SettingsWindow, section: &str) {
+    flush();
+    reload();
+    load_plugins();
+    // Point de la navigation sur « État » : lu une fois, même sur une autre section.
+    load_status();
+    open_section(window, section_of(section));
+}
+
+/// Changement de section (navigation, réglage trouvé, « Changer » du raccourci sur la page
+/// État) : la recherche est vidée.
 fn go(section: SharedString) {
     let Some(w) = window() else { return };
     flush();
-    w.global::<OptionsData>().set_section(section.clone());
+    open_section(&w, section_of(&section));
+}
+
+fn open_section(w: &SettingsWindow, section: &str) {
+    let g = w.global::<OptionsData>();
+    g.set_query("".into());
+    g.set_searching(false);
+    g.set_section(section.into());
     w.invoke_scroll_top();
     follow_status(section == "etat");
+}
+
+/// Recherche tapée : les réglages trouvés, dans l'ordre de la fenêtre.
+fn search(text: SharedString) {
+    let Some(w) = window() else { return };
+    let g = w.global::<OptionsData>();
+    let hits: Vec<SearchHit> = options_search::search(&text, crate::PERSONAL)
+        .into_iter()
+        .map(|e| SearchHit {
+            section: e.section.into(),
+            place: format!("{} › {}", options_search::section_label(e.section), e.group).into(),
+            label: e.label.into(),
+        })
+        .collect();
+    super::model::sync_rc(&g.get_hits(), hits, |m| g.set_hits(m));
+    g.set_query(text.clone());
+    g.set_searching(!text.trim().is_empty());
+    w.invoke_scroll_top();
 }
 
 /// La page n'est plus affichée (autre page de la fenêtre) : ce qui attend est enregistré, la
@@ -446,6 +484,26 @@ fn save_hotkey(text: &str) {
     }
 }
 
+// ---- Page Plugins ----
+
+/// Relit les tuiles (ouverture, changement du registre, action).
+fn load_plugins() {
+    let (Some(w), Some(app)) = (window(), app()) else { return };
+    let g = w.global::<OptionsData>();
+    let tiles: Vec<PluginTile> = super::plugin_tiles::tiles(&app);
+    super::model::sync_rc(&g.get_plugins(), tiles, |m| g.set_plugins(m));
+    g.set_plugins_dir(crate::plugins::plugins_dir().display().to_string().into());
+}
+
+fn plugin_action(id: &str) {
+    let Some(app) = app() else { return };
+    let result = crate::status::status_action(&app, id);
+    if let Some(w) = window() {
+        w.global::<OptionsData>().set_plugins_error(result.err().unwrap_or_default().into());
+    }
+    load_plugins();
+}
+
 // ---- Page État ----
 
 /// Relit l'état tout de suite puis toutes les 15 s (`on`), ou arrête.
@@ -509,6 +567,10 @@ fn status_action(id: &str) {
     if id == "hotkey" {
         return go("palette".into());
     }
+    // « Voir » les plugins : leur page.
+    if id == "plugins" {
+        return go("plugins".into());
+    }
     let Some(app) = app() else { return };
     let result = crate::status::status_action(&app, id);
     if let Some(w) = window() {
@@ -522,10 +584,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sections_match_the_web_version() {
-        assert_eq!(SECTIONS.len(), 8);
-        for s in SECTIONS {
+    fn every_section_can_be_opened_by_name() {
+        for (s, _) in SECTIONS {
             assert!(crate::settings_window::SettingsPage::parse(&format!("options:{s}")).is_some(), "{s}");
+            assert_eq!(section_of(s), s);
         }
+    }
+
+    #[test]
+    fn old_section_names_lead_to_their_new_place() {
+        assert_eq!(section_of("fonctions"), "son");
+        assert_eq!(section_of("nuit"), "apparence");
+        assert_eq!(section_of("inconnue"), "barres");
     }
 }

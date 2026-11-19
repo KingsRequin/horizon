@@ -1,6 +1,7 @@
-// Page « Réglages d'Horizon » (app/src/settings/options/OptionsApp.svelte) : navigation des
-// sections à gauche (188 px, filet à droite), section choisie à droite dans une vue qui défile.
-// Tout s'applique à chaud et s'enregistre tout seul.
+// Page « Réglages d'Horizon » : à gauche la recherche et la navigation des sections (216 px,
+// « État » en bas avec un point quand une intégration est en échec), à droite la section choisie
+// (ou les réglages trouvés) dans une vue qui défile, colonne de 640 px au plus. Tout s'applique
+// à chaud et s'enregistre tout seul.
 
 import { Theme } from "../theme.slint";
 import { Icon } from "../components.slint";
@@ -8,26 +9,36 @@ import { FocusRing } from "../panel/focus.slint";
 import { SettingsLayout } from "../settings/layout.slint";
 import { SettingsScroll } from "../settings/scroll.slint";
 import { SettingsBanner } from "../settings/banner.slint";
-import { SettingsNote } from "../settings/text.slint";
-import { OptionsData } from "data.slint";
+import { SettingsTitle, SettingsNote } from "../settings/text.slint";
+import { InputField } from "../settings/input.slint";
+import { Card } from "../settings/card.slint";
+import { OptionsData, SearchHit } from "data.slint";
 import { BarsSection } from "bars.slint";
+import { ApparenceSection } from "apparence.slint";
+import { SonSection } from "son.slint";
 import { AlertsSection } from "alerts.slint";
-import { FeaturesSection } from "features.slint";
-import { NightSection } from "night.slint";
 import { TimerSection } from "timer.slint";
 import { PaletteSection } from "palette.slint";
+import { PluginsSection } from "plugins.slint";
 import { GeneralSection } from "general.slint";
 import { StatusSection } from "status.slint";
+
+// Largeur de la navigation.
+global Nav {
+    out property <length> width: 216px;
+}
 
 component NavButton inherits Rectangle {
     in property <string> id;
     in property <string> label;
     in property <image> icon;
-    property <bool> on: OptionsData.section == root.id;
+    // Point d'état à droite (couleur ; transparent : aucun).
+    in property <color> dot: transparent;
+    property <bool> on: OptionsData.section == root.id && !OptionsData.searching;
     property <bool> keyboard;
-    height: 31px;
-    border-radius: Theme.r-lg;
-    background: root.on ? Theme.accent.mix(SettingsLayout.t.surface-1, 0.16) : (area.has-hover ? SettingsLayout.t.surface-1 : transparent);
+    height: 34px;
+    border-radius: Theme.r-md;
+    background: root.on || area.has-hover ? SettingsLayout.t.surface-1 : transparent;
     FocusScope {
         focus-on-click: false;
         focus-gained(r) => {
@@ -50,15 +61,24 @@ component NavButton inherits Rectangle {
             OptionsData.go(root.id);
         }
     }
+    // Repère de la section choisie.
+    if root.on: Rectangle {
+        x: 0;
+        y: 9px;
+        width: 3px;
+        height: root.height - 18px;
+        border-radius: 1.5px;
+        background: Theme.accent;
+    }
     HorizontalLayout {
-        padding-left: 10px;
-        padding-right: 10px;
-        spacing: 9px;
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 10px;
         VerticalLayout {
             alignment: center;
             Icon {
                 source: root.icon;
-                size: 15px;
+                size: 16px;
                 color: root.on || area.has-hover ? SettingsLayout.t.text : SettingsLayout.t.text-dim;
             }
         }
@@ -68,11 +88,90 @@ component NavButton inherits Rectangle {
             vertical-alignment: center;
             horizontal-stretch: 1;
         }
+        if root.dot != transparent: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: root.dot;
+            }
+        }
     }
     if root.keyboard: FocusRing {
         width: root.width + 6px;
         height: root.height + 6px;
-        radius: Theme.r-lg;
+        radius: Theme.r-md;
+    }
+}
+
+// Réglage trouvé : où il est, et un clic y mène.
+component Hit inherits Rectangle {
+    in property <SearchHit> hit;
+    property <bool> keyboard;
+    VerticalLayout {
+        padding-bottom: Card.gap;
+        card := Rectangle {
+            border-radius: Theme.r-md;
+            background: area.has-hover ? Card.bg-hover : Card.bg;
+            FocusScope {
+                focus-on-click: false;
+                focus-gained(r) => {
+                    root.keyboard = r == FocusReason.tab-navigation;
+                }
+                focus-lost => {
+                    root.keyboard = false;
+                }
+                key-pressed(e) => {
+                    if e.text == " " || e.text == Key.Return {
+                        OptionsData.go(root.hit.section);
+                        return accept;
+                    }
+                    reject
+                }
+            }
+            area := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    OptionsData.go(root.hit.section);
+                }
+            }
+            HorizontalLayout {
+                padding-top: Card.pad-y;
+                padding-bottom: Card.pad-y;
+                padding-left: Card.pad-x;
+                padding-right: Card.pad-x;
+                spacing: Card.spacing;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2px;
+                    Text {
+                        width: SettingsLayout.content-w - 2 * Card.pad-x - Card.spacing - 14px;
+                        text: root.hit.label;
+                        color: SettingsLayout.t.text;
+                        wrap: word-wrap;
+                    }
+                    Text {
+                        text: root.hit.place;
+                        color: SettingsLayout.t.text-dim;
+                        font-size: Theme.fs-meta;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        source: @image-url("../../icons/phosphor/caretRight.svg");
+                        size: 14px;
+                        color: SettingsLayout.t.text-dim;
+                    }
+                }
+            }
+            if root.keyboard: FocusRing {
+                width: card.width + 6px;
+                height: card.height + 6px;
+                radius: Theme.r-md;
+            }
+        }
     }
 }
 
@@ -99,25 +198,49 @@ export component OptionsPage inherits Rectangle {
         Rectangle {
             x: 0;
             y: 0;
-            width: 188px;
+            width: Nav.width;
             height: parent.height;
             VerticalLayout {
-                padding-top: 20px;
-                padding-bottom: 20px;
-                padding-left: 10px;
-                padding-right: 10px;
+                padding-top: 14px;
+                padding-bottom: 12px;
+                padding-left: 8px;
+                padding-right: 8px;
                 spacing: 2px;
-                alignment: start;
-                Text {
-                    // `h1` : marges 0 8 px 14 px.
-                    x: 8px;
-                    height: self.preferred-height + 14px;
-                    vertical-alignment: top;
-                    text: "Réglages d’Horizon";
-                    color: SettingsLayout.t.text;
-                    font-family: Theme.font-display;
-                    font-size: Theme.fs-title;
-                    font-weight: 600;
+                Rectangle {
+                    height: 32px + 12px;
+                    VerticalLayout {
+                        padding-bottom: 12px;
+                        Rectangle {
+                            border-radius: Theme.r-md;
+                            background: SettingsLayout.t.surface-1;
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                spacing: 2px;
+                                VerticalLayout {
+                                    alignment: center;
+                                    Icon {
+                                        source: @image-url("../../icons/phosphor/magnifyingGlass.svg");
+                                        size: 14px;
+                                        color: SettingsLayout.t.text-dim;
+                                    }
+                                }
+                                InputField {
+                                    value: OptionsData.query;
+                                    placeholder: "Rechercher un réglage";
+                                    quiet: true;
+                                    edited(v) => {
+                                        OptionsData.search(v);
+                                    }
+                                }
+                            }
+                            // Soulignement de la saisie.
+                            Rectangle {
+                                y: parent.height - 1px;
+                                height: 1px;
+                                background: SettingsLayout.t.surface-2;
+                            }
+                        }
+                    }
                 }
                 NavButton {
                     id: "barres";
@@ -125,19 +248,19 @@ export component OptionsPage inherits Rectangle {
                     icon: @image-url("../../icons/phosphor/squaresFour.svg");
                 }
                 NavButton {
+                    id: "apparence";
+                    label: "Apparence";
+                    icon: @image-url("../../icons/phosphor/paintBrush.svg");
+                }
+                NavButton {
+                    id: "son";
+                    label: "Son et média";
+                    icon: @image-url("../../icons/phosphor/speakerHigh.svg");
+                }
+                NavButton {
                     id: "alertes";
                     label: "Alertes";
                     icon: @image-url("../../icons/phosphor/bellSimple.svg");
-                }
-                NavButton {
-                    id: "fonctions";
-                    label: "Fonctions";
-                    icon: @image-url("../../icons/phosphor/lightning.svg");
-                }
-                NavButton {
-                    id: "nuit";
-                    label: "Nuit";
-                    icon: @image-url("../../icons/phosphor/moon.svg");
                 }
                 NavButton {
                     id: "minuteur";
@@ -147,31 +270,34 @@ export component OptionsPage inherits Rectangle {
                 NavButton {
                     id: "palette";
                     label: "Palette";
-                    icon: @image-url("../../icons/phosphor/magnifyingGlass.svg");
+                    icon: @image-url("../../icons/phosphor/keyboard.svg");
+                }
+                NavButton {
+                    id: "plugins";
+                    label: "Plugins";
+                    icon: @image-url("../../icons/phosphor/puzzlePiece.svg");
                 }
                 NavButton {
                     id: "general";
                     label: "Général";
-                    icon: @image-url("../../icons/phosphor/power.svg");
+                    icon: @image-url("../../icons/phosphor/gearSix.svg");
+                }
+                Rectangle {
+                    vertical-stretch: 1;
                 }
                 NavButton {
                     id: "etat";
                     label: "État";
                     icon: @image-url("../../icons/phosphor/pulse.svg");
+                    dot: OptionsData.failing > 0 ? SettingsLayout.t.bad : transparent;
                 }
-            }
-            // Filet à droite de la navigation.
-            Rectangle {
-                x: parent.width - 1px;
-                width: 1px;
-                background: SettingsLayout.t.surface-1;
             }
         }
         scroll := SettingsScroll {
             // Largeur imposée : celle du contenu en dépend (textes qui passent à la ligne).
-            x: 188px;
+            x: Nav.width;
             y: 0;
-            width: root.width - 188px;
+            width: root.width - Nav.width;
             height: root.height;
             init => {
                 if root.visible {
@@ -186,14 +312,29 @@ export component OptionsPage inherits Rectangle {
             if OptionsData.loaded && OptionsData.file-error != "" && OptionsData.section != "etat": SettingsBanner {
                 text: "settings.toml est illisible (" + OptionsData.file-error + ") : Horizon utilise les réglages par défaut et n’enregistre rien tant que le fichier n’est pas corrigé. Voir « État ».";
             }
-            if OptionsData.loaded && OptionsData.section == "barres": BarsSection { }
-            if OptionsData.loaded && OptionsData.section == "alertes": AlertsSection { }
-            if OptionsData.loaded && OptionsData.section == "fonctions": FeaturesSection { }
-            if OptionsData.loaded && OptionsData.section == "nuit": NightSection { }
-            if OptionsData.loaded && OptionsData.section == "minuteur": TimerSection { }
-            if OptionsData.loaded && OptionsData.section == "palette": PaletteSection { }
-            if OptionsData.loaded && OptionsData.section == "general": GeneralSection { }
-            if OptionsData.loaded && OptionsData.section == "etat": StatusSection { }
+            if OptionsData.searching: VerticalLayout {
+                SettingsTitle {
+                    text: "Recherche";
+                    description: OptionsData.hits.length == 0
+                        ? "Aucun réglage ne correspond à « " + OptionsData.query + " »."
+                        : (OptionsData.hits.length == 1 ? "Un réglage" : OptionsData.hits.length + " réglages") + " pour « " + OptionsData.query + " ». Un clic ouvre sa section.";
+                }
+                Rectangle {
+                    height: 10px;
+                }
+                for h in OptionsData.hits: Hit {
+                    hit: h;
+                }
+            }
+            if OptionsData.loaded && !OptionsData.searching && OptionsData.section == "barres": BarsSection { }
+            if OptionsData.loaded && !OptionsData.searching && OptionsData.section == "apparence": ApparenceSection { }
+            if OptionsData.loaded && !OptionsData.searching && OptionsData.section == "son": SonSection { }
+            if OptionsData.loaded && !OptionsData.searching && OptionsData.section == "alertes": AlertsSection { }
+            if OptionsData.loaded && !OptionsData.searching && OptionsData.section == "minuteur": TimerSection { }
+            if OptionsData.loaded && !OptionsData.searching && OptionsData.section == "palette": PaletteSection { }
+            if OptionsData.loaded && !OptionsData.searching && OptionsData.section == "plugins": PluginsSection { }
+            if OptionsData.loaded && !OptionsData.searching && OptionsData.section == "general": GeneralSection { }
+            if OptionsData.loaded && !OptionsData.searching && OptionsData.section == "etat": StatusSection { }
             if OptionsData.loaded && OptionsData.error != "": SettingsNote {
                 text: OptionsData.error;
                 tint: SettingsLayout.t.bad;

@@ -4,7 +4,7 @@
 
 import { Theme } from "../theme.slint";
 import { SettingsLayout } from "../settings/layout.slint";
-import { SettingsHeading, SettingsSubheading, SettingsNote } from "../settings/text.slint";
+import { SettingsTitle, SettingsHeading, SettingsNote } from "../settings/text.slint";
 import { SettingRow } from "../settings/row.slint";
 import { SettingCheck } from "../settings/check.slint";
 import { Segmented } from "../settings/segmented.slint";
@@ -12,23 +12,16 @@ import { NumberField } from "../settings/field.slint";
 import { OptionsData } from "data.slint";
 
 export component BarsSection inherits VerticalLayout {
-    SettingsHeading {
+    SettingsTitle {
         text: "Barres";
-        first: true;
-        below: 8px;
+        description: "Chaque écran a sa barre. Le style se change aussi par clic droit sur la barre.";
     }
-    SettingsNote {
-        text: "Chaque écran a sa barre. Le style se change aussi par clic droit sur la barre.";
-        below: 14px;
-    }
-    for b[i] in OptionsData.bars: VerticalLayout {
-        padding-top: i == 0 ? 0 : 16px;
+    for b in OptionsData.bars: VerticalLayout {
         Rectangle {
             opacity: b.connected ? 1 : Theme.o-stale;
             VerticalLayout {
-                SettingsSubheading {
-                    text: b.name;
-                    small: b.connected ? "" : " · écran débranché";
+                SettingsHeading {
+                    text: b.connected ? b.name : b.name + " · écran débranché";
                 }
                 SettingRow {
                     label: "Style";
@@ -103,7 +96,6 @@ export component BarsSection inherits VerticalLayout {
 
     SettingsHeading {
         text: "Réapparition au-dessus d’un plein écran";
-        below: 8px;
     }
     SettingRow {
         label: "Hauteur de la bande du haut";

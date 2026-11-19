@@ -36,8 +36,37 @@ export struct StatusRow {
     action-label: string,
 }
 
+// Réglage trouvé par la recherche.
+export struct SearchHit {
+    section: string,
+    // Où il est : « Apparence › Nuit ».
+    place: string,
+    label: string,
+}
+
+// Tuile de la page Plugins (installé, ou proposé par la bibliothèque).
+export struct PluginTile {
+    id: string,
+    name: string,
+    // Version et auteur : « 1.2.0 · KingsRequin ».
+    meta: string,
+    description: string,
+    icon: image,
+    // Pastille d'état : « Actif », « À autoriser », « Désactivé »…
+    chip: string,
+    // 0 : fonctionne, 1 : neutre, 2 : en échec, 3 : demande une action (accord, mise à jour).
+    level: int,
+    // Bas de la tuile : coût, erreur ou permissions demandées.
+    detail: string,
+    action-id: string,
+    action-label: string,
+    // Dossier du plugin (installé).
+    folder-id: string,
+}
+
 export global OptionsData {
-    // Section affichée : barres, alertes, fonctions, nuit, minuteur, palette, general, etat.
+    // Section affichée : barres, apparence, son, alertes, minuteur, palette, plugins, general,
+    // etat (`horizon_core::options_search::SECTIONS`).
     in-out property <string> section: "barres";
     in property <bool> loaded;
     in property <string> load-error;
@@ -68,7 +97,18 @@ export global OptionsData {
     in property <string> headset-low;
     in property <string> devices-low;
 
-    // Fonctions.
+    // Texte tapé dans la recherche, tel quel ; `searching` : il contient autre chose que des
+    // espaces, les réglages trouvés remplacent la section.
+    in-out property <string> query;
+    in property <bool> searching;
+    in property <[SearchHit]> hits;
+
+    // Plugins.
+    in property <[PluginTile]> plugins;
+    in property <string> plugins-dir;
+    in property <string> plugins-error;
+
+    // Apparence, son, alertes, général.
     in property <bool> capture-to-claude;
     in property <string> fallback-output;
     in property <bool> fallback-chosen;
@@ -118,6 +158,10 @@ export global OptionsData {
     in property <string> action-error;
 
     callback go(string);
+    // Texte de la recherche (à chaque frappe).
+    callback search(string);
+    // Action d'une tuile de plugin (`plugin_accept:<id>`, `plugins_dir`, `plugin_new`…).
+    callback plugin-action(string);
     // Option à cocher, nombre, texte (chemin dans settings.toml, ou « autostart »).
     callback toggle(string, bool);
     callback number(string, int);
