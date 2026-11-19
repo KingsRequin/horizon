@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use url::Url;
 
 /// Ce qu'un plugin a déclaré pouvoir faire.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -21,34 +22,51 @@ pub struct Permissions {
 /// Hôtes permis pour `connect`.
 const LOCAL_HOSTS: [&str; 2] = ["127.0.0.1", "localhost"];
 
-/// Schéma et hôte d'une URL (`ws://127.0.0.1:28650/x` → `("ws", "127.0.0.1")`).
-fn scheme_host(url: &str) -> Option<(&str, &str)> {
-    let (scheme, rest) = url.split_once("://")?;
-    let authority = rest.split(['/', '?', '#']).next()?;
-    let host = authority.rsplit_once(':').map_or(authority, |(h, _)| h);
-    (!host.is_empty()).then_some((scheme, host))
+/// URL analysée (WHATWG : `..`, `%2e`, casse de l'hôte déjà résolus) ; refusée si elle porte
+/// un nom d'utilisateur ou un mot de passe, ou n'a pas d'hôte.
+fn parse(url: &str) -> Option<Url> {
+    let u = Url::parse(url).ok()?;
+    (u.username().is_empty() && u.password().is_none() && u.host_str().is_some()).then_some(u)
 }
 
-/// `url` commence par l'entrée déclarée `entry`, et s'arrête là ou continue par un chemin
-/// (`ws://h:2865` ne couvre pas `ws://h:28650`).
-fn prefix_match(entry: &str, url: &str) -> bool {
-    let Some(rest) = url.strip_prefix(entry) else { return false };
-    rest.is_empty() || entry.ends_with('/') || rest.starts_with(['/', '?', '#'])
+/// Segments du chemin, sans le dernier s'il est vide (`/v1/` → `["v1"]`).
+fn segments(u: &Url) -> Vec<&str> {
+    let mut s: Vec<&str> = u.path_segments().map(Iterator::collect).unwrap_or_default();
+    while s.last() == Some(&"") {
+        s.pop();
+    }
+    s
+}
+
+/// `url` est couverte par l'entrée déclarée `entry` : même schéma, hôte et port, et chemin qui
+/// commence par celui de l'entrée, segment par segment.
+fn covers(entry: &Url, url: &Url) -> bool {
+    entry.scheme() == url.scheme()
+        && entry.host_str() == url.host_str()
+        && entry.port_or_known_default() == url.port_or_known_default()
+        && segments(url).starts_with(&segments(entry))
+}
+
+/// Connexion locale permise (`ws://`/`http://` vers un hôte local).
+fn local(u: &Url) -> bool {
+    matches!(u.scheme(), "ws" | "http") && u.host_str().is_some_and(|h| LOCAL_HOSTS.contains(&h))
 }
 
 /// Entrée `connect` valide : `ws://`/`http://` vers un hôte local.
 pub(super) fn valid_connect(entry: &str) -> Result<(), String> {
-    match scheme_host(entry) {
-        Some(("ws" | "http", host)) if LOCAL_HOSTS.contains(&host.to_ascii_lowercase().as_str()) => Ok(()),
-        Some(("ws" | "http", _)) => Err(format!("« {entry} » : seules les connexions vers 127.0.0.1 ou localhost sont permises")),
+    match parse(entry) {
+        Some(u) if local(&u) => Ok(()),
+        Some(u) if matches!(u.scheme(), "ws" | "http") => {
+            Err(format!("« {entry} » : seules les connexions vers 127.0.0.1 ou localhost sont permises"))
+        }
         _ => Err(format!("« {entry} » : adresse ws:// ou http:// attendue")),
     }
 }
 
 /// Entrée `http` valide : `https://` avec un hôte.
 pub(super) fn valid_http(entry: &str) -> Result<(), String> {
-    match scheme_host(entry) {
-        Some(("https", _)) => Ok(()),
+    match parse(entry) {
+        Some(u) if u.scheme() == "https" => Ok(()),
         _ => Err(format!("« {entry} » : adresse https:// attendue")),
     }
 }
@@ -100,14 +118,17 @@ fn event_label(name: &str) -> &str {
 }
 
 impl Permissions {
-    /// Le script peut ouvrir cette connexion locale.
-    pub fn allows_connect(&self, url: &str) -> bool {
-        valid_connect(url).is_ok() && self.connect.iter().any(|e| prefix_match(e, url))
+    /// Le script peut ouvrir cette connexion locale : l'URL normalisée à utiliser (celle qui a
+    /// été vérifiée), `None` sinon.
+    pub fn allows_connect(&self, url: &str) -> Option<String> {
+        let u = parse(url).filter(local)?;
+        self.connect.iter().filter_map(|e| parse(e)).any(|e| covers(&e, &u)).then(|| u.to_string())
     }
 
-    /// Le script peut joindre cette adresse web.
-    pub fn allows_http(&self, url: &str) -> bool {
-        valid_http(url).is_ok() && self.http.iter().any(|e| prefix_match(e, url))
+    /// Le script peut joindre cette adresse web : l'URL normalisée à utiliser, `None` sinon.
+    pub fn allows_http(&self, url: &str) -> Option<String> {
+        let u = parse(url).filter(|u| u.scheme() == "https")?;
+        self.http.iter().filter_map(|e| parse(e)).any(|e| covers(&e, &u)).then(|| u.to_string())
     }
 
     /// Le script peut lire ce fichier. `env` donne les variables d'environnement.
@@ -171,20 +192,49 @@ mod tests {
     #[test]
     fn connect_prefix() {
         let p = perms();
-        assert!(p.allows_connect("ws://127.0.0.1:28650"));
-        assert!(p.allows_connect("ws://127.0.0.1:28650/x"));
-        assert!(!p.allows_connect("ws://127.0.0.1:28651"));
+        assert_eq!(p.allows_connect("ws://127.0.0.1:28650").as_deref(), Some("ws://127.0.0.1:28650/"));
+        assert!(p.allows_connect("ws://127.0.0.1:28650/x").is_some());
+        assert!(p.allows_connect("ws://127.0.0.1:28651").is_none());
         let short = Permissions { connect: vec!["ws://127.0.0.1:2865".into()], ..Default::default() };
-        assert!(!short.allows_connect("ws://127.0.0.1:28650"));
+        assert!(short.allows_connect("ws://127.0.0.1:28650").is_none());
+    }
+
+    #[test]
+    fn connect_rejects_userinfo_tricks() {
+        let p = perms();
+        for url in [
+            "ws://127.0.0.1:28650@evil.com/",
+            r"ws://127.0.0.1:28650\@evil.com/",
+            "ws://user@127.0.0.1:28650/",
+            "ws://evil.com#@127.0.0.1:28650",
+            "ws://127.0.0.1.evil.com:28650/",
+        ] {
+            assert!(p.allows_connect(url).is_none(), "{url}");
+        }
     }
 
     #[test]
     fn http_requires_https() {
         let p = perms();
-        assert!(p.allows_http("https://api.example.com/v1/forecast?x=1"));
-        assert!(!p.allows_http("http://api.example.com/v1/forecast"));
-        assert!(!p.allows_http("https://api.example.com.evil.net/v1/"));
-        assert!(!p.allows_http("https://other.com/v1/"));
+        assert!(p.allows_http("https://api.example.com/v1/forecast?x=1").is_some());
+        assert!(p.allows_http("https://API.example.com/v1/").is_some());
+        assert!(p.allows_http("http://api.example.com/v1/forecast").is_none());
+        assert!(p.allows_http("https://api.example.com.evil.net/v1/").is_none());
+        assert!(p.allows_http("https://other.com/v1/").is_none());
+        assert!(p.allows_http("https://api.example.com/v1x").is_none());
+    }
+
+    #[test]
+    fn http_rejects_path_escape() {
+        let p = perms();
+        for url in [
+            "https://api.example.com/v1/../admin",
+            "https://api.example.com/v1/%2e%2e/admin",
+            "https://api.example.com/v1/..%2fadmin/../../admin",
+            "https://u:p@api.example.com/v1/",
+        ] {
+            assert!(p.allows_http(url).is_none(), "{url}");
+        }
     }
 
     #[test]
