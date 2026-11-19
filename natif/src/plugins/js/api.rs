@@ -26,8 +26,13 @@ const TIMER_MAX: Duration = Duration::from_secs(24 * 3600);
 /// Taille maximale d'une valeur de `ui.set` (JSON) et d'un texte de journal.
 const MAX_VALUE: usize = 1024 * 1024;
 const MAX_LOG: usize = 4096;
-/// Messages produits au plus par rappel.
+/// Messages produits au plus par rappel, et leur taille totale.
 const MAX_OUT: usize = 1000;
+const MAX_OUT_BYTES: usize = 2 * 1024 * 1024;
+/// Longueur maximale d'un nom (propriété, rappel, événement, exemplaire).
+const MAX_NAME: usize = 256;
+/// Gestionnaires d'événements au plus, tous noms confondus.
+const MAX_ALL_HANDLERS: usize = 256;
 
 /// Minuteur d'un script.
 struct Timer {
@@ -48,8 +53,9 @@ struct Hooks {
     timers: Vec<Timer>,
     next_timer: u32,
     instances: Vec<Instance>,
-    /// Messages produits pendant le rappel en cours.
+    /// Messages produits pendant le rappel en cours, et leur taille.
     out: Vec<FromJs>,
+    out_bytes: usize,
 }
 
 /// Un plugin chargé. Ordre des champs : les `Persistent` (dans `hooks`) avant le runtime.
@@ -202,7 +208,11 @@ impl Plugin {
             }
         }
         self.deadline.set(None);
-        let produced = std::mem::take(&mut self.hooks.borrow_mut().out);
+        let produced = {
+            let mut h = self.hooks.borrow_mut();
+            h.out_bytes = 0;
+            std::mem::take(&mut h.out)
+        };
         for m in produced {
             out(m);
         }
@@ -340,11 +350,31 @@ fn timer_interval(ms: f64) -> Duration {
 
 /// Note un message produit par le script (au plus [`MAX_OUT`] par rappel).
 fn push(ctx: &Ctx, h: &Rc<RefCell<Hooks>>, m: FromJs) -> rquickjs::Result<()> {
+    let size = match &m {
+        FromJs::UiSet { prop, instance, value, .. } => {
+            if prop.len() > MAX_NAME || instance.as_ref().is_some_and(|i| i.len() > MAX_NAME) {
+                return Err(rquickjs::Exception::throw_range(ctx, "nom trop long (256 octets au plus)"));
+            }
+            prop.len() + instance.as_ref().map_or(0, String::len) + value.to_string().len()
+        }
+        FromJs::UiOn { name, .. } => name.len(),
+        FromJs::Log { text, .. } => text.len(),
+        _ => 0,
+    };
     let mut hk = h.borrow_mut();
-    if hk.out.len() >= MAX_OUT {
-        return Err(rquickjs::Exception::throw_range(ctx, "trop de messages dans un même rappel"));
+    if hk.out.len() >= MAX_OUT || hk.out_bytes + size > MAX_OUT_BYTES {
+        return Err(rquickjs::Exception::throw_range(ctx, "trop de données dans un même rappel"));
     }
+    hk.out_bytes += size;
     hk.out.push(m);
+    Ok(())
+}
+
+/// Refuse un nom trop long.
+fn check_name(ctx: &Ctx, name: &str) -> rquickjs::Result<()> {
+    if name.len() > MAX_NAME {
+        return Err(rquickjs::Exception::throw_range(ctx, "nom trop long (256 octets au plus)"));
+    }
     Ok(())
 }
 
@@ -369,6 +399,7 @@ fn install<'js>(ctx: &Ctx<'js>, id: &str, hooks: &Rc<RefCell<Hooks>>) -> rquickj
     ui.set(
         "on",
         Function::new(ctx.clone(), move |ctx: Ctx<'js>, name: String, f: Function<'js>| -> rquickjs::Result<()> {
+            check_name(&ctx, &name)?;
             {
                 let mut hk = h.borrow_mut();
                 if hk.ui.len() >= MAX_HANDLERS && !hk.ui.contains_key(&name) {
@@ -423,7 +454,11 @@ fn install<'js>(ctx: &Ctx<'js>, id: &str, hooks: &Rc<RefCell<Hooks>>) -> rquickj
     horizon.set(
         "on",
         Function::new(ctx.clone(), move |ctx: Ctx<'js>, name: String, f: Function<'js>| -> rquickjs::Result<()> {
+            check_name(&ctx, &name)?;
             let mut hk = h.borrow_mut();
+            if hk.on.values().map(Vec::len).sum::<usize>() >= MAX_ALL_HANDLERS {
+                return Err(rquickjs::Exception::throw_range(&ctx, "on : trop de gestionnaires"));
+            }
             let list = hk.on.entry(name).or_default();
             if list.len() >= MAX_HANDLERS {
                 return Err(rquickjs::Exception::throw_range(&ctx, "on : trop de gestionnaires"));

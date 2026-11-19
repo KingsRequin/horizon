@@ -219,10 +219,15 @@ mod tests {
                let refused = 0;
                try { horizon.ui.set("big", "x".repeat(2 * 1024 * 1024)); } catch (e) { refused++; }
                try { for (let i = 0; i < 100; i++) horizon.on("dnd", () => {}); } catch (e) { refused++; }
+               try { for (let i = 0; i < 1000; i++) horizon.on("e" + i, () => {}); } catch (e) { refused++; }
+               try { for (let i = 0; i < 5; i++) horizon.ui.set("v" + i, "x".repeat(900 * 1024)); } catch (e) { refused++; }
                horizon.ui.set("refused", refused);"#,
             vec![],
         );
-        assert_eq!(next(&rx), set("a", "refused", json!(2)));
+        // Les deux premières valeurs de 900 Ko passent avant le plafond de 2 Mo.
+        assert!(matches!(next(&rx), FromJs::UiSet { ref prop, .. } if prop == "v0"));
+        assert!(matches!(next(&rx), FromJs::UiSet { ref prop, .. } if prop == "v1"));
+        assert_eq!(next(&rx), set("a", "refused", json!(4)));
     }
 
     #[test]
