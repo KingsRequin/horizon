@@ -135,6 +135,8 @@ fn go(section: SharedString) {
 }
 
 fn open_section(w: &SettingsWindow, section: &str) {
+    // L'élément survolé disparaît avec l'ancienne section : son info-bulle aussi.
+    super::tooltip::hide();
     let g = w.global::<OptionsData>();
     g.set_query("".into());
     g.set_searching(false);
@@ -152,6 +154,7 @@ fn open_section(w: &SettingsWindow, section: &str) {
 /// Recherche tapée : les réglages trouvés, dans l'ordre de la fenêtre.
 fn search(text: SharedString) {
     let Some(w) = window() else { return };
+    super::tooltip::hide();
     let g = w.global::<OptionsData>();
     let hits: Vec<SearchHit> = options_search::search(&text)
         .into_iter()
