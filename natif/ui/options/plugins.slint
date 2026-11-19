@@ -1,6 +1,6 @@
 // Section « Plugins » : une tuile par plugin installé (état, coût ou erreur, action : autoriser,
-// activer, désactiver, réactiver), puis la bibliothèque (plugins publiés sur GitHub, à installer
-// d'un clic) quand elle sera ouverte. Grille posée à la main (deux colonnes au-delà de 440 px) :
+// activer, désactiver, réactiver, mettre à jour ; retrait de ceux venus de la bibliothèque), puis
+// la bibliothèque (plugins publiés sur GitHub, permissions montrées, installés d'un clic). Grille posée à la main (deux colonnes au-delà de 440 px) :
 // une mise en page qui dépendrait de la largeur de la fenêtre ferait une boucle de liaison.
 
 import { Theme } from "../theme.slint";
@@ -32,6 +32,8 @@ component Chip inherits Rectangle {
 
 component Tile inherits Rectangle {
     in property <PluginTile> tile;
+    // Retrait demandé : un second clic le confirme (effacement du dossier).
+    property <bool> armed;
     property <length> text-w: root.width - 2 * 14px;
     border-radius: Theme.r-lg;
     background: SettingsLayout.t.surface-1;
@@ -115,6 +117,24 @@ component Tile inherits Rectangle {
                 padding-x: 6px;
                 clicked => {
                     OptionsData.plugin-action(root.tile.folder-id);
+                }
+            }
+            if root.tile.remove-id != "": SettingsButton {
+                small: true;
+                tip: root.armed ? "" : "Retirer ce plugin";
+                icon: root.armed ? @image-url("") : @image-url("../../icons/phosphor/trash.svg");
+                text: root.armed ? "Retirer ?" : "";
+                padding-x: root.armed ? 11px : 6px;
+                clicked => {
+                    if root.armed {
+                        root.armed = false;
+                        OptionsData.plugin-action(root.tile.remove-id);
+                    } else {
+                        root.armed = true;
+                    }
+                }
+                blurred => {
+                    root.armed = false;
                 }
             }
             if root.tile.action-label != "": SettingsButton {
@@ -212,8 +232,21 @@ export component PluginsSection inherits VerticalLayout {
 
     SettingsHeading {
         text: "Bibliothèque";
+        below: 2px;
     }
-    Rectangle {
+    SettingsNote {
+        text: "Plugins publiés sur GitHub (KingsRequin/horizon-plugins). Ce qu’un plugin demande est montré avant l’installation ; ceux installés d’ici se mettent à jour d’eux-mêmes.";
+        below: 10px;
+    }
+    if OptionsData.library-error != "": SettingsNote {
+        text: "Bibliothèque injoignable : " + OptionsData.library-error;
+        tint: SettingsLayout.t.bad;
+        below: 8px;
+    }
+    if OptionsData.library.length > 0: Grid {
+        tiles: OptionsData.library;
+    }
+    if OptionsData.library.length == 0: Rectangle {
         border-radius: Theme.r-lg;
         border-width: 1px;
         border-color: SettingsLayout.t.surface-2;
@@ -228,20 +261,12 @@ export component PluginsSection inherits VerticalLayout {
                     color: SettingsLayout.t.text-dim;
                 }
             }
-            VerticalLayout {
-                spacing: 4px;
-                Text {
-                    text: "Bientôt";
-                    color: SettingsLayout.t.text;
-                    font-weight: 600;
-                }
-                Text {
-                    width: SettingsLayout.content-w - 32px - 18px - 12px;
-                    text: "Les plugins relus et publiés sur GitHub apparaîtront ici en tuiles : installer, mettre à jour et retirer d’un clic, permissions montrées avant l’installation.";
-                    color: SettingsLayout.t.text-dim;
-                    font-size: Theme.fs-meta;
-                    wrap: word-wrap;
-                }
+            Text {
+                width: SettingsLayout.content-w - 32px - 18px - 12px;
+                text: OptionsData.library-known ? "Tous les plugins de la bibliothèque sont installés." : OptionsData.library-error != "" ? "La liste reviendra à la prochaine lecture de l’index." : "Lecture de la bibliothèque…";
+                color: SettingsLayout.t.text-dim;
+                font-size: Theme.fs-meta;
+                wrap: word-wrap;
             }
         }
     }

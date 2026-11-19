@@ -139,7 +139,7 @@ fn checks(app: &AppHandle) -> Vec<Check> {
     out.push(match crate::game::since_ms() {
         Some(t) => Check::new("game", "Mode jeu", Level::Ok, "actif : spectre coupé, mesures espacées").at("depuis", Some(t)),
         None if game => Check::new("game", "Mode jeu", Level::Ok, "prêt (plein écran sur l’écran principal)"),
-        None => Check::new("game", "Mode jeu", Level::Off, "désactivé (Réglages d’Horizon › Fonctions)"),
+        None => Check::new("game", "Mode jeu", Level::Off, "désactivé (Réglages d’Horizon › Général)"),
     });
 
     // Discord vocal par le RPC local (StreamKit ou ta propre application).
@@ -322,7 +322,7 @@ fn update_check(app: &AppHandle) -> Check {
         Status::Failed(e) => Check::new("update", L, Level::Off, format!("{version} · dernière recherche ratée : {e}")),
         Status::UpToDate => Check::new("update", L, Level::Ok, format!("{version}, à jour")),
         Status::Idle if auto => Check::new("update", L, Level::Ok, format!("{version} · recherche une minute après le démarrage")),
-        Status::Idle => Check::new("update", L, Level::Off, format!("{version} · automatique coupée (Réglages d’Horizon › Fonctions)")),
+        Status::Idle => Check::new("update", L, Level::Off, format!("{version} · automatique coupée (Réglages d’Horizon › Général)")),
     };
     c.at("dernière recherche", u.checked_ms()).action("update_check", "Rechercher")
 }

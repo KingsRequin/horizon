@@ -90,7 +90,7 @@ impl Settings {
              # attend (jamais Entrée).
              capture_to_claude = {}
              # Casque éteint : la sortie audio passe sur fallback_output (identifiant de la sortie, choisi
-             # dans « Réglages d'Horizon › Fonctions »), puis revient quand il se rallume.
+             # dans « Réglages d'Horizon › Général »), puis revient quand il se rallume.
              headset_switch = {}
              fallback_output = {}
              # Appli plein écran sur l'écran principal : spectre coupé, sondages espacés.

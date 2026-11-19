@@ -142,6 +142,12 @@ fn open_section(w: &SettingsWindow, section: &str) {
     g.set_section(section.into());
     w.invoke_scroll_top();
     follow_status(section == "etat");
+    // Index de la bibliothèque relu à l'ouverture de sa page (en arrière-plan ; EV_PLUGINS ensuite).
+    if section == "plugins"
+        && let Some(app) = app()
+    {
+        crate::plugins::library::refresh(&app);
+    }
 }
 
 /// Recherche tapée : les réglages trouvés, dans l'ordre de la fenêtre.
@@ -490,18 +496,32 @@ fn save_hotkey(text: &str) {
 fn load_plugins() {
     let (Some(w), Some(app)) = (window(), app()) else { return };
     let g = w.global::<OptionsData>();
-    let tiles: Vec<PluginTile> = super::plugin_tiles::tiles(&app);
-    super::model::sync_rc(&g.get_plugins(), tiles, |m| g.set_plugins(m));
+    let (installed, library, known): (Vec<PluginTile>, Vec<PluginTile>, bool) = super::plugin_tiles::tiles(&app);
+    g.set_library_known(known);
+    super::model::sync_rc(&g.get_plugins(), installed, |m| g.set_plugins(m));
+    super::model::sync_rc(&g.get_library(), library, |m| g.set_library(m));
+    g.set_library_error(crate::plugins::library::last_error().unwrap_or_default().into());
     g.set_plugins_dir(crate::plugins::plugins_dir().display().to_string().into());
 }
 
 fn plugin_action(id: &str) {
     let Some(app) = app() else { return };
-    let result = crate::status::status_action(&app, id);
+    // Bibliothèque (téléchargement, retrait) : hors du fil de l'interface.
+    if super::plugin_tiles::run(&app, id, |result| {
+        show_plugin_error(result);
+        load_plugins();
+    }) {
+        show_plugin_error(Ok(()));
+        return load_plugins();
+    }
+    show_plugin_error(crate::status::status_action(&app, id));
+    load_plugins();
+}
+
+fn show_plugin_error(result: Result<(), String>) {
     if let Some(w) = window() {
         w.global::<OptionsData>().set_plugins_error(result.err().unwrap_or_default().into());
     }
-    load_plugins();
 }
 
 // ---- Page État ----

@@ -80,7 +80,7 @@ pub const ENTRIES: &[SearchEntry] = &[
     e("palette", "Palette de commandes", "Raccourci", "clavier touche ctrl alt"),
     e("plugins", "Installés", "Plugins installés", "widget extension autoriser permissions"),
     e("plugins", "Installés", "Nouveau plugin", "créer modèle développer"),
-    e("plugins", "Bibliothèque", "Bibliothèque de plugins", "github télécharger installer"),
+    e("plugins", "Bibliothèque", "Bibliothèque de plugins", "github télécharger installer mettre à jour retirer désinstaller"),
     e("general", "Démarrage", "Démarrer avec Windows", "lancement session autostart"),
     e("general", "Démarrage", "Alléger Horizon pendant un jeu en plein écran", "mode jeu performance"),
     e("general", "Mises à jour", "Installer automatiquement les nouvelles versions", "github version"),
