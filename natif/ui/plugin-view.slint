@@ -1,0 +1,166 @@
+// Widgets et panneaux des plugins (src/plugins/view.rs) : chaque exemplaire est rendu hors écran
+// par Horizon (Slint interprété) et posé ici comme une image ; la souris et le clavier lui sont
+// transmis. `key` : identifiant de l'exemplaire dans la disposition (le panneau : le même).
+
+import { Theme, StyleTokens } from "theme.slint";
+import { Slot } from "components.slint";
+import { PanelArea, Panels } from "panels.slint";
+import { Tip } from "tooltip.slint";
+
+export global PluginFrames {
+    // Change quand une image (ou une taille, une erreur) change : force la relecture.
+    in-out property <int> tick;
+    pure callback frame(string, int) -> image;
+    pure callback width(string, int) -> length;
+    pure callback height(string, int) -> length;
+    // Message d'erreur du plugin (vide : aucune).
+    pure callback error(string, int) -> string;
+    // Le plugin a un panneau ; et son clic l'épingle (le widget ne garde pas ses clics).
+    pure callback has-panel(string, int) -> bool;
+    pure callback pin-on-click(string, int) -> bool;
+    // Taille de l'emplacement : l'exemplaire est rendu à cette taille.
+    callback placed(string, length, length);
+    // Souris : 0 déplacement, 1 appui, 2 relâchement, 3 molette (crans), 4 sortie.
+    callback pointer(string, int, length, length, float);
+    // Clavier (panneaux) : texte de la touche, appui.
+    callback key(string, string, bool);
+}
+
+// Image d'un exemplaire, avec la souris transmise ; `panel` : genre du panneau à épingler au clic.
+component PluginSurface inherits Rectangle {
+    in property <string> key;
+    init => {
+        PluginFrames.placed(root.key, root.width, root.height);
+    }
+    changed width => {
+        PluginFrames.placed(root.key, root.width, root.height);
+    }
+    changed height => {
+        PluginFrames.placed(root.key, root.width, root.height);
+    }
+    in property <bool> active: true;
+    in property <string> pin;
+    in property <length> anchor-x;
+    in property <length> anchor-w;
+    property <int> tick: PluginFrames.tick;
+    Image {
+        x: 0;
+        width: parent.width;
+        height: parent.height;
+        source: PluginFrames.frame(root.key, root.tick);
+        image-fit: fill;
+    }
+    touch := TouchArea {
+        enabled: root.active;
+        moved => {
+            PluginFrames.pointer(root.key, 0, self.mouse-x, self.mouse-y, 0);
+        }
+        changed has-hover => {
+            if !self.has-hover {
+                PluginFrames.pointer(root.key, 4, 0, 0, 0);
+            }
+        }
+        pointer-event(e) => {
+            if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
+                PluginFrames.pointer(root.key, 1, self.mouse-x, self.mouse-y, 0);
+            }
+            if e.button == PointerEventButton.left && e.kind == PointerEventKind.up {
+                PluginFrames.pointer(root.key, 2, self.mouse-x, self.mouse-y, 0);
+            }
+        }
+        clicked => {
+            if root.pin != "" {
+                Panels.pin(root.pin, root.anchor-x, root.anchor-w);
+            }
+        }
+        scroll-event(e) => {
+            PluginFrames.pointer(root.key, 3, self.mouse-x, self.mouse-y, e.delta-y / 40px);
+            accept
+        }
+    }
+}
+
+// Widget d'un plugin dans la bande (branché par `WidgetView`).
+export component PluginWidget inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <Slot> slot;
+    in property <bool> interactive;
+    in property <bool> clickable;
+    property <string> key: root.slot.id;
+    property <int> tick: PluginFrames.tick;
+    property <string> err: PluginFrames.error(root.key, root.tick);
+    property <bool> panel: PluginFrames.has-panel(root.key, root.tick);
+    width: root.err != "" ? 26px : PluginFrames.width(root.key, root.tick);
+
+    area := PanelArea {
+        width: parent.width;
+        height: parent.height;
+        interactive: root.interactive;
+        clickable: root.clickable;
+        panel: root.panel && root.err == "" ? "plugin:" + root.key : "";
+        pin: "";
+        tip: root.err;
+        if root.err == "": PluginSurface {
+            width: parent.width;
+            height: parent.height;
+            key: root.key;
+            active: root.clickable;
+            pin: root.panel && PluginFrames.pin-on-click(root.key, root.tick) ? "plugin:" + root.key : "";
+            anchor-x: area.absolute-position.x;
+            anchor-w: area.width;
+        }
+        // Plugin en erreur : pastille rouge, le détail dans l'infobulle.
+        if root.err != "": Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 18px;
+            height: 18px;
+            border-radius: 9px;
+            background: root.t.bad;
+            Text {
+                text: "!";
+                color: white;
+                font-size: 12px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+// Panneau d'un plugin (fenêtre surgissante ou tuile) : `instance` = clé de l'exemplaire.
+export component PluginPanel inherits Rectangle {
+    in property <string> instance;
+    property <string> key: root.instance + "#panel";
+    property <int> tick: PluginFrames.tick;
+    property <string> err: PluginFrames.error(root.key, root.tick);
+    preferred-width: root.err != "" ? 280px : PluginFrames.width(root.key, root.tick);
+    preferred-height: root.err != "" ? msg.preferred-height + 24px : PluginFrames.height(root.key, root.tick);
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(e) => {
+            PluginFrames.key(root.key, e.text, true);
+            accept
+        }
+        key-released(e) => {
+            PluginFrames.key(root.key, e.text, false);
+            accept
+        }
+        if root.err == "": PluginSurface {
+            width: root.width;
+            height: root.height;
+            key: root.key;
+        }
+    }
+    msg := Text {
+        visible: root.err != "";
+        x: 12px;
+        y: 12px;
+        width: parent.width - 24px;
+        text: root.err;
+        wrap: word-wrap;
+        color: #f38ba8;
+        font-size: Theme.fs-body;
+    }
+}

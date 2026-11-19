@@ -197,6 +197,7 @@ fn panel_view(dir: &Path, panels: &[String]) -> (String, String) {
     let view = [
         "// Généré par natif/build.rs : un panneau par `ui/widgets/<id>/panel.slint`. Ne pas modifier.",
         "import { StyleTokens } from \"@ui/theme.slint\";",
+        "import { PluginPanel } from \"@ui/plugin-view.slint\";",
         &imports,
         "// Le panneau du widget `kind` (vide : aucun), et sa taille naturelle.",
         "export component PanelView inherits Rectangle {",
@@ -207,6 +208,7 @@ fn panel_view(dir: &Path, panels: &[String]) -> (String, String) {
         "    out property <length> natural-w: col.preferred-width;",
         "    out property <length> natural-h: col.preferred-height;",
         "    col := VerticalLayout {",
+        "        if root.kind == \"plugin\" || root.kind.starts-with(\"plugin:\"): PluginPanel { instance: root.instance; }",
         &branches,
         "    }",
         "}",
@@ -220,6 +222,7 @@ fn panel_view(dir: &Path, panels: &[String]) -> (String, String) {
         "    out property <length> natural-h: col.preferred-height;",
         "    col := VerticalLayout {",
         "        alignment: start;",
+        "        if root.kind == \"plugin\" || root.kind.starts-with(\"plugin:\"): PluginPanel { instance: root.instance; }",
         &fills,
         "    }",
         "}",

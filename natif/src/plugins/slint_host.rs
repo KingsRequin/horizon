@@ -17,6 +17,9 @@ const HORIZON_API: &str = include_str!("../../ui/plugin-api/horizon.slint");
 /// Chemin virtuel de la bibliothèque (jamais lu sur le disque).
 const API_DIR: &str = "horizon-plugin-api";
 
+/// Nom sous lequel Horizon exporte le global `Theme` de `@horizon` (thème posé par l'hôte).
+pub const THEME_EXPORT: &str = "HorizonTheme";
+
 /// Erreur de compilation, avec sa place dans le fichier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diag {
@@ -88,11 +91,14 @@ pub struct Surface {
 }
 
 impl Surface {
-    /// Crée un exemplaire de `def` à l'échelle `scale` (fil de l'interface).
-    pub fn new(def: &ComponentDefinition, scale: f32) -> anyhow::Result<Surface> {
+    /// Crée un exemplaire de `def` à l'échelle `scale` (fil de l'interface). `setup` est appelé
+    /// avant le premier calcul (thème, rappels des globaux : une liaison déjà évaluée ne verrait
+    /// pas un rappel posé ensuite).
+    pub fn new(def: &ComponentDefinition, scale: f32, setup: impl FnOnce(&ComponentInstance)) -> anyhow::Result<Surface> {
         let (inst, win) = platform::offscreen(|| def.create());
         let inst = inst.map_err(|e| anyhow::anyhow!("création de l'exemplaire : {e}"))?;
         let win = win.ok_or_else(|| anyhow::anyhow!("fenêtre hors écran absente"))?;
+        setup(&inst);
         win.window().dispatch_event(WindowEvent::ScaleFactorChanged { scale_factor: scale });
         inst.show().map_err(|e| anyhow::anyhow!("affichage hors écran : {e}"))?;
         Ok(Surface { inst, win, std: std_props_of(def), scale, size: (0, 0), buf: Vec::new() })
@@ -236,7 +242,13 @@ fn compile_one(dir: &Path, file: &str, component: &str) -> Result<ComponentDefin
         };
         Box::pin(std::future::ready(answer))
     });
-    let result = spin_on(compiler.build_from_path(&path));
+    // Le global `Theme` n'est accessible depuis Horizon que s'il est exporté par le fichier
+    // principal : Horizon l'ajoute lui-même (sous un nom à part), en fin de fichier pour ne pas
+    // décaler les numéros de ligne.
+    let source = format!("{top}
+export {{ Theme as {THEME_EXPORT} }} from \"@horizon\";
+");
+    let result = spin_on(compiler.build_from_source(source, path.clone()));
     let errors: Vec<Diag> = result
         .diagnostics()
         .filter(|d| d.level() == DiagnosticLevel::Error)

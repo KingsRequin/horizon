@@ -35,6 +35,7 @@ import { SuggestionsWidget } from "widgets/suggestions/widget.slint";
 import { SystemWidget } from "widgets/system/widget.slint";
 import { WeatherWidget } from "widgets/weather/widget.slint";
 import { WindowsWidget } from "widgets/windows/widget.slint";
+import { PluginWidget } from "plugin-view.slint";
 
 export component WidgetView inherits Rectangle {
     in property <StyleTokens> t;
@@ -73,7 +74,7 @@ export component WidgetView inherits Rectangle {
         kind == "essaim" || kind == "headset" || kind == "lighting" || kind == "media" ||
         kind == "mic_krisp" || kind == "notifications" || kind == "servers" ||
         kind == "shortcuts" || kind == "suggestions" || kind == "system" || kind == "weather" ||
-        kind == "windows";
+        kind == "windows" || root.slot.plugin;
     out property <length> natural: row.preferred-width;
     init => {
         root.measured(root.natural);
@@ -270,6 +271,12 @@ export component WidgetView inherits Rectangle {
             clickable: root.live-click;
             compact: root.compact;
             wide: root.wide;
+        }
+        if root.slot.plugin: PluginWidget {
+            t: root.t;
+            slot: root.slot;
+            interactive: root.live;
+            clickable: root.live-click;
         }
         if !root.ported: SlotView {
             t: root.t;

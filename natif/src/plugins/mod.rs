@@ -8,10 +8,9 @@
 //! (page État) ; rien n'est chargé avant.
 
 mod registry;
-// Branché par la tâche 5 (affichage dans les barres) : retiré alors.
-#[allow(dead_code)]
 mod slint_host;
 mod store;
+pub mod view;
 
 pub use registry::{Entry, PluginState};
 pub use store::Disabled;
@@ -25,6 +24,29 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant, UNIX_EPOCH};
+
+/// Genre de base des panneaux de plugins (« plugin:<exemplaire> », « plugin:<id>:<exemplaire> »
+/// pour une tuile) : un seul jeu de crochets pour tous (`PANEL`).
+pub const PANEL_KIND: &str = "plugin";
+
+/// Crochets des panneaux de plugins (`widgets::panel_hook` pour le genre `plugin`).
+pub const PANEL: crate::widgets::Panel = crate::widgets::Panel {
+    bind: |app, host| view::bind(app, &host.label, &host.global::<crate::ui::PluginFrames>()),
+    opened: None,
+    closed: None,
+    shown: Some(|app, host, kind| {
+        let id = instance_of_panel(kind);
+        if let Some(plugin) = view::plugin_of(app, id) {
+            view::panel_shown(&host.label, id, &plugin, host.scale());
+        }
+    }),
+    hidden: Some(|_, host, kind| view::panel_hidden(&host.label, instance_of_panel(kind))),
+};
+
+/// Exemplaire d'un genre de panneau de plugin (son dernier segment).
+fn instance_of_panel(kind: &str) -> &str {
+    kind.rsplit(':').next().unwrap_or_default()
+}
 
 /// Le registre des plugins a changé (relire [`Plugins::list`]).
 pub const EV_PLUGINS: &str = "horizon://plugins";
@@ -64,6 +86,14 @@ impl Plugins {
     pub fn manifest(&self, id: &str) -> Option<Arc<PluginManifest>> {
         let r = lock(&self.registry);
         r.entries.get(id).filter(|e| e.state == PluginState::Ok).and_then(|e| e.manifest.clone())
+    }
+
+    /// Ce dont l'affichage a besoin pour le plugin `id` chargeable : manifeste, dossier,
+    /// génération (change à chaque relecture), erreur de lecture du manifeste.
+    pub fn loadable(&self, id: &str) -> Option<(Arc<PluginManifest>, PathBuf, u64, Option<String>)> {
+        let r = lock(&self.registry);
+        let e = r.entries.get(id).filter(|e| e.state == PluginState::Ok)?;
+        Some((e.manifest.clone()?, e.dir.clone(), e.generation, e.error.clone()))
     }
 
     /// Tous les plugins connus.
@@ -168,7 +198,7 @@ fn publish(r: &Registry) {
 /// Le registre a changé : les barres refont leurs emplacements, la page État se relit.
 fn changed(app: &AppHandle) {
     let a = app.clone();
-    let _ = slint::invoke_from_event_loop(move || crate::edit::broadcast_layout(&a));
+    let _ = slint::invoke_from_event_loop(move || crate::ui::bar::plugins_changed(&a));
     let _ = app.emit(EV_PLUGINS, ());
 }
 
@@ -247,4 +277,17 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
 fn changes_error(r: &Registry, c: &registry::Change) -> Option<String> {
     let (registry::Change::Added(n) | registry::Change::Modified(n)) = c else { return None };
     r.entries.get(n).and_then(|e| e.error.as_ref()).map(|e| format!("{n} : {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn panel_kind_gives_the_instance() {
+        // Fenêtre surgissante (« plugin:<exemplaire> ») et tuile (« plugin:<id>:<exemplaire> »).
+        assert_eq!(instance_of_panel("plugin:w1a"), "w1a");
+        assert_eq!(instance_of_panel("plugin:essai:w1a"), "w1a");
+        assert_eq!(crate::popup::base_of("plugin:essai:w1a"), PANEL_KIND);
+    }
 }

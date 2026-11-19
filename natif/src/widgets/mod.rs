@@ -143,12 +143,15 @@ pub fn by_id(id: &str) -> Option<&'static Backend> {
 
 /// Le widget `id` a un panneau (`panel.slint`), disponible dans cette édition.
 pub fn has_panel(id: &str) -> bool {
-    (PANELS.contains(&id) && manifest(id).is_some()) || crate::plugins::has_panel(id)
+    (PANELS.contains(&id) && manifest(id).is_some()) || id == crate::plugins::PANEL_KIND || crate::plugins::has_panel(id)
 }
 
 /// Appelle `f` avec le panneau du widget de `kind` (« weather:w1 » → météo), s'il en a un.
 pub fn panel_hook(kind: &str, f: impl FnOnce(&Panel) -> Option<()>) {
-    if let Some(p) = by_id(crate::popup::base_of(kind)).and_then(|b| b.panel.as_ref()) {
+    let base = crate::popup::base_of(kind);
+    if base == crate::plugins::PANEL_KIND {
+        f(&crate::plugins::PANEL);
+    } else if let Some(p) = by_id(base).and_then(|b| b.panel.as_ref()) {
         f(p);
     }
 }

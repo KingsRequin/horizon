@@ -43,6 +43,22 @@ impl Host {
         }
     }
 
+    /// Style graphique de la fenêtre (panneaux des plugins : thème recopié).
+    pub fn graphic(&self) -> bool {
+        match &self.win {
+            Win::Popup(w) => w.get_graphic(),
+            Win::Bar(w) => w.get_graphic(),
+        }
+    }
+
+    /// Échelle de la fenêtre.
+    pub fn scale(&self) -> f32 {
+        match &self.win {
+            Win::Popup(w) => w.window().scale_factor(),
+            Win::Bar(w) => w.window().scale_factor(),
+        }
+    }
+
     /// C'est la fenêtre surgissante (ses abonnements valent pour toutes les fenêtres).
     pub fn is_popup(&self) -> bool {
         matches!(self.win, Win::Popup(_))
@@ -190,7 +206,8 @@ pub fn add_popup(app: &AppHandle, label: &str, window: &PanelWindow) {
             screen: None,
         })
     });
-    let all: Vec<String> = crate::widgets::PANELS.iter().map(|s| (*s).to_owned()).collect();
+    let mut all: Vec<String> = crate::widgets::PANELS.iter().map(|s| (*s).to_owned()).collect();
+    all.push(crate::plugins::PANEL_KIND.to_owned());
     bind_missing(app, label, &all);
 }
 

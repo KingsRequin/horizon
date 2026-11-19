@@ -88,6 +88,7 @@ fn slots(bar: &BarLayout, list: &[WidgetInstance]) -> Vec<Slot> {
                 data: crate::widgets::data_index(bar, w),
                 clickable: crate::widgets::clicks_on(bar.interaction, m.clickable_on_hover),
                 limit: 0.0,
+                plugin: horizon_core::plugin::id_of_kind(m.id).is_some(),
             })
         })
         .collect()
@@ -120,6 +121,7 @@ pub fn open(app: &AppHandle, label: &str, monitor: &MonitorInfo, rect: (i32, i32
     };
     let hwnd = platform::configure(window.window(), spec)?;
     app.register_window(label, hwnd);
+    crate::plugins::view::bind(app, label, &window.global::<super::PluginFrames>());
     let clickable = layout.interaction == Interaction::Click;
     apply_options(&window, &layout);
     // Info-bulles des widgets, sous la souris.
@@ -229,6 +231,7 @@ pub fn open(app: &AppHandle, label: &str, monitor: &MonitorInfo, rect: (i32, i32
     BARS.with_borrow_mut(|b| b.insert(label.to_owned(), ui));
     run_fit(label);
     apply_tiles(label, &layout);
+    sync_plugins(label, &layout);
     Ok(hwnd)
 }
 
@@ -339,6 +342,22 @@ fn relayout(app: &AppHandle, label: &str, bar: &BarLayout) {
     if *b.layout.borrow() == *bar {
         return;
     }
+    apply_layout(app, label, bar);
+}
+
+/// Les plugins ont changé (ajoutés, retirés, acceptés) : les emplacements de toutes les barres
+/// sont refaits, même à disposition égale (un genre `plugin:<id>` peut apparaître ou disparaître).
+pub fn plugins_changed(app: &AppHandle) {
+    for label in labels() {
+        if let Some(bar) = get(&label).map(|b| b.layout.borrow().clone()) {
+            apply_layout(app, &label, &bar);
+        }
+    }
+}
+
+/// Applique la disposition `bar` à la barre `label`.
+fn apply_layout(app: &AppHandle, label: &str, bar: &BarLayout) {
+    let Some(b) = get(label) else { return };
     let old = b.layout.replace(bar.clone());
     apply_options(&b.window, bar);
     let clickable = bar.interaction == Interaction::Click;
@@ -362,8 +381,21 @@ fn relayout(app: &AppHandle, label: &str, bar: &BarLayout) {
         super::model::sync(model, rows);
     }
     apply_tiles(label, bar);
+    sync_plugins(label, bar);
     log::info!("{label} : disposition mise à jour");
     schedule_fit(label);
+}
+
+/// Widgets de plugins de la bande de la barre `label` : leurs exemplaires rendus hors écran.
+fn sync_plugins(label: &str, bar: &BarLayout) {
+    let Some(b) = get(label) else { return };
+    let list: Vec<(String, String)> = [&bar.left, &bar.center, &bar.right]
+        .into_iter()
+        .flatten()
+        .filter(|w| crate::widgets::manifest(w.kind.as_str()).is_some())
+        .filter_map(|w| Some((w.id.clone(), horizon_core::plugin::id_of_kind(w.kind.as_str())?.to_owned())))
+        .collect();
+    crate::plugins::view::sync_bar(label, b.window.window().scale_factor(), &list);
 }
 
 /// Nuit : un voile sur la barre non cliquable (luminosité de `[night]`).
@@ -407,6 +439,7 @@ pub fn close(label: &str) {
     super::hint::forget(label);
     super::panels::forget(label);
     super::edit::forget(label);
+    crate::plugins::view::forget(label);
     if let Some(b) = BARS.with_borrow_mut(|b| b.remove(label)) {
         panel_hosts::forget(&b.app, label);
         // Une fenêtre affichée est tenue par Slint : elle doit être cachée pour disparaître.

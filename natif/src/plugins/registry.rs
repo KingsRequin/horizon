@@ -100,6 +100,8 @@ pub struct Entry {
     /// Erreur de la dernière lecture (manifeste, puis interface et script aux étapes suivantes).
     pub error: Option<String>,
     pub state: PluginState,
+    /// Change à chaque relecture du dossier (l'interface est recompilée).
+    pub generation: u64,
 }
 
 /// Plugins connus et accords (`plugins.json`).
@@ -107,6 +109,8 @@ pub struct Entry {
 pub struct Registry {
     pub entries: BTreeMap<String, Entry>,
     pub store: Store,
+    /// Compteur des relectures (`Entry::generation`).
+    next: u64,
 }
 
 impl Registry {
@@ -125,14 +129,16 @@ impl Registry {
             if m.id == *name { Ok(m) } else { Err(format!("plugin.json, id : « {} » doit être le nom du dossier (« {name} »)", m.id)) }
         });
         let previous = self.entries.remove(name);
+        self.next += 1;
+        let generation = self.next;
         let entry = match parsed {
             Ok(m) => {
                 let state = state_of(&m.permissions, self.store.get(name));
-                Entry { dir, manifest: Some(Arc::new(m)), error: None, state }
+                Entry { dir, manifest: Some(Arc::new(m)), error: None, state, generation }
             }
             Err(e) => match previous.and_then(|p| p.manifest.map(|m| (m, p.state))) {
-                Some((m, state)) => Entry { dir, manifest: Some(m), error: Some(e), state },
-                None => Entry { dir, manifest: None, error: Some(e), state: PluginState::Broken },
+                Some((m, state)) => Entry { dir, manifest: Some(m), error: Some(e), state, generation },
+                None => Entry { dir, manifest: None, error: Some(e), state: PluginState::Broken, generation },
             },
         };
         self.entries.insert(name.clone(), entry);
