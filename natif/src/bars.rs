@@ -19,13 +19,14 @@ pub struct BarWindow {
     pub label: String,
     pub monitor: MonitorInfo,
     pub hwnd: isize,
-    /// Hauteur réservée en pixels logiques (`BarLayout::height` de sa barre).
+    /// Hauteur réservée en pixels logiques (`BarLayout::reserved_height` de sa barre : la bande
+    /// seule en mode volet, où la fenêtre grandit sans rien réserver de plus).
     pub height: u32,
 }
 
-/// Hauteur voulue pour la barre d'un écran (la bande seule si la disposition n'en a pas).
+/// Hauteur à réserver pour la barre d'un écran (la bande seule si la disposition n'en a pas).
 fn wanted_height(app: &AppHandle, monitor_id: &str) -> u32 {
-    app.state::<crate::state::AppState>().bar(monitor_id).map_or(BAND_HEIGHT, |b| b.height)
+    app.state::<crate::state::AppState>().bar(monitor_id).map_or(BAND_HEIGHT, |b| b.reserved_height())
 }
 
 #[derive(Default)]
@@ -151,14 +152,16 @@ fn reposition(app: &AppHandle, hwnd: isize) {
         let list = lock(&bars.list);
         list.iter().find(|b| b.hwnd == hwnd).map(|b| (b.label.clone(), appbar_rect_for_monitor(&b.monitor, b.height)))
     };
-    if let Some((label, rect)) = found
-        && let Err(e) = appbar::update(hwnd, rect)
-    {
-        log::warn!("repositionnement de {label} : {e:#}");
+    if let Some((label, rect)) = found {
+        if let Err(e) = appbar::update(hwnd, rect) {
+            log::warn!("repositionnement de {label} : {e:#}");
+        }
+        // `update` pose la fenêtre à la hauteur réservée : un volet ouvert reprend la sienne.
+        crate::ui::bar::reapply_drawer(&label);
     }
 }
 
-/// Après un changement de disposition : chaque barre dont la hauteur a changé (réglage, menu,
+/// Après un changement de disposition : chaque barre dont la hauteur réservée a changé (réglage, menu,
 /// annulation, profil) est redimensionnée et la place réservée sur son écran suit, à chaud.
 pub fn sync_heights(app: &AppHandle) {
     let windows: Vec<(isize, String, u32)> = {

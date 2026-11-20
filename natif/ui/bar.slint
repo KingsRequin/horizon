@@ -42,6 +42,48 @@ component AddButton inherits Rectangle {
     }
 }
 
+// Bouton du volet des tuiles, au bout droit de la bande : chevron vers le bas (fermé) ou le haut
+// (ouvert). Il réagit toujours, quel que soit le réglage d'interaction de la barre : sinon le
+// volet serait inatteignable sur une barre « Survol seul » ou « Information seule ».
+component DrawerButton inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <bool> open;
+    in property <int> count;
+    callback clicked();
+    callback hovered(bool);
+    width: 28px;
+    Rectangle {
+        y: (parent.height - self.height) / 2;
+        width: 28px;
+        height: 28px;
+        border-radius: root.t.inner-radius;
+        background: root.open ? root.t.text.with-alpha(0.2)
+            : area.has-hover ? root.t.text.with-alpha(0.14)
+            : root.t.graphic ? transparent : root.t.island-bg;
+        animate background { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+        Icon {
+            source: root.open ? @image-url("../icons/phosphor/caretUp.svg") : @image-url("../icons/phosphor/caretDown.svg");
+            size: 14px;
+            color: area.has-hover || root.open ? root.t.text : root.t.text-dim;
+        }
+        area := TouchArea {
+            mouse-cursor: pointer;
+            changed has-hover => {
+                root.hovered(self.has-hover);
+                if self.has-hover {
+                    Tip.show(root.count > 0 ? "Tuiles (" + root.count + ")" : "Tuiles");
+                } else {
+                    Tip.hide();
+                }
+            }
+            clicked => {
+                Tip.hide();
+                root.clicked();
+            }
+        }
+    }
+}
+
 // Fond d'une zone en mode édition (`.editing .zone`) : pointillés et voile du texte à 4 %.
 component EditZone inherits Rectangle {
     in property <StyleTokens> t;
@@ -79,6 +121,20 @@ export component BarWindow inherits Window {
     in property <[Slot]> right;
     in property <[TileBox]> tiles;
     in property <bool> tall;
+    // Volet des tuiles (src/ui/bar.rs) : mode volet, bouton affiché (au moins une tuile, ou mode
+    // édition), volet ouvert, nombre de tuiles.
+    in property <bool> drawer;
+    in property <bool> drawer-button;
+    in property <bool> drawer-open;
+    in property <int> drawer-count;
+    // Clic sur le bouton du volet ; la souris entre sur le bouton ou en sort.
+    callback drawer-toggle();
+    callback drawer-hover(bool);
+    // Place prise par le bouton au bout de la bande (bouton et écart avant lui).
+    property <length> drawer-space: root.drawer-button ? 28px + t.zone-gap : 0px;
+    // Hauteur de la fenêtre autour du contenu des tuiles (bande, marges, bords), lue par Rust
+    // pour dimensionner le volet ouvert.
+    out property <length> tiles-chrome-h: root.band-h + root.tiles-margin-top + root.tiles-margin-bottom + root.tiles-pad + root.tiles-pad-bottom;
     // Zone des tuiles : place du bouton « Ajouter une tuile » (mode édition) et hauteur du
     // contenu (bas de la colonne la plus haute), posées par Rust.
     in property <length> add-x;
@@ -131,7 +187,7 @@ export component BarWindow inherits Window {
     out property <length> left-zone-x: t.band-pad;
     out property <length> left-zone-w: self.center-zone-x - 10px - t.band-pad;
     out property <length> right-zone-x: self.center-zone-x + self.center-zone-w + 10px;
-    out property <length> right-zone-w: root.width - t.band-pad - self.right-zone-x;
+    out property <length> right-zone-w: root.width - t.band-pad - root.drawer-space - self.right-zone-x;
     // Début de chaque rangée de widgets (pixels logiques de la fenêtre).
     out property <length> left-row-x: left-zone.x + left-row.x;
     out property <length> center-row-x: center-row.x;
@@ -154,7 +210,7 @@ export component BarWindow inherits Window {
 
     // Débordement (src/overflow.rs) : largeur disponible, écart entre widgets, largeur
     // naturelle de chaque emplacement (zone 0, 1, 2 et identifiant).
-    out property <length> inner-width: root.width - 2 * t.band-pad;
+    out property <length> inner-width: root.width - 2 * t.band-pad - root.drawer-space;
     out property <length> gap: t.zone-gap;
     callback measured(int, string, length);
     // Largeur complète d'un emplacement, sans limite (identifiant, px logiques) : seuls les widgets
@@ -184,9 +240,11 @@ export component BarWindow inherits Window {
     // Zone des tuiles (`.tiles`, `.editing .tiles`) : bords alignés sur les îlots (6 px) ou sur la
     // bande graphique (4 px), rien en bas (marge de chaque tuile) ; en édition, cadre pointillé
     // détaché des bords (margin 2 4 4, padding 6).
-    property <length> tiles-margin-x: root.editing ? 4px : 0px;
-    property <length> tiles-margin-top: root.editing ? 2px : 0px;
-    property <length> tiles-margin-bottom: root.editing ? 4px : 0px;
+    // En volet, le tout dans un fond de panneau (`drawer-inset` de chaque côté et en bas).
+    property <length> drawer-inset: root.drawer ? 4px : 0px;
+    property <length> tiles-margin-x: root.drawer-inset + (root.editing ? 4px : 0px);
+    property <length> tiles-margin-top: root.drawer-inset / 2 + (root.editing ? 2px : 0px);
+    property <length> tiles-margin-bottom: root.drawer-inset + (root.editing ? 4px : 0px);
     property <length> tiles-pad: root.editing ? 6px : t.tiles-pad;
     property <length> tiles-pad-bottom: root.editing ? 6px : 0px;
     // Défilement de la zone quand les colonnes ne tiennent pas dans la barre.
@@ -353,7 +411,7 @@ export component BarWindow inherits Window {
         // Hors édition, seulement la place des widgets de droite : déclarée après la zone gauche
         // et le centre, une zone de toute la largeur leur prendrait survols et clics.
         right-zone := TouchArea {
-            x: root.editing ? root.right-zone-x : root.width - t.band-pad - right-row.preferred-width;
+            x: root.editing ? root.right-zone-x : root.width - t.band-pad - root.drawer-space - right-row.preferred-width;
             z: root.drag-zone == 2 ? 1 : 0;
             width: root.editing ? root.right-zone-w : right-row.preferred-width + t.band-pad;
             height: parent.height;
@@ -399,6 +457,16 @@ export component BarWindow inherits Window {
         }
         }
 
+        if root.drawer-button: DrawerButton {
+            x: root.width - t.band-pad - self.width;
+            height: parent.height;
+            t: root.t;
+            open: root.drawer-open;
+            count: root.drawer-count;
+            clicked => { root.drawer-toggle(); }
+            hovered(on) => { root.drawer-hover(on); }
+        }
+
         // Volume et média à la place de l'affichage de Windows (src/ui/osd.rs, barre principale).
         if OsdData.kind != "" && !root.editing: Osd {
             t: root.t;
@@ -438,6 +506,18 @@ export component BarWindow inherits Window {
     // Tuiles d'une barre haute (snippet `tiles` d'App.svelte) : le panneau de chaque widget, en
     // colonnes de même largeur équilibrées (rangées par Rust) ; la zone défile quand elles ne
     // tiennent pas, avec un fondu du bord d'où il reste à défiler.
+    // Fond du volet ouvert (par-dessus les fenêtres) : celui des panneaux surgissants.
+    if root.tall && root.drawer: Rectangle {
+        x: root.drawer-inset;
+        y: root.band-h;
+        width: root.width - 2 * root.drawer-inset;
+        height: root.height - root.band-h - root.drawer-inset;
+        border-radius: t.island-radius + 3px;
+        background: t.popup-bg;
+        border-width: 1px;
+        border-color: t.popup-border;
+    }
+
     if root.tall: tiles-zone := Rectangle {
         // Une tuile glissée vers la bande reste visible par-dessus elle.
         z: root.drag-zone == 3 ? 1 : 0;

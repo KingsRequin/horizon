@@ -67,6 +67,7 @@ mod tests {
             interaction: horizon_core::layout::Interaction::Click,
             autohide: true,
             height: horizon_core::layout::BAND_HEIGHT,
+            tiles_mode: horizon_core::layout::TilesMode::Fixed,
             left: vec![shortcuts],
             center: vec![],
             right: vec![],
