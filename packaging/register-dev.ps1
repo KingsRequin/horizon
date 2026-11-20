@@ -19,7 +19,7 @@ if (-not $ExeDir -or -not (Test-Path (Join-Path $ExeDir 'horizon.exe'))) {
 
 $dev = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' -ErrorAction SilentlyContinue
 if ($dev.AllowDevelopmentWithoutDevLicense -ne 1) {
-  throw "Le mode développeur de Windows est désactivé : utiliser make-sparse.ps1 (paquet signé)."
+  throw "Le mode développeur de Windows est désactivé : Windows refuse une identité de paquet sans signature."
 }
 
 # Le manifeste et ses images sont copiés hors du dépôt : Windows garde le dossier verrouillé.
