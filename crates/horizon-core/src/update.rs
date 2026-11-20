@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn newer_release_with_all_files() {
-        let json = release("v0.2.0", &["Horizon-0.2.0.zip", "horizon.exe", "horizon-hook.exe", "SHA256SUMS"]);
+        let json = release("v0.2.0", &["Horizon-Setup-0.2.0.exe", "horizon.exe", "horizon-hook.exe", "SHA256SUMS"]);
         let Latest::Newer(o) = read_latest(&json, "o/r", V010) else { panic!("attendu : plus récente") };
         assert_eq!(o.version, Version(0, 2, 0));
         assert!(o.sums_url.ends_with("/SHA256SUMS"));

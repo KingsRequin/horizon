@@ -46,7 +46,8 @@ crates/
                             analyse du son = bibliothèque partagée audio-commun (dépôt à part,
                             avec Prisme et Essaim), à ne pas recopier ici
   horizon-hook/             exe appelé par les hooks de Claude Code
-packaging/                  paquet « sparse » (identité de paquet) et ses icônes
+packaging/                  paquet « sparse » (identité de paquet) et ses icônes ; installateur
+                            (horizon.iss, Inno Setup 6)
 scripts/                    installation, désinstallation, paquet d'une Release, hooks Claude
 .github/workflows/          vérification (ci.yml) et publication d'une Release (release.yml)
 ```

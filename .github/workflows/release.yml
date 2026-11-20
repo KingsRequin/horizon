@@ -1,6 +1,7 @@
 # Publishes a Release for every tag "vX.Y.Z" (the workspace version must match). The assets
 # horizon.exe, horizon-hook.exe and SHA256SUMS are what the auto-updater downloads
-# (natif/src/update.rs); the zip is for a first install.
+# (natif/src/update.rs); Horizon-Setup-X.Y.Z.exe (Inno Setup, preinstalled on the runner) is for
+# a first install.
 # Only first-party actions; the build job has read-only rights, a separate job publishes.
 name: Release
 
@@ -35,7 +36,7 @@ jobs:
         with:
           name: release
           path: |
-            dist/Horizon-*.zip
+            dist/Horizon-Setup-*.exe
             dist/horizon.exe
             dist/horizon-hook.exe
             dist/SHA256SUMS
@@ -56,5 +57,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/Horizon-*.zip dist/horizon.exe dist/horizon-hook.exe dist/SHA256SUMS \
+          gh release create "$GITHUB_REF_NAME" dist/Horizon-Setup-*.exe dist/horizon.exe dist/horizon-hook.exe dist/SHA256SUMS \
             --title "Horizon $GITHUB_REF_NAME" --generate-notes --verify-tag
