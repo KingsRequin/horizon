@@ -5,7 +5,8 @@
 3. The `Release` workflow (`.github/workflows/release.yml`) checks that the tag matches the
    version, runs the tests, builds the public edition with `scripts\package.ps1`
    (`HORIZON_RELEASE=1`, which turns the auto-updater on) and publishes the Release with:
-   - `Horizon-<version>.zip` — first install (`Installer.cmd`);
+   - `Horizon-Setup-<version>.exe` — first install (Inno Setup 6, `packaging\horizon.iss`;
+     preinstalled on the GitHub runner, `winget install JRSoftware.InnoSetup` elsewhere);
    - `horizon.exe`, `horizon-hook.exe`, `SHA256SUMS` — what installed copies download.
 
 Installed copies look for a new Release one minute after start and every 12 hours, verify the

@@ -8,7 +8,8 @@
 //! et sur la page « État ». Elle s'installe au démarrage suivant (`apply_at_start`), ou tout de
 //! suite au clic (`install_now`) : les exécutables sont échangés (`horizon_core::update::swap`),
 //! la nouvelle version est lancée et attend la fin de celle-ci (`HORIZON_WAIT_PID`, voir
-//! `wait_previous`). Si elle ne peut pas être lancée, l'ancienne est remise.
+//! `wait_previous`). Si elle ne peut pas être lancée, l'ancienne est remise. La nouvelle version
+//! corrige au démarrage celle qu'affichent les applications installées de Windows.
 
 use crate::alerts::{Action, Alert, Severity};
 use crate::host::{AppHandle, Manager};
@@ -133,12 +134,24 @@ fn relaunch(dir: &std::path::Path) -> Result<(), String> {
     })
 }
 
+/// Une mise à jour remplace les exécutables sans repasser par l'installateur : la version
+/// affichée dans les applications installées de Windows est remise à celle qui tourne.
+fn show_installed_version() {
+    let Some(dir) = install_dir() else { return };
+    match horizon_sys::installed::sync_version(&dir, current()) {
+        Ok(true) => log::info!("applications installées de Windows : version {} affichée", current()),
+        Ok(false) => {}
+        Err(e) => log::warn!("applications installées de Windows : version affichée inchangée : {e:#}"),
+    }
+}
+
 pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     if !ENABLED {
         return Ok(());
     }
     let app = app.clone();
     start_thread("mise-a-jour", move || {
+        show_installed_version();
         let u = app.state::<Updater>();
         u.wake.wait(FIRST);
         loop {

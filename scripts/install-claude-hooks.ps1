@@ -18,6 +18,12 @@ $events = 'SessionStart', 'UserPromptSubmit', 'PostToolUse', 'PermissionRequest'
 $toolEvents = 'PostToolUse', 'PermissionRequest'
 $marker = 'horizon-hook'
 
+# Rien à retirer : le fichier n'est ni créé, ni réécrit.
+if ($Uninstall -and -not ((Test-Path $SettingsPath) -and (Select-String -LiteralPath $SettingsPath -SimpleMatch $marker -Quiet))) {
+  "Aucun hook d'Horizon dans $SettingsPath"
+  return
+}
+
 if (Test-Path $SettingsPath) {
   $raw = Get-Content $SettingsPath -Raw -Encoding utf8
   $settings = if ($raw.Trim()) { $raw | ConvertFrom-Json } else { [pscustomobject]@{} }
@@ -40,7 +46,9 @@ function Without-Horizon($groups) {
 }
 
 foreach ($ev in $events) {
-  $groups = if ($hooks.PSObject.Properties[$ev]) { Without-Horizon $hooks.$ev } else { @() }
+  # @(…) : une fonction qui ne rend qu'un groupe le rend nu, et un objet nu n'a pas de .Count
+  # sous Windows PowerShell 5.1 (l'événement partirait avec les hooks des autres applis).
+  $groups = @(if ($hooks.PSObject.Properties[$ev]) { Without-Horizon $hooks.$ev })
   if (-not $Uninstall) {
     $entry = [pscustomobject]@{
       type    = 'command'
@@ -49,7 +57,7 @@ foreach ($ev in $events) {
     }
     $group = [pscustomobject]@{ hooks = @($entry) }
     if ($toolEvents -contains $ev) { $group | Add-Member -NotePropertyName matcher -NotePropertyValue '*' }
-    $groups = @($groups) + $group
+    $groups += $group
   }
   if ($groups.Count -gt 0) {
     $hooks | Add-Member -NotePropertyName $ev -NotePropertyValue @($groups) -Force

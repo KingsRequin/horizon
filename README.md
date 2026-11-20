@@ -101,16 +101,21 @@ Toutes les fonctions en détail : [docs/guide.md](docs/guide.md).
 
 ## Installation
 
-1. Télécharge `Horizon-<version>.zip` depuis la [dernière version](https://github.com/KingsRequin/horizon/releases/latest) et extrais-le.
-2. Double-clique sur **`Installer.cmd`**. Horizon est copié dans `%LOCALAPPDATA%\Programs\Horizon`,
-   démarre avec Windows et apparaît dans le menu Démarrer. Pas besoin de droits administrateur.
-3. *(Facultatif)* Pour afficher les notifications des autres applis, active le **mode
+1. Télécharge **`Horizon-Setup-<version>.exe`** depuis la [dernière version](https://github.com/KingsRequin/horizon/releases/latest)
+   et lance-le. Horizon est installé dans `%LOCALAPPDATA%\Programs\Horizon`, démarre avec
+   Windows et apparaît dans le menu Démarrer. Pas besoin de droits administrateur.
+2. *(Facultatif)* Pour afficher les notifications des autres applis, active le **mode
    développeur** de Windows (Paramètres → Système → Espace développeurs), puis relance
-   `Installer.cmd`.
+   l'installateur.
 
 Ensuite : clic droit sur une barre → **Modifier la barre**.
 
-Désinstaller : `Desinstaller.cmd` (avec `-RemoveConfig` pour effacer aussi tes réglages).
+Désinstaller : Paramètres de Windows → Applications → Applications installées → Horizon
+(l'assistant demande s'il faut aussi effacer tes réglages).
+
+Installé avec l'ancien zip (`Installer.cmd`) ? Rien ne change, les mises à jour continuent.
+Lancer l'installateur par-dessus garde tes réglages et ajoute Horizon aux applications
+installées de Windows.
 
 ## Questions fréquentes
 
@@ -133,10 +138,10 @@ Détails : [docs/notifications.md](docs/notifications.md).
 <details>
 <summary><b>Est-ce que ça modifie ma configuration de Claude Code ?</b></summary>
 
-Si Claude Code est installé, l'installation ajoute les hooks d'Horizon dans
-`%USERPROFILE%\.claude\settings.json` (une copie de sauvegarde est gardée). Ils ne font que
+Si Claude Code est installé, l'installateur propose (case cochée) d'ajouter les hooks d'Horizon
+dans `%USERPROFILE%\.claude\settings.json` (une copie de sauvegarde est gardée). Ils ne font que
 signaler les événements à Horizon et ne répondent jamais aux demandes d'autorisation.
-`Installer.cmd -NoClaudeHooks` pour s'en passer.
+Décoche la case pour s'en passer ; la désinstallation les retire.
 </details>
 
 <details>

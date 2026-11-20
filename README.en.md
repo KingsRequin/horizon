@@ -103,15 +103,19 @@ what works and what doesn't.
 
 ## Install
 
-1. Download `Horizon-<version>.zip` from the [latest release](https://github.com/KingsRequin/horizon/releases/latest) and extract it.
-2. Double-click **`Installer.cmd`**. Horizon goes to `%LOCALAPPDATA%\Programs\Horizon`, starts
-   with Windows and appears in the Start menu. No administrator rights needed.
-3. *(Optional)* To show other apps' notifications, turn on **developer mode** in Windows
-   (Settings → System → For developers) and run `Installer.cmd` again.
+1. Download **`Horizon-Setup-<version>.exe`** from the [latest release](https://github.com/KingsRequin/horizon/releases/latest)
+   and run it. Horizon goes to `%LOCALAPPDATA%\Programs\Horizon`, starts with Windows and
+   appears in the Start menu. No administrator rights needed.
+2. *(Optional)* To show other apps' notifications, turn on **developer mode** in Windows
+   (Settings → System → For developers) and run the installer again.
 
 Then right-click a bar → **Modifier la barre** to make it yours.
 
-Uninstall with `Desinstaller.cmd` (add `-RemoveConfig` to also delete your settings).
+Uninstall from Windows Settings → Apps → Installed apps → Horizon (the wizard asks whether to
+delete your settings too).
+
+Installed from the old zip (`Installer.cmd`)? Nothing changes, updates keep coming. Running the
+installer over it keeps your settings and adds Horizon to Windows' installed apps.
 
 ## FAQ
 
@@ -134,9 +138,9 @@ unsigned one, which Windows accepts in developer mode only. Details in
 <details>
 <summary><b>Does it change anything in my Claude Code setup?</b></summary>
 
-If Claude Code is installed, the installer adds Horizon's hooks to
+If Claude Code is installed, the installer offers (ticked by default) to add Horizon's hooks to
 `%USERPROFILE%\.claude\settings.json` (a backup is kept). They only report events to Horizon;
-they never answer permission requests. Install with `Installer.cmd -NoClaudeHooks` to skip them.
+they never answer permission requests. Untick the box to skip them; uninstalling removes them.
 </details>
 
 <details>

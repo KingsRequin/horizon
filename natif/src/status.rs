@@ -127,7 +127,7 @@ fn checks(app: &AppHandle) -> Vec<Check> {
             "permissions",
             "Autorisations Claude",
             Level::Off,
-            "aucune demande reçue depuis le démarrage (hook PermissionRequest : relancer install-claude-hooks.ps1 s’il manque)",
+            "aucune demande reçue depuis le démarrage (hook PermissionRequest : s’il manque, relancer l’installation d’Horizon)",
         ),
     });
 
