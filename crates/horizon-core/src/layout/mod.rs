@@ -367,9 +367,11 @@ impl BarLayout {
         self.left.iter_mut().chain(self.center.iter_mut()).chain(self.right.iter_mut()).chain(self.tiles.iter_mut())
     }
 
-    /// Widgets montrés en tuile (aucun sur une barre normale).
-    pub fn shown_tiles(&self) -> &[WidgetInstance] {
-        if self.has_tiles_area() { &self.tiles } else { &[] }
+    /// Widgets montrés en tuile : sous la barre, ceux d'une barre plus haute que sa bande ; en
+    /// volet, seulement volet ouvert (`drawer_open`) — volet fermé, rien ne tourne pour eux.
+    pub fn tiles_shown(&self, drawer_open: bool) -> &[WidgetInstance] {
+        let shown = if self.tiles_mode.is_drawer() { drawer_open } else { self.has_tiles_area() };
+        if shown { &self.tiles } else { &[] }
     }
 }
 

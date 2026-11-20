@@ -805,9 +805,9 @@ fn tiles_zone_add_move_find_and_remove() {
 fn tiles_are_hidden_but_kept_on_a_normal_bar() {
     let mut l = tall_right();
     l.add_widget("right", Zone::Tiles, WidgetKind::MEDIA).unwrap();
-    assert_eq!(bar(&l, "right").shown_tiles().len(), 1);
+    assert_eq!(bar(&l, "right").tiles_shown(false).len(), 1);
     l.set_bar_options("right", BarOptionsPatch { height: Some(BAND_HEIGHT), ..Default::default() }).unwrap();
-    assert!(bar(&l, "right").shown_tiles().is_empty());
+    assert!(bar(&l, "right").tiles_shown(false).is_empty());
     assert_eq!(bar(&l, "right").tiles.len(), 1, "gardée pour quand la barre regrandit");
 }
 
@@ -884,10 +884,10 @@ fn drawer_has_tiles_area_iff_tiles() {
     b.tiles_mode = TilesMode::Click;
     b.height = 480;
     assert!(!b.has_tiles_area());
-    assert!(b.shown_tiles().is_empty());
+    assert!(b.tiles_shown(true).is_empty());
     b.tiles.push(widget(WidgetKind::CLOCK, serde_json::Value::Null));
     assert!(b.has_tiles_area());
-    assert_eq!(b.shown_tiles().len(), 1);
+    assert_eq!(b.tiles_shown(true).len(), 1);
     b.tiles_mode = TilesMode::Fixed;
     b.height = BAND_HEIGHT;
     assert!(!b.has_tiles_area(), "« Sous la barre » à la hauteur de la bande : pas de zone");
@@ -906,4 +906,18 @@ fn new_bars_default_to_click_drawer() {
     let l = Layout::default_for(&real_monitors());
     assert!(l.bars.iter().all(|b| b.tiles_mode == TilesMode::Click));
     assert!(TilesMode::Click.is_drawer() && TilesMode::Hover.is_drawer() && !TilesMode::Fixed.is_drawer());
+}
+
+#[test]
+fn drawer_tiles_are_shown_only_while_open() {
+    let mut b = bar(&Layout::default_for(&real_monitors()), "right").clone();
+    b.tiles.push(widget(WidgetKind::SYSTEM, serde_json::Value::Null));
+    b.tiles_mode = TilesMode::Click;
+    assert!(b.tiles_shown(false).is_empty(), "volet fermé : rien ne tourne pour ses tuiles");
+    assert_eq!(b.tiles_shown(true).len(), 1);
+    b.tiles_mode = TilesMode::Fixed;
+    b.height = 480;
+    assert_eq!(b.tiles_shown(false).len(), 1, "sous la barre : toujours montrées");
+    b.height = BAND_HEIGHT;
+    assert!(b.tiles_shown(true).is_empty(), "barre revenue à la bande : gardées, pas montrées");
 }

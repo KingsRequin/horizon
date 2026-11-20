@@ -370,11 +370,11 @@ mod tests {
         let mut l = layout();
         set_height_in(&mut l, "m", BAND_HEIGHT).unwrap();
         assert_eq!(l.bars[0].height, BAND_HEIGHT);
-        assert!(l.bars[0].shown_tiles().is_empty());
+        assert!(l.bars[0].tiles_shown(false).is_empty());
         assert_eq!(l.bars[0].tiles.len(), 1, "gardées pour plus tard");
         set_height_in(&mut l, "m", 2000).unwrap();
         assert_eq!(l.bars[0].height, horizon_core::layout::MAX_BAR_HEIGHT);
-        assert_eq!(l.bars[0].shown_tiles().len(), 1);
+        assert_eq!(l.bars[0].tiles_shown(false).len(), 1);
         assert!(set_height_in(&mut l, "inconnu", 480).is_err());
     }
 

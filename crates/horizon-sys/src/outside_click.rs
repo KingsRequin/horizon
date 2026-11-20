@@ -38,10 +38,12 @@ unsafe extern "system" fn on_mouse(code: i32, wparam: WPARAM, lparam: LPARAM) ->
 }
 
 /// Pose le crochet : chaque appui de bouton (gauche, droit, milieu) envoie sa position écran
-/// (pixels physiques). Sans effet s'il est déjà posé.
-pub fn start(tx: Sender<(i32, i32)>) {
-    if WATCH.lock().map(|w| w.is_some()).unwrap_or(true) {
-        return;
+/// (pixels physiques). Vrai si le crochet est posé (déjà posé compris).
+pub fn start(tx: Sender<(i32, i32)>) -> bool {
+    match WATCH.lock() {
+        Ok(w) if w.is_some() => return true,
+        Ok(_) => {}
+        Err(_) => return false,
     }
     let (ready_tx, ready_rx) = crossbeam_channel::bounded::<u32>(1);
     let spawned = std::thread::Builder::new().name("clic-ailleurs".into()).spawn(move || {
@@ -67,15 +69,14 @@ pub fn start(tx: Sender<(i32, i32)>) {
     });
     if let Err(e) = spawned {
         log::warn!("fil du crochet souris : {e}");
-        return;
+        return false;
     }
-    match ready_rx.recv() {
-        Ok(thread) if thread != 0 => {
-            if let Ok(mut w) = WATCH.lock() {
-                *w = Some(Watch { thread, tx });
-            }
+    match (ready_rx.recv(), WATCH.lock()) {
+        (Ok(thread), Ok(mut w)) if thread != 0 => {
+            *w = Some(Watch { thread, tx });
+            true
         }
-        _ => {}
+        _ => false,
     }
 }
 
