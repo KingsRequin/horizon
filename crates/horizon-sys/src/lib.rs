@@ -23,6 +23,7 @@ pub mod mixer;
 pub mod monitors;
 pub mod notifications;
 pub mod osd_native;
+pub mod outside_click;
 pub mod power;
 pub mod presence;
 pub mod restart;
