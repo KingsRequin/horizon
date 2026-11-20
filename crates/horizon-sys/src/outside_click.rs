@@ -86,18 +86,19 @@ pub fn stop() {
     let _ = unsafe { PostThreadMessageW(w.thread, WM_QUIT, WPARAM(0), LPARAM(0)) };
 }
 
-/// La fenêtre sous ce point écran (pixels physiques) appartient à ce processus (barre, panneau,
-/// menu d'Horizon).
-pub fn own_window_at(x: i32, y: i32) -> bool {
+/// Fenêtre racine sous ce point écran (pixels physiques), si elle appartient à ce processus
+/// (barre, panneau, menu, info-bulle d'Horizon).
+pub fn own_window_at(x: i32, y: i32) -> Option<isize> {
     // SAFETY : appels sans pointeur à garder ; une fenêtre disparue entre-temps rend 0.
     unsafe {
         let h = WindowFromPoint(POINT { x, y });
         if h.is_invalid() {
-            return false;
+            return None;
         }
         let root = GetAncestor(h, GA_ROOT);
+        let root = if root.is_invalid() { h } else { root };
         let mut pid = 0u32;
-        GetWindowThreadProcessId(if root.is_invalid() { h } else { root }, Some(&mut pid));
-        pid == GetCurrentProcessId()
+        GetWindowThreadProcessId(root, Some(&mut pid));
+        (pid == GetCurrentProcessId()).then_some(root.0 as isize)
     }
 }
