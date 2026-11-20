@@ -2,19 +2,16 @@
 //! Paramètres › Personnalisation › Couleurs, puis annoncée (`WM_SETTINGCHANGE`
 //! « ImmersiveColorSet ») pour que le menu Démarrer, les paramètres et les applis la reprennent.
 
+use crate::registry::Key;
 use serde::{Deserialize, Serialize};
 use windows::Win32::Foundation::{LPARAM, WPARAM};
-use windows::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, KEY_READ, KEY_SET_VALUE, REG_BINARY, REG_DWORD, REG_VALUE_TYPE,
-    RegCloseKey, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
-};
 use windows::Win32::UI::WindowsAndMessaging::{
     HWND_BROADCAST, SMTO_ABORTIFHUNG, SendMessageTimeoutW, WM_SETTINGCHANGE,
 };
-use windows::core::{PCWSTR, w};
+use windows::core::w;
 
-const ACCENT: PCWSTR = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent");
-const DWM: PCWSTR = w!("Software\\Microsoft\\Windows\\DWM");
+const ACCENT: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent";
+const DWM: &str = "Software\\Microsoft\\Windows\\DWM";
 
 /// Valeurs du registre qui font la couleur d'accent (pour la remettre telle quelle).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -45,54 +42,6 @@ impl AccentValues {
             colorization: argb,
             afterglow: argb,
         }
-    }
-}
-
-struct Key(HKEY);
-
-impl Key {
-    fn open(path: PCWSTR, write: bool) -> anyhow::Result<Key> {
-        let mut key = HKEY::default();
-        let access = if write { KEY_READ | KEY_SET_VALUE } else { KEY_READ };
-        // SAFETY : chemin constant, sortie HKEY valide.
-        unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, path, None, access, &mut key) }.ok()?;
-        Ok(Key(key))
-    }
-
-    fn bytes(&self, name: PCWSTR) -> anyhow::Result<Vec<u8>> {
-        let mut buf = vec![0u8; 64];
-        let mut len = buf.len() as u32;
-        let mut kind = REG_VALUE_TYPE::default();
-        // SAFETY : tampon de `len` octets.
-        unsafe { RegQueryValueExW(self.0, name, None, Some(&mut kind), Some(buf.as_mut_ptr()), Some(&mut len)) }
-            .ok()?;
-        buf.truncate(len as usize);
-        Ok(buf)
-    }
-
-    fn dword(&self, name: PCWSTR) -> anyhow::Result<u32> {
-        let b = self.bytes(name)?;
-        anyhow::ensure!(b.len() == 4, "valeur DWORD attendue");
-        Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-    }
-
-    fn set_bytes(&self, name: PCWSTR, data: &[u8]) -> anyhow::Result<()> {
-        // SAFETY : clé ouverte en écriture, données valides le temps de l'appel.
-        unsafe { RegSetValueExW(self.0, name, None, REG_BINARY, Some(data)) }.ok()?;
-        Ok(())
-    }
-
-    fn set_dword(&self, name: PCWSTR, v: u32) -> anyhow::Result<()> {
-        // SAFETY : clé ouverte en écriture, 4 octets.
-        unsafe { RegSetValueExW(self.0, name, None, REG_DWORD, Some(&v.to_le_bytes())) }.ok()?;
-        Ok(())
-    }
-}
-
-impl Drop for Key {
-    fn drop(&mut self) {
-        // SAFETY : clé ouverte par `open`.
-        let _ = unsafe { RegCloseKey(self.0) };
     }
 }
 

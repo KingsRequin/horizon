@@ -26,6 +26,7 @@ pub mod osd_native;
 pub mod outside_click;
 pub mod power;
 pub mod presence;
+mod registry;
 pub mod restart;
 pub mod shell;
 pub mod startmenu;
