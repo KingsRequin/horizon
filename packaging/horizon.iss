@@ -109,23 +109,10 @@ Type: filesandordirs; Name: "{localappdata}\Horizon\package"
 Type: dirifempty; Name: "{localappdata}\Horizon"
 
 [Code]
-function ClaudeDir: String;
-begin
-  Result := GetEnv('USERPROFILE') + '\.claude';
-end;
-
 // Claude Code est installé : la case des hooks n'est proposée que dans ce cas.
 function HasClaudeCode: Boolean;
 begin
-  Result := DirExists(ClaudeDir);
-end;
-
-// Les réglages de Claude Code appellent le hook d'Horizon.
-function HooksInstalled: Boolean;
-var
-  Settings: AnsiString;
-begin
-  Result := LoadStringFromFile(ClaudeDir + '\settings.json', Settings) and (Pos('horizon-hook', Settings) > 0);
+  Result := DirExists(GetEnv('USERPROFILE') + '\.claude');
 end;
 
 // Fichier ouvert par un processus (exécutable qui tourne).
@@ -201,7 +188,7 @@ begin
       StopHorizon;
       RegDeleteValue(HKEY_CURRENT_USER, '{#RunKey}', 'Horizon');
       RunScript('register-dev.ps1', '-Unregister');
-      if HooksInstalled then RunScript('install-claude-hooks.ps1', '-Uninstall');
+      RunScript('install-claude-hooks.ps1', '-Uninstall');
     end;
     usPostUninstall:
       if SuppressibleMsgBox(CustomMessage('RemoveSettings'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES then

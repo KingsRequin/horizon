@@ -18,6 +18,12 @@ $events = 'SessionStart', 'UserPromptSubmit', 'PostToolUse', 'PermissionRequest'
 $toolEvents = 'PostToolUse', 'PermissionRequest'
 $marker = 'horizon-hook'
 
+# Rien à retirer : le fichier n'est ni créé, ni réécrit.
+if ($Uninstall -and -not ((Test-Path $SettingsPath) -and (Select-String -LiteralPath $SettingsPath -SimpleMatch $marker -Quiet))) {
+  "Aucun hook d'Horizon dans $SettingsPath"
+  return
+}
+
 if (Test-Path $SettingsPath) {
   $raw = Get-Content $SettingsPath -Raw -Encoding utf8
   $settings = if ($raw.Trim()) { $raw | ConvertFrom-Json } else { [pscustomobject]@{} }

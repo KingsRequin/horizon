@@ -12,6 +12,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo build -p horizon-natif --release
 scripts\install.ps1            # build in release, install to %LOCALAPPDATA%\Programs\Horizon and start
+scripts\uninstall.ps1          # remove it (settings are kept unless -RemoveConfig)
 ```
 
 To try a build without installing it: `horizon.exe --quit` on the installed copy, run
