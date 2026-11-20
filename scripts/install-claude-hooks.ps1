@@ -40,7 +40,9 @@ function Without-Horizon($groups) {
 }
 
 foreach ($ev in $events) {
-  $groups = if ($hooks.PSObject.Properties[$ev]) { Without-Horizon $hooks.$ev } else { @() }
+  # @(…) : une fonction qui ne rend qu'un groupe le rend nu, et un objet nu n'a pas de .Count
+  # sous Windows PowerShell 5.1 (l'événement partirait avec les hooks des autres applis).
+  $groups = @(if ($hooks.PSObject.Properties[$ev]) { Without-Horizon $hooks.$ev })
   if (-not $Uninstall) {
     $entry = [pscustomobject]@{
       type    = 'command'
@@ -49,7 +51,7 @@ foreach ($ev in $events) {
     }
     $group = [pscustomobject]@{ hooks = @($entry) }
     if ($toolEvents -contains $ev) { $group | Add-Member -NotePropertyName matcher -NotePropertyValue '*' }
-    $groups = @($groups) + $group
+    $groups += $group
   }
   if ($groups.Count -gt 0) {
     $hooks | Add-Member -NotePropertyName $ev -NotePropertyValue @($groups) -Force
