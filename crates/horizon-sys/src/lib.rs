@@ -15,6 +15,7 @@ pub mod foreground;
 pub mod headset;
 pub mod hotkey;
 pub mod fullscreen;
+pub mod installed;
 pub mod git;
 pub mod launch;
 pub mod media;
