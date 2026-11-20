@@ -753,7 +753,9 @@ fn bar_height_is_kept_within_bounds() {
     assert_eq!(raw(3), BAND_HEIGHT);
     assert_eq!(raw(5000), MAX_BAR_HEIGHT);
     let mut l = Layout::default_for(&real_monitors());
-    let set = |l: &mut Layout, h| l.set_bar_options("right", BarOptionsPatch { height: Some(h), ..Default::default() });
+    let set = |l: &mut Layout, h| {
+        l.set_bar_options("right", BarOptionsPatch { height: Some(h), tiles_mode: Some(TilesMode::Fixed), ..Default::default() })
+    };
     set(&mut l, 480).unwrap();
     assert_eq!(bar(&l, "right").height, 480);
     assert!(bar(&l, "right").has_tiles_area());
@@ -764,9 +766,13 @@ fn bar_height_is_kept_within_bounds() {
     assert_eq!(bar(&l, "right").style, BarStyle::Graphic, "le reste de la barre ne bouge pas");
 }
 
-/// Disposition réelle dont la barre de droite fait 480 px.
+/// Disposition réelle dont la barre de droite fait 480 px, tuiles sous la barre ; les autres
+/// barres aussi sous la barre (à la hauteur de la bande).
 fn tall_right() -> Layout {
     let mut l = Layout::default_for(&real_monitors());
+    for b in &mut l.bars {
+        b.tiles_mode = TilesMode::Fixed;
+    }
     l.set_bar_options("right", BarOptionsPatch { height: Some(480), ..Default::default() }).unwrap();
     l
 }
@@ -819,6 +825,10 @@ fn tile_sent_to_another_screen() {
     l.set_bar_options("main", BarOptionsPatch { height: Some(240), ..Default::default() }).unwrap();
     l.move_to_monitor(&id, "main").unwrap();
     assert_eq!(bar(&l, "main").tiles[0].id, id);
+    // Volet sans tuile : la tuile y reste une tuile.
+    l.set_bar_options("left", BarOptionsPatch { tiles_mode: Some(TilesMode::Click), ..Default::default() }).unwrap();
+    l.move_to_monitor(&id, "left").unwrap();
+    assert_eq!(bar(&l, "left").tiles[0].id, id);
 }
 
 #[test]
@@ -840,4 +850,60 @@ fn undo_profiles_and_kind_removal_include_tiles() {
     assert_eq!((bar(&l, "right").height, bar(&l, "right").tiles.len()), (480, 1));
     l.switch_profile(&jeu, false).unwrap();
     assert_eq!((bar(&l, "right").height, bar(&l, "right").tiles.len()), (BAND_HEIGHT, 0));
+}
+
+#[test]
+fn tiles_mode_absent_reads_as_fixed() {
+    let old = json!({ "monitor_id": "m", "monitor_pos": [0, 0], "role": "portrait", "style": "graphic",
+        "height": 480, "left": [], "center": [], "right": [] });
+    let b: BarLayout = serde_json::from_value(old).unwrap();
+    assert_eq!(b.tiles_mode, TilesMode::Fixed);
+    assert_eq!(b.reserved_height(), 480);
+    let v = serde_json::to_value(&b).unwrap();
+    assert_eq!(v["tiles_mode"], json!("fixed"));
+}
+
+#[test]
+fn drawer_reserves_only_the_band() {
+    let mut l = Layout::default_for(&real_monitors());
+    l.set_bar_options("right", BarOptionsPatch { height: Some(480), tiles_mode: Some(TilesMode::Fixed), ..Default::default() })
+        .unwrap();
+    assert_eq!(bar(&l, "right").reserved_height(), 480);
+    for mode in [TilesMode::Click, TilesMode::Hover] {
+        l.set_bar_options("right", BarOptionsPatch { tiles_mode: Some(mode), ..Default::default() }).unwrap();
+        let b = bar(&l, "right");
+        assert_eq!(b.tiles_mode, mode);
+        assert_eq!(b.reserved_height(), BAND_HEIGHT);
+        assert_eq!(b.height, 480, "hauteur gardée pour un retour à « Sous la barre »");
+    }
+}
+
+#[test]
+fn drawer_has_tiles_area_iff_tiles() {
+    let mut b = bar(&Layout::default_for(&real_monitors()), "right").clone();
+    b.tiles_mode = TilesMode::Click;
+    b.height = 480;
+    assert!(!b.has_tiles_area());
+    assert!(b.shown_tiles().is_empty());
+    b.tiles.push(widget(WidgetKind::CLOCK, serde_json::Value::Null));
+    assert!(b.has_tiles_area());
+    assert_eq!(b.shown_tiles().len(), 1);
+    b.tiles_mode = TilesMode::Fixed;
+    b.height = BAND_HEIGHT;
+    assert!(!b.has_tiles_area(), "« Sous la barre » à la hauteur de la bande : pas de zone");
+}
+
+#[test]
+fn drawer_height_is_bounded_by_screen() {
+    assert_eq!(drawer_height(300.0, 1920.0), BAND_HEIGHT as f32 + 300.0);
+    assert_eq!(drawer_height(5000.0, 1920.0), 1920.0 - DRAWER_MARGIN as f32);
+    assert_eq!(drawer_height(0.0, 1920.0), BAND_HEIGHT as f32);
+    assert_eq!(drawer_height(100.0, 60.0), BAND_HEIGHT as f32, "jamais moins que la bande");
+}
+
+#[test]
+fn new_bars_default_to_click_drawer() {
+    let l = Layout::default_for(&real_monitors());
+    assert!(l.bars.iter().all(|b| b.tiles_mode == TilesMode::Click));
+    assert!(TilesMode::Click.is_drawer() && TilesMode::Hover.is_drawer() && !TilesMode::Fixed.is_drawer());
 }
