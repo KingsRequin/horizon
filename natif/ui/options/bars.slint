@@ -1,5 +1,5 @@
-// Section « Barres » (app/src/settings/options/BarsSection.svelte) : style, interaction, hauteur
-// et masquage en plein écran de chaque barre (layout.json, appliqués aussitôt et annulables par
+// Section « Barres » (app/src/settings/options/BarsSection.svelte) : style, interaction, tuiles
+// (sous la barre ou dans un volet), hauteur (sous la barre seulement) et masquage en plein écran de chaque barre (layout.json, appliqués aussitôt et annulables par
 // Ctrl+Z en mode édition), puis réapparition au-dessus d'un plein écran.
 
 import { Theme } from "../theme.slint";
@@ -45,6 +45,17 @@ export component BarsSection inherits VerticalLayout {
                     }
                 }
                 SettingRow {
+                    label: "Tuiles";
+                    hint: b.tiles-hint;
+                    Segmented {
+                        value: b.tiles;
+                        choices: OptionsData.tiles-modes;
+                        selected(v) => {
+                            OptionsData.bar(b.monitor-id, "tiles", v);
+                        }
+                    }
+                }
+                if b.tiles == "fixed": SettingRow {
                     label: "Hauteur";
                     hint: b.height-hint;
                     VerticalLayout {

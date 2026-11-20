@@ -14,7 +14,7 @@ use crate::state::AppState;
 use crate::ui::menu::Entry;
 use crate::util::lock;
 use horizon_core::geometry::MonitorInfo;
-use horizon_core::layout::{BAND_HEIGHT, BarOptionsPatch, BarRole, BarStyle, Layout, WidgetKind, Zone};
+use horizon_core::layout::{BAND_HEIGHT, BarOptionsPatch, BarRole, BarStyle, Layout, TilesMode, WidgetKind, Zone};
 use serde_json::Value;
 
 /// Envoie à chaque fenêtre de barre sa disposition, et ajuste la hauteur des barres qui en ont
@@ -188,7 +188,17 @@ pub fn menu_bar(app: &AppHandle, monitor_id: &str, widget_id: Option<&str>) -> V
             Entry::check(format!("style|{monitor_id}|graphic"), "Graphique", style == Some(BarStyle::Graphic)),
         ],
     );
-    let heights = Entry::sub("Hauteur", height_entries(monitor_id, bar.as_ref().map(|b| b.height)));
+    let mode = bar.as_ref().map(|b| b.tiles_mode);
+    let tiles = Entry::sub(
+        "Tuiles",
+        [(TilesMode::Fixed, "fixed", "Sous la barre"), (TilesMode::Click, "click", "Volet au clic"), (TilesMode::Hover, "hover", "Volet au survol")]
+            .into_iter()
+            .map(|(m, id, text)| Entry::check(format!("tiles|{monitor_id}|{id}"), text, mode == Some(m)))
+            .collect(),
+    );
+    // La hauteur n'a d'effet que sous la barre (le volet suit ses tuiles).
+    let heights =
+        (mode != Some(TilesMode::Click) && mode != Some(TilesMode::Hover)).then(|| Entry::sub("Hauteur", height_entries(monitor_id, bar.as_ref().map(|b| b.height))));
     let (profiles, active) = app.state::<AppState>().read(|l| (l.profiles.clone(), l.active_profile.clone()));
     let mut profile_items: Vec<Entry> =
         profiles.iter().map(|p| Entry::check(format!("profile|{}", p.id), p.name.clone(), p.id == active)).collect();
@@ -204,7 +214,10 @@ pub fn menu_bar(app: &AppHandle, monitor_id: &str, widget_id: Option<&str>) -> V
     menu.extend([
         Entry::item(format!("edit|{monitor_id}"), "Modifier la barre"),
         styles,
-        heights,
+        tiles,
+    ]);
+    menu.extend(heights);
+    menu.extend([
         Entry::sub("Profil", profile_items),
         Entry::check("dnd", "Ne pas déranger", crate::dnd::is_active(app)),
         Entry::Separator,
@@ -274,6 +287,7 @@ pub enum MenuAction {
     Edit(String),
     Style(String, BarStyle),
     Height(String, u32),
+    Tiles(String, TilesMode),
     Move(String, String),
     Remove(String),
     SuggestionBlock(String),
@@ -302,6 +316,7 @@ impl MenuAction {
             ["edit", monitor] => MenuAction::Edit((*monitor).into()),
             ["style", monitor, style] => MenuAction::Style((*monitor).into(), parse(style)?),
             ["height", monitor, h] => MenuAction::Height((*monitor).into(), h.parse().ok()?),
+            ["tiles", monitor, mode] => MenuAction::Tiles((*monitor).into(), parse(mode)?),
             ["move", widget, monitor] => MenuAction::Move((*widget).into(), (*monitor).into()),
             ["remove", widget] => MenuAction::Remove((*widget).into()),
             ["sblock", key] => MenuAction::SuggestionBlock((*key).into()),
@@ -350,6 +365,9 @@ pub fn on_menu(app: &AppHandle, id: &str) {
         MenuAction::Height(monitor, h) => {
             mutate(app, |l| l.set_bar_options(&monitor, BarOptionsPatch { height: Some(h), ..Default::default() }))
         }
+        MenuAction::Tiles(monitor, m) => {
+            mutate(app, |l| l.set_bar_options(&monitor, BarOptionsPatch { tiles_mode: Some(m), ..Default::default() }))
+        }
         MenuAction::Move(widget, monitor) => mutate(app, |l| l.move_to_monitor(&widget, &monitor)),
         MenuAction::Remove(widget) => mutate(app, |l| l.remove_widget(&widget).map(|_| ())),
         MenuAction::SuggestionBlock(key) => {
@@ -393,6 +411,8 @@ pub(crate) mod tests {
         assert_eq!(MenuAction::parse("style|m1|autre"), None);
         assert_eq!(MenuAction::parse("height|m1|480"), Some(MenuAction::Height("m1".into(), 480)));
         assert_eq!(MenuAction::parse("height|m1|x"), None);
+        assert_eq!(MenuAction::parse("tiles|m1|hover"), Some(MenuAction::Tiles("m1".into(), TilesMode::Hover)));
+        assert_eq!(MenuAction::parse("tiles|m1|x"), None);
         assert_eq!(
             MenuAction::parse("add|m1|tiles|weather"),
             Some(MenuAction::Add("m1".into(), Zone::Tiles, WidgetKind::WEATHER))
