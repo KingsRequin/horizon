@@ -61,7 +61,8 @@ sans compte).</td>
 </table>
 
 Survole un widget pour voir son panneau ; agrandis une barre et les panneaux deviennent des
-**tuiles** (image du haut).
+**tuiles** (image du haut), ou range-les dans un **volet** qui descend par-dessus les fenêtres
+sans rien retirer à l'écran (pratique sur un écran vertical).
 
 **Deux styles, au choix par écran** : « îlots » (en haut) ou « graphique » (en bas).
 

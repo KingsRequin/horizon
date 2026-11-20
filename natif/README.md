@@ -439,7 +439,20 @@ panneau, rien d'autre ; `clickableOnHover` reste cliquable), information seule (
 édition (`editing`, aspect seulement : cadre pointillé, tuiles inertes, « Ajouter une tuile » →
 `add-tile`). Changements de disposition : `tiles::set_height`,
 `add_tile`, `remove_tile` (puis `bars::sync_heights` et `ui::bar::refresh_all`). Essais :
-`HORIZON_TILES_ESSAI` (voir `tiles::essai`, ex. `main+media;main+system;main=480;edit`).
+`HORIZON_TILES_ESSAI` (voir `tiles::essai`, ex. `main+media;main+system;main=480;edit`,
+`portrait:click;portrait+weather;portrait!`).
+
+Volet (`BarLayout::tiles_mode` : `fixed` sous la barre, `click`, `hover`) : la place réservée
+(`BarLayout::reserved_height`, `bars.rs`) n'est que la bande ; la **fenêtre** de la barre grandit
+à l'ouverture (`slint::Window::set_size`, `ui::bar::open_drawer`) à la hauteur de ses tuiles
+(`horizon_core::layout::drawer_height`, bornée à l'écran moins `DRAWER_MARGIN`), les tuiles
+bornées à cette hauteur maximale et non à la fenêtre. Après un `ABM_POSCHANGED`,
+`appbar::update` remet la hauteur réservée : `ui::bar::reapply_drawer` rend la sienne au volet.
+Il ne prend jamais le focus : fermeture au clic ailleurs par le crochet
+`horizon_sys::outside_click` (`WH_MOUSE_LL`, posé seulement tant qu'un volet est ouvert), au
+bouton, au plein écran, à la fin du mode édition (qui l'ouvre) ; au survol, quand la souris
+quitte la barre et les fenêtres d'Horizon (vérifié toutes les 250 ms, seulement volet ouvert au
+survol). Volet fermé, ses tuiles ne sont pas montrées (`panel_hosts` : rien ne tourne).
 
 ### Briques des panneaux (`ui/panel/`, une par fichier)
 

@@ -63,7 +63,9 @@ needed).</td>
 </tr>
 </table>
 
-Hover a widget to see its panel; make a bar taller and panels become **tiles** (picture above).
+Hover a widget to see its panel; make a bar taller and panels become **tiles** (picture above),
+or keep them in a **drawer** that drops over your windows without taking screen space (handy on
+a vertical screen).
 Every feature in detail (French): [docs/guide.md](docs/guide.md).
 
 **Two styles, one per screen** — "islands" (top) or "graphic" (bottom):
