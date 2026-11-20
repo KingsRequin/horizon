@@ -2,7 +2,7 @@
 
 use super::migrations::MIGRATIONS;
 use super::profiles::{DEFAULT_PROFILE, Profile};
-use super::{BarLayout, BarRole, BarStyle, Interaction, LAYOUT_VERSION, Layout, WidgetKind, widget};
+use super::{BarLayout, BarRole, BarStyle, Interaction, LAYOUT_VERSION, Layout, TilesMode, WidgetKind, widget};
 use crate::geometry::MonitorInfo;
 use serde_json::{Value, json};
 
@@ -64,6 +64,8 @@ impl BarLayout {
             interaction,
             autohide: true,
             height: super::BAND_HEIGHT,
+            // Nouvelle barre : tuiles dans un volet (rien de réservé sous la bande).
+            tiles_mode: TilesMode::Click,
             left,
             center,
             right,

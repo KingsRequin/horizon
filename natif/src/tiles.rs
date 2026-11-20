@@ -14,7 +14,7 @@
 
 use crate::host::{AppHandle, Manager};
 use crate::state::AppState;
-use horizon_core::layout::{BarOptionsPatch, BarRole, Layout, WidgetKind, Zone};
+use horizon_core::layout::{BarOptionsPatch, BarRole, Layout, TilesMode, WidgetKind, Zone};
 
 /// Largeur minimale d'une colonne (px logiques).
 pub const COLUMN_MIN: f32 = 330.0;
@@ -178,12 +178,15 @@ pub fn remove_tile(app: &AppHandle, widget_id: &str) -> anyhow::Result<()> {
 /// Étapes d'essai (`HORIZON_TILES_ESSAI`, séparées par « ; », une toutes les 4 s après 3 s) :
 /// `<rôle>=<hauteur>` (hauteur de la barre de ce rôle : main, top, portrait, side),
 /// `<rôle>+<widget>` (tuile ajoutée), `<rôle>-<widget>` (première tuile de ce widget retirée),
+/// `<rôle>:<mode>` (tuiles `fixed`, `click` ou `hover`), `<rôle>!` (clic sur le bouton du volet),
 /// `edit` / `noedit` (aspect du mode édition sur toutes les barres).
 #[derive(Debug, Clone, PartialEq)]
 enum Step {
     Height(BarRole, u32),
     Add(BarRole, String),
     Remove(BarRole, String),
+    Mode(BarRole, TilesMode),
+    Drawer(BarRole),
     Edit(bool),
 }
 
@@ -196,7 +199,12 @@ fn parse_steps(spec: &str) -> Vec<Step> {
             "edit" => Some(Step::Edit(true)),
             "noedit" => Some(Step::Edit(false)),
             _ => {
-                if let Some((r, h)) = s.split_once('=') {
+                if let Some(r) = s.strip_suffix('!') {
+                    Some(Step::Drawer(role(r)?))
+                } else if let Some((r, m)) = s.split_once(':') {
+                    let mode = serde_json::from_value(serde_json::Value::String(m.trim().to_owned())).ok()?;
+                    Some(Step::Mode(role(r)?, mode))
+                } else if let Some((r, h)) = s.split_once('=') {
                     Some(Step::Height(role(r)?, h.trim().parse().ok()?))
                 } else if let Some((r, k)) = s.split_once('+') {
                     Some(Step::Add(role(r)?, k.trim().to_owned()))
@@ -226,6 +234,14 @@ fn run_step(app: &AppHandle, step: &Step) -> anyhow::Result<()> {
                 .read(|l| l.bars.iter().find(|b| b.monitor_id == m).and_then(|b| b.tiles.iter().find(|w| w.kind.as_str() == k)).map(|w| w.id.clone()))
                 .ok_or_else(|| anyhow::anyhow!("aucune tuile {k}"))?;
             remove_tile(app, &id)
+        }
+        Step::Mode(r, m) => {
+            let monitor = monitor(*r)?;
+            apply(app, |l| l.set_bar_options(&monitor, BarOptionsPatch { tiles_mode: Some(*m), ..Default::default() }))
+        }
+        Step::Drawer(r) => {
+            crate::ui::bar::click_drawer(&monitor(*r)?);
+            Ok(())
         }
         Step::Edit(on) => {
             crate::ui::bar::set_editing_all(*on);
@@ -336,13 +352,15 @@ mod tests {
     #[test]
     fn essai_steps() {
         assert_eq!(
-            parse_steps("main=480; main+media;portrait-system;edit;noedit;x=3;bad"),
+            parse_steps("main=480; main+media;portrait-system;edit;noedit;x=3;bad;portrait:hover;portrait!;main:x"),
             [
                 Step::Height(BarRole::Main, 480),
                 Step::Add(BarRole::Main, "media".into()),
                 Step::Remove(BarRole::Portrait, "system".into()),
                 Step::Edit(true),
                 Step::Edit(false),
+                Step::Mode(BarRole::Portrait, TilesMode::Hover),
+                Step::Drawer(BarRole::Portrait),
             ]
         );
     }
@@ -352,11 +370,11 @@ mod tests {
         let mut l = layout();
         set_height_in(&mut l, "m", BAND_HEIGHT).unwrap();
         assert_eq!(l.bars[0].height, BAND_HEIGHT);
-        assert!(l.bars[0].shown_tiles().is_empty());
+        assert!(l.bars[0].tiles_shown(false).is_empty());
         assert_eq!(l.bars[0].tiles.len(), 1, "gardées pour plus tard");
         set_height_in(&mut l, "m", 2000).unwrap();
         assert_eq!(l.bars[0].height, horizon_core::layout::MAX_BAR_HEIGHT);
-        assert_eq!(l.bars[0].shown_tiles().len(), 1);
+        assert_eq!(l.bars[0].tiles_shown(false).len(), 1);
         assert!(set_height_in(&mut l, "inconnu", 480).is_err());
     }
 

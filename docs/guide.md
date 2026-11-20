@@ -18,6 +18,15 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   un panneau), se retirent et se glissent entre la bande et les tuiles en mode édition. Revenue
   à la hauteur normale, la barre garde ses tuiles pour plus tard. Le panneau surgissant d'un
   widget de la bande s'ouvre sous la bande, par-dessus les tuiles.
+- **Volet des tuiles** (clic droit › Tuiles, ou Réglages d'Horizon › Barres › Tuiles) : au lieu
+  d'occuper la hauteur de la barre, les tuiles peuvent vivre dans un volet qui descend
+  par-dessus les fenêtres. Seule la bande reste réservée : utile sur un écran vertical ou
+  petit. « Volet au clic » : le bouton ▾ au bout de la barre l'ouvre et le ferme ; « Volet au
+  survol » : il s'ouvre aussi quand la souris s'attarde sur le bouton et se ferme quand elle
+  quitte la barre. Le volet prend la hauteur de ses tuiles (jusqu'à presque tout l'écran), se
+  ferme au clic ailleurs et ne prend pas le focus de l'appli en cours. « Sous la barre » garde
+  le fonctionnement de la barre haute (les barres d'avant restent ainsi ; une nouvelle barre
+  part en « Volet au clic »).
 - **Souris** : chaque barre est « Cliquable », « Survol seul » (panneaux au survol, clics sans
   effet : le défaut de l'écran du haut) ou « Information seule » (Réglages d'Horizon › Barres).
   Survol d'un widget = aperçu dans un panneau (passage d'un widget voisin à l'autre sans

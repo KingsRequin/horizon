@@ -12,7 +12,7 @@ use crate::host::{self, AppHandle};
 use crate::options::{self, Capture, Edit, OptionsView};
 use crate::settings_window::{LABEL, SettingsPage};
 use crate::ui::menu::{self, Entry};
-use horizon_core::layout::{BAND_HEIGHT, BarOptionsPatch, BarStyle, Interaction, MAX_BAR_HEIGHT};
+use horizon_core::layout::{BAND_HEIGHT, BarOptionsPatch, BarStyle, Interaction, MAX_BAR_HEIGHT, TilesMode};
 use horizon_core::settings::Settings;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
@@ -74,6 +74,11 @@ pub fn bind(app: &AppHandle, window: &SettingsWindow) {
     g.set_heights(ModelRc::new(VecModel::from(
         heights.into_iter().map(|(value, label, hint)| SegmentChoice { value: value.into(), label: label.into(), hint: hint.into() }).collect::<Vec<_>>(),
     )));
+    g.set_tiles_modes(choices(&[
+        ("fixed", "Sous la barre", TILES_HINTS[0]),
+        ("click", "Volet au clic", TILES_HINTS[1]),
+        ("hover", "Volet au survol", TILES_HINTS[2]),
+    ]));
     g.on_go(go);
     g.on_search(search);
     g.on_plugin_action(|id| plugin_action(&id));
@@ -232,6 +237,8 @@ fn fill() {
                 "Barre haute : des tuiles sous la bande montrent les panneaux des widgets."
             }
             .into(),
+            tiles: tiles_name(b.tiles_mode).into(),
+            tiles_hint: TILES_HINTS[b.tiles_mode as usize].into(),
         })
         .collect();
     super::model::sync_rc(&g.get_bars(), bars, |m| g.set_bars(m));
@@ -301,6 +308,21 @@ fn interaction_name(i: Interaction) -> &'static str {
         Interaction::Click => "click",
         Interaction::Hover => "hover",
         Interaction::Info => "info",
+    }
+}
+
+/// Explication de chaque choix de tuiles (dans l'ordre de `TilesMode`).
+const TILES_HINTS: [&str; 3] = [
+    "Les tuiles occupent la hauteur de la barre, retirée aux fenêtres",
+    "Un bouton au bout de la barre ouvre les tuiles par-dessus les fenêtres ; rien n'est retiré à l'écran",
+    "Comme au clic, mais le volet s'ouvre aussi quand la souris s'attarde sur le bouton",
+];
+
+fn tiles_name(m: TilesMode) -> &'static str {
+    match m {
+        TilesMode::Fixed => "fixed",
+        TilesMode::Click => "click",
+        TilesMode::Hover => "hover",
     }
 }
 
@@ -387,6 +409,7 @@ fn set_bar(monitor: &str, key: &str, value: &str) {
         "style" => patch.style = serde_json::from_value(serde_json::Value::String(value.into())).ok(),
         "interaction" => patch.interaction = serde_json::from_value(serde_json::Value::String(value.into())).ok(),
         "autohide" => patch.autohide = Some(value == "true"),
+        "tiles" => patch.tiles_mode = serde_json::from_value(serde_json::Value::String(value.into())).ok(),
         "height" if value == "custom" => {
             with(|s| s.custom.insert(monitor.to_owned()));
             return fill();

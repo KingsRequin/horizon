@@ -22,6 +22,9 @@ export struct OptionsBar {
     // Choix de hauteur affiché (« 40 », « 240 »… ou « custom »).
     height-choice: string,
     height-hint: string,
+    // Tuiles : « fixed », « click » ou « hover », et l'explication du choix.
+    tiles: string,
+    tiles-hint: string,
 }
 
 // Ligne de la page État.
@@ -85,6 +88,7 @@ export global OptionsData {
     in property <[SegmentChoice]> styles;
     in property <[SegmentChoice]> modes;
     in property <[SegmentChoice]> heights;
+    in property <[SegmentChoice]> tiles-modes;
     in property <int> reveal-px;
     in property <int> reveal-ms;
 

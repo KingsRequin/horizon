@@ -11,7 +11,7 @@ use crate::events::EV_OPTIONS;
 use crate::host::{AppHandle, Emitter, Manager};
 use crate::state::{AppState, settings, settings_path};
 use crate::util::{lock, start_thread};
-use horizon_core::layout::{BarOptionsPatch, BarRole, BarStyle, Interaction};
+use horizon_core::layout::{BarOptionsPatch, BarRole, BarStyle, Interaction, TilesMode};
 use horizon_core::settings::{Settings, SettingsFile};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -33,6 +33,8 @@ pub struct BarOptions {
     pub autohide: bool,
     /// Hauteur en pixels logiques (40 = barre normale ; au-delà, des tuiles sous la bande).
     pub height: u32,
+    /// Tuiles sous la barre ou dans un volet.
+    pub tiles_mode: TilesMode,
     /// L'écran est branché.
     pub connected: bool,
 }
@@ -89,6 +91,7 @@ pub fn options_get(app: &AppHandle) -> OptionsView {
             interaction: b.interaction,
             autohide: b.autohide,
             height: b.height,
+            tiles_mode: b.tiles_mode,
             connected: connected.iter().any(|m| m.id == b.monitor_id),
         })
         .collect();

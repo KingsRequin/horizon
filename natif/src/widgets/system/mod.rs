@@ -113,7 +113,10 @@ fn bar_audience(app: &AppHandle) -> Audience {
         l.bars
             .iter()
             .filter(|b| b.widgets().any(|w| w.kind == WidgetKind::SYSTEM))
-            .map(|b| (b.monitor_id.clone(), b.style, b.shown_tiles().iter().any(|w| w.kind == WidgetKind::SYSTEM)))
+            .map(|b| {
+                let shown = b.tiles_shown(crate::ui::bar::drawer_open_on(&b.monitor_id));
+                (b.monitor_id.clone(), b.style, shown.iter().any(|w| w.kind == WidgetKind::SYSTEM))
+            })
             .collect()
     });
     let mut out = Audience::default();

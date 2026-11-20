@@ -25,6 +25,16 @@ pub const BAND_HEIGHT: u32 = 40;
 /// Hauteur maximale d'une barre (pixels logiques) ; sous la bande, la zone des tuiles.
 pub const MAX_BAR_HEIGHT: u32 = 900;
 
+/// Volet des tuiles : bord d'écran laissé visible sous le volet ouvert (pixels logiques).
+pub const DRAWER_MARGIN: u32 = 48;
+
+/// Hauteur de la fenêtre d'une barre au volet ouvert : la bande et le contenu des tuiles
+/// (`content_h`), bornée à l'écran (`screen_h`) moins [`DRAWER_MARGIN`], jamais moins que la bande.
+pub fn drawer_height(content_h: f32, screen_h: f32) -> f32 {
+    let band = BAND_HEIGHT as f32;
+    (band + content_h.max(0.0)).min(screen_h - DRAWER_MARGIN as f32).max(band)
+}
+
 /// Hauteur ramenée entre la bande seule et le maximum.
 pub fn clamp_height(h: u32) -> u32 {
     h.clamp(BAND_HEIGHT, MAX_BAR_HEIGHT)
@@ -162,6 +172,28 @@ pub enum Interaction {
     Info,
 }
 
+/// Où vivent les tuiles d'une barre.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TilesMode {
+    /// Sous la bande, à la hauteur de la barre, réservée à Windows (dispositions d'avant le
+    /// volet).
+    #[default]
+    Fixed,
+    /// Dans un volet qui descend par-dessus les fenêtres au clic de son bouton ; seule la bande
+    /// est réservée.
+    Click,
+    /// Comme `Click`, mais le volet s'ouvre aussi quand la souris s'attarde sur le bouton.
+    Hover,
+}
+
+impl TilesMode {
+    /// Les tuiles sont dans un volet (pas sous la barre).
+    pub fn is_drawer(self) -> bool {
+        self != TilesMode::Fixed
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(from = "RawBar")]
 pub struct BarLayout {
@@ -172,8 +204,11 @@ pub struct BarLayout {
     pub interaction: Interaction,
     /// La barre se cache quand une fenêtre plein écran occupe son écran.
     pub autohide: bool,
-    /// Hauteur en pixels logiques (`BAND_HEIGHT` = barre normale, sans tuiles).
+    /// Hauteur en pixels logiques (`BAND_HEIGHT` = barre normale, sans tuiles) ; sans effet en
+    /// mode volet (gardée pour un retour à « Sous la barre »).
     pub height: u32,
+    /// Tuiles sous la barre ou dans un volet.
+    pub tiles_mode: TilesMode,
     pub left: Vec<WidgetInstance>,
     pub center: Vec<WidgetInstance>,
     pub right: Vec<WidgetInstance>,
@@ -200,6 +235,8 @@ struct RawBar {
     #[serde(default)]
     height: Option<u32>,
     #[serde(default)]
+    tiles_mode: TilesMode,
+    #[serde(default)]
     left: Vec<WidgetInstance>,
     #[serde(default)]
     center: Vec<WidgetInstance>,
@@ -223,6 +260,7 @@ impl From<RawBar> for BarLayout {
             interaction,
             autohide: r.autohide.unwrap_or(true),
             height: clamp_height(r.height.unwrap_or(BAND_HEIGHT)),
+            tiles_mode: r.tiles_mode,
             left: r.left,
             center: r.center,
             right: r.right,
@@ -275,6 +313,7 @@ pub struct BarOptionsPatch {
     pub interaction: Option<Interaction>,
     pub autohide: Option<bool>,
     pub height: Option<u32>,
+    pub tiles_mode: Option<TilesMode>,
 }
 
 impl BarLayout {
@@ -283,9 +322,22 @@ impl BarLayout {
         self.interaction == Interaction::Click
     }
 
-    /// La barre est plus haute que sa bande : la zone des tuiles est affichée.
+    /// La barre a une zone de tuiles : sous la barre, si elle est plus haute que sa bande ; en
+    /// volet, s'il y a au moins une tuile.
     pub fn has_tiles_area(&self) -> bool {
-        self.height > BAND_HEIGHT
+        if self.tiles_mode.is_drawer() { !self.tiles.is_empty() } else { self.height > BAND_HEIGHT }
+    }
+
+    /// Une tuile déposée sur cette barre y reste une tuile : volet, ou barre plus haute que sa
+    /// bande.
+    pub fn accepts_tiles(&self) -> bool {
+        self.tiles_mode.is_drawer() || self.height > BAND_HEIGHT
+    }
+
+    /// Hauteur réservée à Windows (pixels logiques) : toute la barre sous la barre, la bande
+    /// seule en volet.
+    pub fn reserved_height(&self) -> u32 {
+        if self.tiles_mode.is_drawer() { BAND_HEIGHT } else { self.height }
     }
 
     pub(crate) fn zone(&self, zone: Zone) -> &[WidgetInstance] {
@@ -315,9 +367,11 @@ impl BarLayout {
         self.left.iter_mut().chain(self.center.iter_mut()).chain(self.right.iter_mut()).chain(self.tiles.iter_mut())
     }
 
-    /// Widgets montrés en tuile (aucun sur une barre normale).
-    pub fn shown_tiles(&self) -> &[WidgetInstance] {
-        if self.has_tiles_area() { &self.tiles } else { &[] }
+    /// Widgets montrés en tuile : sous la barre, ceux d'une barre plus haute que sa bande ; en
+    /// volet, seulement volet ouvert (`drawer_open`) — volet fermé, rien ne tourne pour eux.
+    pub fn tiles_shown(&self, drawer_open: bool) -> &[WidgetInstance] {
+        let shown = if self.tiles_mode.is_drawer() { drawer_open } else { self.has_tiles_area() };
+        if shown { &self.tiles } else { &[] }
     }
 }
 
@@ -389,6 +443,9 @@ impl Layout {
         if let Some(h) = patch.height {
             b.height = clamp_height(h);
         }
+        if let Some(m) = patch.tiles_mode {
+            b.tiles_mode = m;
+        }
         Ok(())
     }
 
@@ -437,7 +494,7 @@ impl Layout {
         let (_, zone, index) = self.find(widget_id).ok_or_else(|| anyhow::anyhow!("widget inconnu : {widget_id}"))?;
         let target = &self.bars[self.bar_index(to_monitor_id)?];
         let (zone, index) =
-            if zone == Zone::Tiles && !target.has_tiles_area() { (Zone::Right, usize::MAX) } else { (zone, index) };
+            if zone == Zone::Tiles && !target.accepts_tiles() { (Zone::Right, usize::MAX) } else { (zone, index) };
         self.move_widget(widget_id, to_monitor_id, zone, index)
     }
 

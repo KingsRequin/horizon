@@ -2,7 +2,8 @@
 //! portés reliés à leurs services (`widgets::bind_all`), accent, affichage du volume, pulsation,
 //! mode nuit, molette = volume (avec sa bulle), débordement (`overflow.rs`), réapparition, mode
 //! édition (`ui::edit`), et sur une barre haute les tuiles (panneaux des widgets rangés en
-//! colonnes par `tiles.rs`, reliés par `panel_hosts`). La disposition modifiée (mode édition,
+//! colonnes par `tiles.rs`, reliés par `panel_hosts`), sous la bande ou dans un volet (voir
+//! « Volet des tuiles » plus bas). La disposition modifiée (mode édition,
 //! profil, hauteur, style) arrive par `EV_LAYOUT` : emplacements mis à jour ligne par ligne,
 //! widgets reliés au besoin (`widgets::rebind`), tuiles rangées de nouveau. Fil de l'interface.
 
@@ -14,7 +15,9 @@ use crate::overflow::{self, Fit, Zone};
 use crate::tiles::{self, Item};
 use crate::platform::{self, Frame, WindowSpec};
 use horizon_core::geometry::MonitorInfo;
-use horizon_core::layout::{BarLayout, BarRole, BarStyle, Interaction, WidgetInstance};
+use horizon_core::layout::{
+    BAND_HEIGHT, BarLayout, BarRole, BarStyle, DRAWER_MARGIN, Interaction, TilesMode, WidgetInstance, drawer_height,
+};
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -45,6 +48,16 @@ struct BarUi {
     /// Hauteur naturelle annoncée par chaque tuile (identifiant du widget → px logiques).
     tile_heights: Rc<RefCell<HashMap<String, f32>>>,
     tiles_pending: Cell<bool>,
+    /// Volet des tuiles ouvert ; épinglé (ouvert au clic : la sortie de la souris ne le ferme
+    /// pas) ; hauteur de la fenêtre volet ouvert (px logiques).
+    drawer_open: Cell<bool>,
+    drawer_pinned: Cell<bool>,
+    drawer_h: Cell<f32>,
+    /// Souris sur le bouton du volet ; minuteur d'ouverture au survol ; suivi de la souris d'un
+    /// volet ouvert au survol (fermeture quand elle s'en va).
+    drawer_hovered: Cell<bool>,
+    drawer_hover_timer: slint::Timer,
+    drawer_leave_timer: slint::Timer,
 }
 
 thread_local! {
@@ -161,6 +174,12 @@ pub fn open(app: &AppHandle, label: &str, monitor: &MonitorInfo, rect: (i32, i32
         tiles,
         tile_heights: Rc::default(),
         tiles_pending: Cell::new(false),
+        drawer_open: Cell::new(false),
+        drawer_pinned: Cell::new(false),
+        drawer_h: Cell::new(BAND_HEIGHT as f32),
+        drawer_hovered: Cell::new(false),
+        drawer_hover_timer: slint::Timer::default(),
+        drawer_leave_timer: slint::Timer::default(),
     });
 
     apply_night(&ui, &crate::comfort::night_state(app.clone()));
@@ -228,6 +247,10 @@ pub fn open(app: &AppHandle, label: &str, monitor: &MonitorInfo, rect: (i32, i32
     // « Ajouter une tuile » : menu d'ajout du mode édition, zone des tuiles.
     let (a, l) = (app.clone(), label.to_owned());
     ui.window.on_add_tile(move || super::edit::add_menu(&a, &l, horizon_core::layout::Zone::Tiles));
+    let l = label.to_owned();
+    ui.window.on_drawer_toggle(move || drawer_toggle(&l));
+    let l = label.to_owned();
+    ui.window.on_drawer_hover(move |on| drawer_hover(&l, on));
     BARS.with_borrow_mut(|b| b.insert(label.to_owned(), ui));
     run_fit(label);
     apply_tiles(label, &layout);
@@ -236,14 +259,21 @@ pub fn open(app: &AppHandle, label: &str, monitor: &MonitorInfo, rect: (i32, i32
 }
 
 /// Tuiles de la barre `label` d'après sa disposition : zone affichée si la barre est plus haute
-/// que sa bande ; une tuile par widget de la zone `tiles` qui a un panneau (`{#if def?.panel}`),
-/// gardées mais pas montrées sur une barre revenue à la hauteur normale. Les panneaux montrés
-/// sont annoncés à `panel_hosts` (données, crochets d'ouverture).
+/// que sa bande (sous la barre) ou si le volet est ouvert ; une tuile par widget de la zone
+/// `tiles` qui a un panneau (`{#if def?.panel}`), gardées mais pas montrées sinon. Les panneaux
+/// montrés sont annoncés à `panel_hosts` (données, crochets d'ouverture) : volet fermé, aucun
+/// (rien ne tourne pour lui).
 fn apply_tiles(label: &str, layout: &BarLayout) {
     let Some(b) = get(label) else { return };
-    b.window.set_tall(layout.has_tiles_area());
-    let shown: Vec<Slot> =
-        slots(layout, layout.shown_tiles()).into_iter().filter(|s| crate::widgets::has_panel(s.kind.as_str())).collect();
+    let drawer = layout.tiles_mode.is_drawer();
+    let tall = if drawer { b.drawer_open.get() } else { layout.has_tiles_area() };
+    b.window.set_tall(tall);
+    let count = layout.tiles.iter().filter(|w| crate::widgets::has_panel(w.kind.as_str())).count();
+    b.window.set_drawer(drawer);
+    b.window.set_drawer_button(drawer && (count > 0 || b.window.get_editing()));
+    b.window.set_drawer_count(count as i32);
+    b.window.set_drawer_open(b.drawer_open.get());
+    let shown: Vec<Slot> = slots(layout, layout.tiles_shown(b.drawer_open.get())).into_iter().filter(|s| crate::widgets::has_panel(s.kind.as_str())).collect();
     let (_, column_w) = tiles::columns(b.window.get_tiles_width());
     let old: Vec<TileBox> = b.tiles.iter().collect();
     let rows: Vec<TileBox> = shown
@@ -262,12 +292,229 @@ fn apply_tiles(label: &str, layout: &BarLayout) {
 /// Mode édition de la barre `label` : aspect de la zone des tuiles (cadre pointillé, « Ajouter
 /// une tuile »), tuiles inertes qui se saisissent entières.
 pub fn set_editing(label: &str, on: bool) {
-    if let Some(b) = get(label)
-        && b.window.get_editing() != on
-    {
-        b.window.set_editing(on);
-        schedule_tiles(label);
+    let Some(b) = get(label) else { return };
+    if b.window.get_editing() == on {
+        return;
     }
+    b.window.set_editing(on);
+    // Volet : ouvert pendant l'édition (ranger les tuiles, « Ajouter une tuile »), refermé après.
+    if b.layout.borrow().tiles_mode.is_drawer() {
+        if on {
+            open_drawer(label, true);
+        } else {
+            close_drawer(label);
+        }
+        let layout = b.layout.borrow().clone();
+        apply_tiles(label, &layout);
+    }
+    schedule_tiles(label);
+}
+
+// --- Volet des tuiles -----------------------------------------------------------------------
+//
+// En mode volet (`TilesMode::Click`, `Hover`), seule la bande est réservée (`bars.rs`) ; ouvert,
+// la fenêtre de la barre grandit vers le bas, par-dessus les fenêtres, à la hauteur de ses
+// tuiles (bornée à l'écran), puis reprend la hauteur de la bande à la fermeture. Il ne prend
+// jamais le focus : il se ferme au clic ailleurs (crochet `outside_click`, posé tant qu'un volet
+// est ouvert), au bouton, au plein écran, à la fin du mode édition ; au survol, aussi quand la
+// souris quitte la barre et les fenêtres d'Horizon (panneaux, menus) plus de 250 ms.
+
+/// Écrans dont le volet est ouvert : lu hors du fil de l'interface (services des widgets en
+/// tuile : `BarLayout::tiles_shown`).
+static OPEN_DRAWERS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// Le volet de la barre de l'écran `monitor_id` est ouvert (tout fil).
+pub fn drawer_open_on(monitor_id: &str) -> bool {
+    crate::util::lock(&OPEN_DRAWERS).iter().any(|m| m == monitor_id)
+}
+
+fn set_open_on(monitor_id: &str, open: bool) {
+    let mut list = crate::util::lock(&OPEN_DRAWERS);
+    list.retain(|m| m != monitor_id);
+    if open {
+        list.push(monitor_id.to_owned());
+    }
+}
+
+/// Délai d'ouverture au survol du bouton (celui des panneaux).
+const DRAWER_HOVER_DELAY: Duration = crate::popup::HOVER_DELAY;
+/// Délai de fermeture après la sortie de la souris (celui des panneaux).
+const DRAWER_LEAVE_DELAY: Duration = crate::popup::HIDE_DELAY;
+
+/// Ouvre le volet (`pinned` : au clic, il ne se ferme pas quand la souris s'en va).
+fn open_drawer(label: &str, pinned: bool) {
+    let Some(b) = get(label) else { return };
+    let mode = b.layout.borrow().tiles_mode;
+    if !mode.is_drawer() {
+        return;
+    }
+    if b.drawer_open.replace(true) {
+        if pinned && !b.drawer_pinned.replace(true) {
+            b.drawer_leave_timer.stop();
+        }
+        return;
+    }
+    b.drawer_pinned.set(pinned);
+    set_open_on(&b.monitor.id, true);
+    log::info!("{label} : volet ouvert{}", if pinned { "" } else { " (survol)" });
+    let layout = b.layout.borrow().clone();
+    apply_tiles(label, &layout);
+    watch_clicks(true);
+    if !pinned && mode == TilesMode::Hover {
+        let l = label.to_owned();
+        b.drawer_leave_timer.start(slint::TimerMode::Repeated, DRAWER_LEAVE_DELAY, move || leave_check(&l));
+    }
+}
+
+/// Ferme le volet : la fenêtre reprend la hauteur de la bande.
+fn close_drawer(label: &str) {
+    let Some(b) = get(label) else { return };
+    if !b.drawer_open.replace(false) {
+        return;
+    }
+    b.drawer_pinned.set(false);
+    b.drawer_hover_timer.stop();
+    b.drawer_leave_timer.stop();
+    set_open_on(&b.monitor.id, false);
+    log::info!("{label} : volet fermé");
+    let layout = b.layout.borrow().clone();
+    apply_tiles(label, &layout);
+    // La fenêtre reprend la hauteur réservée : la bande, ou toute la barre si elle vient de
+    // repasser « Sous la barre » (la place réservée ne change pas toujours : rien d'autre ne la
+    // reposerait).
+    b.drawer_h.set(BAND_HEIGHT as f32);
+    set_window_height(&b, layout.reserved_height() as f32);
+    if !BARS.with_borrow(|m| m.values().any(|o| o.drawer_open.get())) {
+        watch_clicks(false);
+    }
+}
+
+/// Clic sur le bouton : ouvre (épinglé) ; ouvert au survol, l'épingle ; épinglé, le ferme.
+fn drawer_toggle(label: &str) {
+    let Some(b) = get(label) else { return };
+    b.drawer_hover_timer.stop();
+    if !b.drawer_open.get() || !b.drawer_pinned.get() {
+        open_drawer(label, true);
+    } else if !b.window.get_editing() {
+        close_drawer(label);
+    }
+}
+
+/// Clic sur le bouton du volet de la barre de l'écran `monitor_id` (essais :
+/// `HORIZON_TILES_ESSAI`).
+pub fn click_drawer(monitor_id: &str) {
+    let label = BARS.with_borrow(|m| m.iter().find(|(_, b)| b.layout.borrow().monitor_id == monitor_id).map(|(l, _)| l.clone()));
+    if let Some(l) = label {
+        drawer_toggle(&l);
+    }
+}
+
+/// Survol du bouton : en mode « Volet au survol », ouverture après `DRAWER_HOVER_DELAY`.
+fn drawer_hover(label: &str, on: bool) {
+    let Some(b) = get(label) else { return };
+    b.drawer_hovered.set(on);
+    if !on {
+        b.drawer_hover_timer.stop();
+        return;
+    }
+    if b.layout.borrow().tiles_mode != TilesMode::Hover || b.drawer_open.get() {
+        return;
+    }
+    let l = label.to_owned();
+    b.drawer_hover_timer.start(slint::TimerMode::SingleShot, DRAWER_HOVER_DELAY, move || {
+        if get(&l).is_some_and(|b| b.drawer_hovered.get()) {
+            open_drawer(&l, false);
+        }
+    });
+}
+
+/// La fenêtre racine `root` (sous la souris ou sous un clic) garde le volet de la barre `b`
+/// ouvert : la barre elle-même, ou une autre fenêtre d'Horizon qui n'est pas une barre
+/// (panneau, menu, info-bulle).
+fn keeps(b: &BarUi, root: Option<isize>) -> bool {
+    let Some(h) = root else { return false };
+    platform::hwnd(b.window.window()) == Some(h)
+        || !BARS.with_borrow(|m| m.values().any(|o| platform::hwnd(o.window.window()) == Some(h)))
+}
+
+/// Volet ouvert au survol : fermé quand la souris n'est plus sur la barre ni sur une fenêtre
+/// d'Horizon (vérifié toutes les `DRAWER_LEAVE_DELAY`, seulement tant qu'il est ouvert ainsi).
+fn leave_check(label: &str) {
+    let Some(b) = get(label) else { return };
+    if b.drawer_pinned.get() || b.window.get_editing() {
+        b.drawer_leave_timer.stop();
+        return;
+    }
+    let root = horizon_sys::fullscreen::cursor().and_then(|(x, y)| horizon_sys::outside_click::own_window_at(x, y));
+    if !keeps(&b, root) {
+        close_drawer(label);
+    }
+}
+
+/// Pose ou retire le crochet « clic ailleurs » ; les appuis sont relayés au fil de l'interface.
+fn watch_clicks(on: bool) {
+    thread_local! {
+        static WATCHING: Cell<bool> = const { Cell::new(false) };
+    }
+    if WATCHING.with(|w| w.replace(on)) == on {
+        return;
+    }
+    if !on {
+        horizon_sys::outside_click::stop();
+        return;
+    }
+    let (tx, rx) = crossbeam_channel::unbounded::<(i32, i32)>();
+    if !horizon_sys::outside_click::start(tx) {
+        // Pas de crochet : nouvel essai à la prochaine ouverture.
+        WATCHING.with(|w| w.set(false));
+        return;
+    }
+    // Le relais s'arrête quand le crochet est retiré (son envoyeur disparaît).
+    let relay = crate::util::start_thread("volet-clics", move || {
+        for (x, y) in rx {
+            let _ = slint::invoke_from_event_loop(move || outside_click(x, y));
+        }
+    });
+    if let Err(e) = relay {
+        log::warn!("volet : {e:#}");
+    }
+}
+
+/// Un appui de souris en (x, y) (écran, px physiques) : les volets qu'il ne garde pas se ferment
+/// (pas pendant le mode édition, qui a sa propre fin).
+fn outside_click(x: i32, y: i32) {
+    let root = horizon_sys::outside_click::own_window_at(x, y);
+    for label in labels() {
+        if get(&label).is_some_and(|b| b.drawer_open.get() && !b.window.get_editing() && !keeps(&b, root)) {
+            close_drawer(&label);
+        }
+    }
+}
+
+/// Hauteur logique de la fenêtre de la barre (largeur inchangée, coin haut gauche fixe).
+fn set_window_height(b: &BarUi, h: f32) {
+    let w = b.window.window();
+    let width = w.size().width as f32 / w.scale_factor();
+    w.set_size(slint::LogicalSize::new(width, h));
+}
+
+/// Après un repositionnement par Windows (`bars::reposition`, qui pose la hauteur réservée) :
+/// un volet ouvert reprend sa hauteur.
+pub fn reapply_drawer(label: &str) {
+    if let Some(b) = get(label)
+        && b.drawer_open.get()
+        && b.layout.borrow().tiles_mode.is_drawer()
+    {
+        set_window_height(&b, b.drawer_h.get());
+    }
+}
+
+/// Hauteur logique de l'écran sous le haut de la barre (Windows peut la poser plus bas : barre
+/// des tâches en haut, autre appbar).
+fn screen_height(b: &BarUi) -> f32 {
+    let top = b.window.window().position().y;
+    let bottom = b.monitor.rect.y + b.monitor.rect.h;
+    (bottom - top).max(0) as f32 / b.monitor.scale.max(0.1)
 }
 
 /// Mode édition (aspect) sur toutes les barres (essais : `HORIZON_TILES_ESSAI`).
@@ -297,7 +544,11 @@ fn run_tiles(label: &str) {
         return;
     }
     let width = b.window.get_tiles_width();
-    let zone_h = b.window.get_tiles_height();
+    // Volet : les tuiles se bornent à la plus grande hauteur qu'il peut prendre, pas à la
+    // fenêtre (qui suit le contenu).
+    let drawer = b.layout.borrow().tiles_mode.is_drawer();
+    let chrome = b.window.get_tiles_chrome_h();
+    let zone_h = if drawer { screen_height(&b) - DRAWER_MARGIN as f32 - chrome } else { b.window.get_tiles_height() };
     let editing = b.window.get_editing();
     let heights = b.tile_heights.borrow().clone();
     let rows: Vec<TileBox> = b.tiles.iter().collect();
@@ -325,6 +576,16 @@ fn run_tiles(label: &str) {
         b.window.set_add_y(add.y);
     }
     b.window.set_tiles_content_h(flow.content_h);
+    if drawer && b.drawer_open.get() {
+        let h = drawer_height(flow.content_h + chrome - BAND_HEIGHT as f32, screen_height(&b));
+        if b.drawer_h.replace(h) != h {
+            set_window_height(&b, h);
+            // Mode édition : son aide se pose sous toute la barre, volet compris.
+            if editing {
+                super::popup::show_help(label, &b.monitor.id);
+            }
+        }
+    }
 }
 
 /// Style et interaction de la barre.
@@ -360,6 +621,10 @@ fn apply_layout(app: &AppHandle, label: &str, bar: &BarLayout) {
     let Some(b) = get(label) else { return };
     let old = b.layout.replace(bar.clone());
     apply_options(&b.window, bar);
+    // Volet ouvert devenu sans objet : mode changé, ou plus de tuile (hors édition).
+    if b.drawer_open.get() && (bar.tiles_mode != old.tiles_mode || (bar.tiles.is_empty() && !b.window.get_editing())) {
+        close_drawer(label);
+    }
     let clickable = bar.interaction == Interaction::Click;
     if b.clickable.replace(clickable) != clickable {
         apply_night(&b, &crate::comfort::night_state(app.clone()));
@@ -417,6 +682,7 @@ pub fn set_visible(label: &str, visible: bool) {
     // suivi du mixeur arrêtés).
     panel_hosts::set_active(&b.app, label, visible);
     if !visible {
+        close_drawer(label);
         let _ = b.window.hide();
         return;
     }
@@ -436,6 +702,8 @@ pub fn set_visible(label: &str, visible: bool) {
 
 /// Ferme la barre (sa fenêtre native est détruite).
 pub fn close(label: &str) {
+    // Volet ouvert : refermé d'abord (crochet souris retiré s'il était le dernier).
+    close_drawer(label);
     super::hint::forget(label);
     super::panels::forget(label);
     super::edit::forget(label);
