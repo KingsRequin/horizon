@@ -313,10 +313,9 @@ Un plugin sans permission se charge sans accord. **Déclarer le strict nécessai
 | création ou rendu de l'interface de plus de 250 ms | compté comme un plantage |
 | plus de 1 000 messages vers l'interface en attente | compté comme un plantage |
 
-Ce qui est compté : le temps processeur du script, du rendu de son interface et de la pose de
-ses valeurs, pas les attentes (PC chargé, pilote graphique figé) ni le travail d'Horizon pour
-l'îlot, les alertes, la palette et les liens. Une valeur reposée identique ne coûte rien (pas de
-rendu). Le journal donne les mesures quand un plugin est coupé. Un plugin absent de toutes les
+Ce qui est compté : le temps processeur du script, du rendu de son interface et de ce qu'Horizon
+fait pour ses messages (valeurs, îlot, palette…), pas les attentes (PC chargé, pilote graphique
+figé). Une valeur reposée identique ne coûte rien (pas de rendu). Le journal donne les mesures quand un plugin est coupé. Un plugin absent de toutes les
 barres ne coûte rien (rien n'est chargé). Bonnes pratiques : préférer `files.watch` et les
 connexions à des minuteurs rapides ; garder les calculs courts.
 

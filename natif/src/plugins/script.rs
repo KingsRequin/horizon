@@ -200,18 +200,14 @@ fn plugin_of_message(m: &FromJs) -> Option<String> {
     }
 }
 
-/// Traite les messages en attente. Le temps processeur passé sur l'interface du plugin
-/// (propriétés, rappels) compte dans son budget ; pas le travail d'Horizon pour l'îlot, les
-/// alertes, la palette ou les liens (bornés en fréquence, et qui peuvent attendre Windows).
+/// Traite les messages en attente ; le temps processeur passé pour chaque message compte dans
+/// le budget du plugin qui l'a produit (pas les attentes : Windows qui tarde à répondre).
 fn drain(app: &AppHandle) {
     SCHEDULED.store(false, Ordering::SeqCst);
     let batch = std::mem::take(&mut *crate::util::lock(&QUEUE)).msgs;
     let plugins = app.state::<Plugins>();
     for m in batch {
-        let charged = match &m {
-            FromJs::UiSet { id, .. } | FromJs::UiOn { id, .. } => Some(id.clone()),
-            _ => None,
-        };
+        let charged = plugin_of_message(&m);
         let meter = horizon_sys::thread_time::CpuMeter::start();
         from_js(app, m);
         if let Some(id) = charged {
