@@ -200,17 +200,22 @@ fn plugin_of_message(m: &FromJs) -> Option<String> {
     }
 }
 
-/// Traite les messages en attente ; le temps passé est compté dans le budget de chaque plugin.
+/// Traite les messages en attente. Le temps processeur passé sur l'interface du plugin
+/// (propriétés, rappels) compte dans son budget ; pas le travail d'Horizon pour l'îlot, les
+/// alertes, la palette ou les liens (bornés en fréquence, et qui peuvent attendre Windows).
 fn drain(app: &AppHandle) {
     SCHEDULED.store(false, Ordering::SeqCst);
     let batch = std::mem::take(&mut *crate::util::lock(&QUEUE)).msgs;
     let plugins = app.state::<Plugins>();
     for m in batch {
-        let id = plugin_of_message(&m);
-        let t = Instant::now();
+        let charged = match &m {
+            FromJs::UiSet { id, .. } | FromJs::UiOn { id, .. } => Some(id.clone()),
+            _ => None,
+        };
+        let meter = horizon_sys::thread_time::CpuMeter::start();
         from_js(app, m);
-        if let Some(id) = id {
-            plugins.record_cost(&id, t.elapsed().as_micros() as u64);
+        if let Some(id) = charged {
+            plugins.record_cost(&id, meter.elapsed().as_micros() as u64);
         }
     }
 }
@@ -317,6 +322,13 @@ fn instance_of(key: &str) -> &str {
     key.trim_end_matches(super::view::PANEL_SUFFIX)
 }
 
+/// `value` est déjà la dernière valeur posée sur `prop` pour les mêmes exemplaires : rien ne
+/// change, rien à redessiner (un script qui repose tout son état à chaque message ne coûte pas
+/// un rendu par exemplaire).
+fn unchanged(values: &[(Option<String>, String, Json)], instance: Option<&str>, prop: &str, value: &Json) -> bool {
+    values.iter().rev().find(|v| v.1 == prop).is_some_and(|v| v.0.as_deref() == instance && &v.2 == value)
+}
+
 /// Pose `value` sur la propriété `prop` d'une surface, au type de la propriété.
 fn set_on(surface: &Surface, dir: &std::path::Path, prop: &str, value: &Json) {
     let inst = surface.instance();
@@ -374,6 +386,9 @@ fn from_js(app: &AppHandle, m: FromJs) {
             let Some(dir) = LOADED.with_borrow_mut(|l| {
                 let x = l.get_mut(&id)?;
                 if instance.as_ref().is_some_and(|i| !x.instances.iter().any(|k| &k.id == i)) {
+                    return None;
+                }
+                if unchanged(&x.values, instance.as_deref(), &prop, &value) {
                     return None;
                 }
                 x.values.retain(|v| !(v.0 == instance && v.1 == prop));
@@ -500,5 +515,19 @@ mod tests {
         assert!(!b.take(t0));
         assert!(b.take(t0 + Duration::from_millis(1100)));
         assert!(!b.take(t0 + Duration::from_millis(1100)));
+    }
+
+    #[test]
+    fn same_value_again_changes_nothing() {
+        let v = |i: Option<&str>, p: &str, x: i64| (i.map(str::to_owned), p.to_owned(), Json::from(x));
+        let values = vec![v(None, "a", 1), v(Some("w1"), "b", 2), v(None, "b", 3)];
+        assert!(unchanged(&values, None, "a", &Json::from(1)));
+        assert!(!unchanged(&values, None, "a", &Json::from(5)));
+        assert!(!unchanged(&values, Some("w1"), "a", &Json::from(1)), "un autre public");
+        // Posée pour tous après w1 : la reposer pour tous ne change rien.
+        assert!(unchanged(&values, None, "b", &Json::from(3)));
+        // w1 a reçu 3 depuis ses 2 : remettre 2 change quelque chose.
+        assert!(!unchanged(&values, Some("w1"), "b", &Json::from(2)));
+        assert!(!unchanged(&values, None, "c", &Json::from(0)));
     }
 }

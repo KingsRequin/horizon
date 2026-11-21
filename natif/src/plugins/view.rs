@@ -27,7 +27,8 @@ pub const PANEL_SUFFIX: &str = "#panel";
 /// Taille logique maximale d'un widget et d'un panneau de plugin.
 const WIDGET_MAX: (f32, f32) = (1200.0, 200.0);
 const PANEL_MAX: (f32, f32) = (900.0, 1200.0);
-/// Création ou rendu plus long : compté comme un plantage (le fil de l'interface a gelé).
+/// Création ou rendu plus long (temps processeur du fil, pas les attentes) : compté comme un
+/// plantage (le plugin a gelé le fil de l'interface).
 const SLOW: Duration = Duration::from_millis(250);
 
 /// Taille voulue bornée (largeur, hauteur) d'un exemplaire.
@@ -346,7 +347,7 @@ fn refresh(label: &str) {
         // Sentinelle : un plantage pendant la création désactivera ce plugin au démarrage suivant.
         let sentinel = super::sentinel_path();
         super::sentinel_arm(&sentinel, &name);
-        let t = std::time::Instant::now();
+        let t = horizon_sys::thread_time::CpuMeter::start();
         let surface = def.and_then(|d| match Surface::new(&d, scale, theme) {
             Ok(surface) => Some(surface),
             Err(e) => {
@@ -495,7 +496,7 @@ fn tick() {
         if let Some(f) = &sentinel {
             super::sentinel_arm(f, &job.plugin);
         }
-        let t = std::time::Instant::now();
+        let t = horizon_sys::thread_time::CpuMeter::start();
         // Largeur nulle (rien à montrer) : dessiné quand même sur un pixel, sinon un élément
         // conditionnel qui devrait apparaître ne serait jamais créé (et la largeur resterait nulle).
         let image = if size.1 > 0.0 { surface.render(size.0.max(1.0), size.1, max) } else { None };

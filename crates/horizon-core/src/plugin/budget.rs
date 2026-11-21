@@ -73,6 +73,19 @@ impl Budget {
         }
     }
 
+    /// Pour le journal : charge sur la minute et sur la fenêtre courte, travail le plus long.
+    pub fn summary(&self, now_ms: u64) -> String {
+        let longest = self.samples.iter().map(|s| s.1).max().unwrap_or(0);
+        format!(
+            "{:.1} % d'un cœur sur 1 min, {:.0} % sur {} s, {} travaux, le plus long {:.1} ms",
+            self.load(now_ms) * 100.0,
+            self.load_over(now_ms, SHORT_MS) * 100.0,
+            SHORT_MS / 1000,
+            self.samples.len(),
+            longest as f64 / 1000.0
+        )
+    }
+
     /// Repart de zéro (plugin réactivé ou rechargé).
     pub fn reset(&mut self) {
         *self = Budget::default();
@@ -151,6 +164,14 @@ mod tests {
             light.record(s * 1000, 100_000);
         }
         assert_eq!(light.verdict(5_000), Verdict::Ok);
+    }
+
+    #[test]
+    fn summary_reports_load_and_longest() {
+        let mut b = Budget::default();
+        every_second(&mut b, 60, 12_000);
+        b.record(60_500, 30_000);
+        assert_eq!(b.summary(61_000), "1.2 % d'un cœur sur 1 min, 2 % sur 5 s, 61 travaux, le plus long 30.0 ms");
     }
 
     #[test]

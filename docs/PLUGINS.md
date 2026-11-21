@@ -308,14 +308,17 @@ Un plugin sans permission se charge sans accord. **Déclarer le strict nécessai
 
 | Limite | Effet |
 |---|---|
-| plus de 2 % d'un cœur en moyenne sur une minute, ou plus de 50 % sur 5 s | plugin désactivé (alerte, *Réactiver* sur la page État) |
+| plus de 2 % d'un cœur en moyenne sur une minute, ou plus de 50 % sur 5 s | plugin désactivé jusqu'au prochain lancement d'Horizon (alerte, *Réactiver* sur la page État) |
 | 3 plantages de script en une minute (exception non rattrapée, appel de plus de 50 ms, mémoire) | désactivé |
 | création ou rendu de l'interface de plus de 250 ms | compté comme un plantage |
 | plus de 1 000 messages vers l'interface en attente | compté comme un plantage |
 
-Un plugin absent de toutes les barres ne coûte rien (rien n'est chargé). Bonnes pratiques :
-ne poser une valeur que quand elle change ; préférer `files.watch` et les connexions à des
-minuteurs rapides ; garder les calculs courts.
+Ce qui est compté : le temps processeur du script, du rendu de son interface et de la pose de
+ses valeurs, pas les attentes (PC chargé, pilote graphique figé) ni le travail d'Horizon pour
+l'îlot, les alertes, la palette et les liens. Une valeur reposée identique ne coûte rien (pas de
+rendu). Le journal donne les mesures quand un plugin est coupé. Un plugin absent de toutes les
+barres ne coûte rien (rien n'est chargé). Bonnes pratiques : préférer `files.watch` et les
+connexions à des minuteurs rapides ; garder les calculs courts.
 
 ## 9. Pièges connus
 

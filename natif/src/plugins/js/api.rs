@@ -9,6 +9,7 @@ use super::io::{self, Conn};
 use super::{CALL_LIMIT, FromJs, Instance, Io, MEMORY_LIMIT, TIMER_MIN, ToJs, UNLOAD_LIMIT};
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
 use horizon_core::plugin::Permissions;
+use horizon_sys::thread_time::CpuMeter;
 use std::path::PathBuf;
 use std::time::SystemTime;
 use rquickjs::context::EvalOptions;
@@ -290,6 +291,7 @@ impl Plugin {
     /// Évalue le script principal ; son erreur éventuelle (sans l'envoyer).
     fn load_main(&self, main: String, out: &dyn Fn(FromJs)) -> Option<String> {
         let start = Instant::now();
+        let meter = CpuMeter::start();
         self.deadline.set(Some(start + CALL_LIMIT));
         let mut crash = self.ctx.with(|ctx| {
             let mut opts = EvalOptions::default();
@@ -316,13 +318,14 @@ impl Plugin {
                 out(m);
             }
         }
-        out(FromJs::Cost { id: self.id.clone(), us: start.elapsed().as_micros() as u64 });
+        out(FromJs::Cost { id: self.id.clone(), us: meter.elapsed().as_micros() as u64 });
         crash
     }
 
     /// Comme [`Plugin::invoke`], interrompu à `deadline` (au plus [`CALL_LIMIT`] plus tard).
     fn invoke_until(&self, deadline: Instant, out: &dyn Fn(FromJs), f: impl FnOnce(&Ctx) -> rquickjs::Result<()>) {
         let start = Instant::now();
+        let meter = CpuMeter::start();
         self.deadline.set(Some(deadline.min(start + CALL_LIMIT)));
         let mut crash = self.ctx.with(|ctx| f(&ctx).err().map(|e| describe(&ctx, e)));
         // Promesses résolues pendant le rappel.
@@ -342,7 +345,7 @@ impl Plugin {
         for m in produced {
             out(m);
         }
-        out(FromJs::Cost { id: self.id.clone(), us: start.elapsed().as_micros() as u64 });
+        out(FromJs::Cost { id: self.id.clone(), us: meter.elapsed().as_micros() as u64 });
         if let Some(message) = crash {
             out(FromJs::Crash { id: self.id.clone(), message, import: false });
         }

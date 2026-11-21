@@ -208,7 +208,8 @@ chronomètre en Slint seul).
   sont refusées dans l'interface.
 - **Budget** : un plugin qui prend plus de 2 % d'un cœur pendant une minute, ou dont le script
   plante trois fois en une minute, est désactivé (alerte dans l'îlot) ; page « Plugins » :
-  *Réactiver*. Un plugin absent de toutes les barres ne coûte rien.
+  *Réactiver*. Trop gourmand, il est réessayé au lancement suivant. Seul son temps processeur
+  compte (pas les ralentissements du PC). Un plugin absent de toutes les barres ne coûte rien.
 - **Réglages** : ceux que le plugin déclare apparaissent dans *Réglages…* de son widget ; un
   secret (jeton, mot de passe) est gardé dans le Gestionnaire d'identifiants de Windows.
 - **Préversion** : l'API (`"api": 0`) peut encore changer ; elle sera figée à l'ouverture de la

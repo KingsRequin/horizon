@@ -58,7 +58,8 @@ fn disable_for_budget(app: &AppHandle, id: &str, reason: Disabled) {
         Disabled::TooHeavy => "trop gourmand",
         _ => "erreurs répétées",
     };
-    log::warn!("plugin {id} désactivé : {why}");
+    let measured = lock(&plugins.budgets).get(id).map(|b| b.summary(horizon_core::time::now_ms())).unwrap_or_default();
+    log::warn!("plugin {id} désactivé : {why} ({measured})");
     plugins.set_disabled(app, id, Some(reason));
     let alert = crate::alerts::Alert::icon(
         "warning",
@@ -418,6 +419,21 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
         let plugins = app.state::<Plugins>();
         let mut r = lock(&plugins.registry);
         r.store = store::load(&store::path());
+        // Coupé par le budget : nouvel essai à chaque lancement (un pic passager ne le coupe pas
+        // pour toujours ; s'il reste trop gourmand, le budget le coupe de nouveau).
+        let mut retried = Vec::new();
+        for (id, e) in &mut r.store {
+            if e.disabled == Some(Disabled::TooHeavy) {
+                e.disabled = None;
+                retried.push(id.clone());
+            }
+        }
+        if !retried.is_empty() {
+            log::info!("plugins coupés au lancement précédent (trop gourmands), réessayés : {}", retried.join(", "));
+            if let Err(e) = store::save(&store::path(), &r.store) {
+                log::error!("plugins.json : écriture impossible : {e:#}");
+            }
+        }
         for c in &first {
             r.apply(&root, c, &builtin);
         }
@@ -433,6 +449,7 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     if !first.is_empty() {
         changed(app);
     }
+    horizon_sys::thread_time::calibrate();
     script::start(app)?;
     events::start(app)?;
     library::start(app)?;

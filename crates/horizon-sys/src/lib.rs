@@ -32,6 +32,7 @@ pub mod restart;
 pub mod shell;
 pub mod startmenu;
 pub mod system;
+pub mod thread_time;
 pub mod vivaldi;
 pub mod volume;
 pub mod wallpaper;
