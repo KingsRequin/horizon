@@ -1,9 +1,11 @@
 //! Client WebSocket local qui se reconnecte seul (délai croissant plafonné à 30 s), pour les
-//! services maison (Prisme, relais Krisp). Un service absent, ou qui ferme la connexion
+//! services maison (Prisme, Essaim, relais Krisp). Un service absent, ou qui ferme la connexion
 //! aussitôt ouverte, ne produit ni erreur visible ni boucle serrée. À la sortie de veille, la
-//! connexion (peut-être morte sans le savoir) est refaite et l'attente écourtée.
+//! connexion (peut-être morte sans le savoir) est refaite et l'attente écourtée. Un ping part
+//! après `KEEPALIVE` sans envoi : un service qui ferme les clients muets (Essaim, au bout de
+//! 60 s) garde ainsi Horizon, qui ne fait souvent qu'écouter.
 //!
-//! Repris tel quel de `app/src-tauri/src/wsclient.rs`.
+//! Repris de `app/src-tauri/src/wsclient.rs`.
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use horizon_core::backoff::Backoff;
@@ -11,6 +13,9 @@ use std::net::TcpStream;
 use std::time::{Duration, Instant};
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket};
+
+/// Silence d'envoi au-delà duquel un ping part (bien sous les 60 s d'Essaim).
+const KEEPALIVE: Duration = Duration::from_secs(20);
 
 /// Ce que le client signale à son propriétaire.
 pub enum WsEvent<'a> {
@@ -38,6 +43,7 @@ fn session(
     me: &WsClient,
 ) -> anyhow::Result<()> {
     let epoch = crate::resume::epoch();
+    let mut last_sent = Instant::now();
     loop {
         if crate::resume::epoch() != epoch {
             anyhow::bail!("sortie de veille");
@@ -55,6 +61,11 @@ fn session(
         }
         while let Ok(m) = outbox.try_recv() {
             ws.send(Message::text(m))?;
+            last_sent = Instant::now();
+        }
+        if last_sent.elapsed() >= KEEPALIVE {
+            ws.send(Message::Ping(Default::default()))?;
+            last_sent = Instant::now();
         }
     }
 }
