@@ -43,6 +43,11 @@ fn offer_undo() {
     }
 }
 
+/// Arrêt d'Horizon : les fenêtres d'essai sont lâchées.
+pub fn stop() {
+    OPEN.take();
+}
+
 pub fn open() -> anyhow::Result<()> {
     let specs = [
         (true, WindowSpec { title: "Horizon — essai".into(), frame: Frame::Normal, size: (520.0, 320.0), ..Default::default() }),

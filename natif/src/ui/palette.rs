@@ -137,6 +137,13 @@ pub fn hide_window() -> bool {
     was
 }
 
+/// Arrêt d'Horizon : la fenêtre est cachée (et lâchée par Slint).
+pub fn stop() {
+    if let Some(p) = PAL.take() {
+        let _ = p.window.hide();
+    }
+}
+
 /// Recherche ; `keep` : le catalogue a changé pendant la saisie, la ligne choisie le reste.
 fn search(query: &str, keep: bool) {
     let Some(app) = with(|p| p.app.clone()) else { return };
