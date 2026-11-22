@@ -3,15 +3,18 @@
 //! nombre de fenêtres (`horizon://windows`), seulement panneau montré ; l'écran « ici » est celui
 //! de la barre d'où vient le panneau, ou de la barre de la tuile (`panel_hosts::screen`) : chaque
 //! fenêtre a sa liste. Clic : la fenêtre est ramenée (ou mise au premier plan) et le panneau
-//! surgissant se ferme (`popup_close` ; une tuile reste). Fil de l'interface.
+//! surgissant se ferme (`popup_close` ; une tuile reste). Clic droit : menu de la fenêtre, pour
+//! la même action ou l'envoyer vers un autre écran (`menu_entries`) ; le panneau surgissant
+//! reste affiché le temps du menu. Fil de l'interface.
 
-use super::{EV_WINDOWS, bring, count_label, groups};
-use crate::host::{self, AppHandle};
+use super::{EV_WINDOWS, bring, count_label, groups, send};
+use crate::host::{self, AppHandle, Manager};
 use crate::popup::LABEL;
+use crate::ui::menu::{self, Entry};
 use crate::ui::panel_hosts::{self, Host};
 use crate::ui::{WindowsPanelData, WindowsPanelRow};
 use crate::widgets::Panel;
-use horizon_core::app_windows::ScreenGroup;
+use horizon_core::app_windows::{ScreenGroup, send_targets};
 use slint::{ModelRc, VecModel};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -111,6 +114,58 @@ fn load(app: &AppHandle, label: &str) {
     });
 }
 
+/// Entrée « afficher ou ramener ici » du menu d'une fenêtre.
+const SHOW: &str = "show";
+/// Préfixe des entrées « envoyer vers cet écran » (suivi de l'identifiant de l'écran).
+const SEND: &str = "to:";
+
+/// Menu d'une fenêtre (`here` : elle est sur l'écran d'où l'on regarde) : la même action que le
+/// clic, puis « Envoyer vers » chacun des écrans de `targets` (grisé s'il n'y en a pas d'autre).
+fn menu_entries(here: bool, targets: &[(String, String)]) -> Vec<Entry> {
+    let screens = targets.iter().map(|(id, name)| Entry::item(format!("{SEND}{id}"), name.as_str())).collect();
+    vec![
+        Entry::item(SHOW, if here { "Afficher" } else { "Ramener ici" }),
+        Entry::sub("Envoyer vers", screens).enabled(!targets.is_empty()),
+    ]
+}
+
+/// Clic droit sur la fenêtre `hwnd` de la liste de `label` : son menu, sous la souris.
+fn context_menu(app: &AppHandle, label: &str, hwnd: i64, inline: bool) {
+    let Some(host) = app.get_window(label).map(|w| w.hwnd()) else { return };
+    let group = OPEN.with_borrow(|o| {
+        let g = o.get(label)?.groups.iter().find(|g| g.windows.iter().any(|w| w.hwnd == hwnd))?;
+        Some((g.monitor_id.clone(), g.here))
+    });
+    let Some((current, here)) = group else { return };
+    let entries = menu_entries(here, &send_targets(&horizon_sys::monitors::list(), &current));
+    // La barre d'une tuile ne garde le premier plan qu'en mode édition, le panneau surgissant
+    // que s'il est épinglé.
+    let keep_active = if inline { crate::ui::edit::editing(label) } else { crate::ui::popup::pinned() };
+    if !inline {
+        crate::ui::popup::hold_for_menu();
+    }
+    let (a, l) = (app.clone(), label.to_owned());
+    menu::show_then(host, entries, keep_active, move |picked| {
+        let acted = match picked.as_deref() {
+            Some(SHOW) => {
+                bring(&a, hwnd as isize, panel_hosts::screen(&l));
+                true
+            }
+            Some(id) => id.strip_prefix(SEND).is_some_and(|monitor| {
+                send(&a, hwnd as isize, monitor.to_owned());
+                true
+            }),
+            None => false,
+        };
+        if !inline {
+            crate::ui::popup::menu_closed();
+            if acted {
+                crate::ui::popup::close();
+            }
+        }
+    });
+}
+
 fn bind(app: &AppHandle, win: &Host) {
     let a = app.clone();
     let (l, inline) = (win.label.clone(), win.inline());
@@ -119,6 +174,12 @@ fn bind(app: &AppHandle, win: &Host) {
         bring(&a, h as isize, panel_hosts::screen(&l));
         if !inline {
             crate::ui::popup::close();
+        }
+    });
+    let (a, l) = (app.clone(), win.label.clone());
+    win.global::<WindowsPanelData>().on_menu(move |hwnd| {
+        if let Ok(h) = hwnd.parse::<i64>() {
+            context_menu(&a, &l, h, inline);
         }
     });
     // Une seule fois : chaque fenêtre qui montre le panneau relit sa liste.
@@ -170,5 +231,17 @@ mod tests {
         assert_eq!((r[1].tip.as_str(), r[1].meta.as_str(), r[1].letter.as_str()), ("Afficher « Grafana »", "vivaldi", "V"));
         assert!(r[2].header && !r[2].first && !r[2].here);
         assert_eq!((r[3].tip.as_str(), r[3].meta.as_str(), r[3].hwnd.as_str()), ("Ramener « Téléchargements » ici", "Explorer · réduite", "2"));
+    }
+
+    #[test]
+    fn menu_offers_the_click_action_then_the_other_screens() {
+        let targets = vec![("a".to_owned(), "Écran principal".to_owned()), ("b".to_owned(), "Écran du haut".to_owned())];
+        let m = menu_entries(false, &targets);
+        assert_eq!(m[0], Entry::item("show", "Ramener ici"));
+        assert_eq!(m[1], Entry::sub("Envoyer vers", vec![Entry::item("to:a", "Écran principal"), Entry::item("to:b", "Écran du haut")]));
+        // Fenêtre de l'écran de la barre ; un seul écran : rien où l'envoyer.
+        let m = menu_entries(true, &[]);
+        assert_eq!(m[0].text(), "Afficher");
+        assert_eq!(m[1], Entry::sub("Envoyer vers", Vec::new()).enabled(false));
     }
 }

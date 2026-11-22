@@ -1,6 +1,6 @@
 // Ligne de liste sélectionnable d'un panneau (périphériques, fenêtres, sessions…) : survol, état
 // choisi (`on` : contour et fond dans l'accent, `li.on` du panneau Audio), clavier et anneau de
-// focus. Contenu posé en enfants, en ligne.
+// focus, clic droit (`context` : menu de la ligne). Contenu posé en enfants, en ligne.
 
 import { Theme, StyleTokens } from "../theme.slint";
 import { Tip } from "../tooltip.slint";
@@ -19,6 +19,8 @@ export component ListRow inherits Rectangle {
     out property <bool> hovered: area.has-hover;
     out property <bool> keyboard;
     callback clicked();
+    // Clic droit relâché sur la ligne.
+    callback context();
     border-radius: root.radius;
     border-width: 1px;
     border-color: root.on ? Theme.accent.with-alpha(0.6) : transparent;
@@ -55,6 +57,12 @@ export component ListRow inherits Rectangle {
         clicked => {
             Tip.hide();
             root.clicked();
+        }
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.up && e.button == PointerEventButton.right {
+                Tip.hide();
+                root.context();
+            }
         }
     }
     HorizontalLayout {

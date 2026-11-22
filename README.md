@@ -89,7 +89,7 @@ raccourcis, les applis du menu Démarrer, les sorties audio, le minuteur, les pr
 | 🎧 **Batterie du casque** | Plus de 30 casques sans fil lus directement (Logitech, SteelSeries, HyperX, Razer, Corsair, Astro, Audeze, JBL) |
 | 🌤️ **Météo**, 📅 **Agenda** | Open-Meteo ; toute adresse iCal (Google, Outlook…) |
 | 🖥️ **Serveurs** | Hôtes de `~/.ssh/config`, état et latence, SSH en un clic |
-| 🪟 **Fenêtres** | Fenêtres ouvertes par écran, en ramener une sur l'écran courant |
+| 🪟 **Fenêtres** | Fenêtres ouvertes par écran ; en ramener une sur l'écran courant (clic) ou l'envoyer vers un autre (clic droit) |
 | ✨ **Suggestions** | Applis et sites que tu utilises à cette heure-ci |
 | 🌀 **[Essaim](https://github.com/KingsRequin/essaim)** | Pause et réglages du curseur animé qui suit la musique |
 

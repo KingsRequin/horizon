@@ -1,5 +1,6 @@
 //! Widget « Fenêtres » : nombre de fenêtres d'application ouvertes, fenêtres par écran (panneau :
-//! `panel`) et « ramener ici » (clic dans le panneau, palette).
+//! `panel`), « ramener ici » (clic dans le panneau, palette) et « envoyer vers » un autre écran
+//! (clic droit dans le panneau).
 //!
 //! Pas de scrutation : les crochets d'événements de Windows (fenêtre affichée, cachée, détruite,
 //! masquée, réduite) marquent le compte comme périmé ; il est relu après 300 ms de calme, au
@@ -7,7 +8,7 @@
 //! complète (applis, écrans) n'est lue qu'à l'ouverture du panneau ou de la palette.
 //!
 //! Repris de `app/src-tauri/src/widgets/windows.rs`. Différences : l'écran d'origine est donné
-//! par l'appelant (rectangle de la barre ou de la palette). Un échec de « ramener ici » est dit
+//! par l'appelant (rectangle de la barre ou de la palette). Un déplacement qui échoue est dit
 //! dans l'îlot.
 
 mod panel;
@@ -15,7 +16,7 @@ mod panel;
 use super::Backend;
 use crate::alerts::{Alert, Severity};
 use horizon_core::dnd::AlertKind;
-use crate::host::{AppHandle, Manager};
+use crate::host::{AppHandle, Emitter, Manager};
 use crate::state::AppState;
 use crate::ui::BarWindow;
 use crate::util::{Published, Waker, spawn_named, start_thread};
@@ -126,20 +127,36 @@ pub fn groups(app: &AppHandle, at: Option<Rect>) -> Vec<ScreenGroup> {
     group_by_screen(list, &monitors, here.as_deref())
 }
 
-/// Ramène la fenêtre `hwnd` sur l'écran `at` et la met au premier plan, sur un fil à part (la
-/// fenêtre peut tarder à répondre). Un échec est dit dans l'îlot.
+/// Ramène la fenêtre `hwnd` sur l'écran `at` et la met au premier plan.
 pub fn bring(app: &AppHandle, hwnd: isize, at: Option<Rect>) {
+    show_on(app, hwnd, move |monitors| screen_at(at, monitors));
+}
+
+/// Envoie la fenêtre `hwnd` sur l'écran `monitor` (identifiant) et l'y met au premier plan.
+pub fn send(app: &AppHandle, hwnd: isize, monitor: String) {
+    show_on(app, hwnd, move |monitors| monitors.iter().find(|m| m.id == monitor).cloned());
+}
+
+/// Met la fenêtre `hwnd` sur l'écran choisi par `pick` et au premier plan, sur un fil à part (la
+/// fenêtre peut tarder à répondre). Un échec est dit dans l'îlot ; les panneaux montrés relisent
+/// leur liste (le nombre de fenêtres n'a pas changé, leur écran si).
+fn show_on(app: &AppHandle, hwnd: isize, pick: impl FnOnce(&[MonitorInfo]) -> Option<MonitorInfo> + Send + 'static) {
     let app = app.clone();
-    spawn_named("fenetre-ramener", move || {
+    spawn_named("fenetre-deplacer", move || {
         let monitors = horizon_sys::monitors::list();
-        let result = match screen_at(at, &monitors) {
-            Some(to) => horizon_sys::app_windows::bring_here(hwnd, &to, &monitors),
-            None => Err("aucun écran".into()),
+        let result = match pick(&monitors) {
+            Some(to) => horizon_sys::app_windows::show_on(hwnd, &to, &monitors),
+            None => Err("cet écran n'est plus là".into()),
         };
-        if let Err(e) = result {
-            log::warn!("ramener la fenêtre {hwnd:#x} : {e}");
-            let alert = Alert::icon("browsers", Severity::Attention, "Fenêtre non déplacée".into(), e);
-            crate::alerts::show(&app, AlertKind::Feedback, alert);
+        match result {
+            Ok(()) => {
+                let _ = app.emit(EV_WINDOWS, app.state::<Windows>().count.get());
+            }
+            Err(e) => {
+                log::warn!("déplacer la fenêtre {hwnd:#x} : {e}");
+                let alert = Alert::icon("browsers", Severity::Attention, "Fenêtre non déplacée".into(), e);
+                crate::alerts::show(&app, AlertKind::Feedback, alert);
+            }
         }
     });
 }

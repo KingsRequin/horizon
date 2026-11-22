@@ -93,7 +93,7 @@ shortcuts, Start menu apps, audio devices, timer, profiles and more.
 | 🎧 **Headset battery** | 30+ wireless headsets read directly over HID (Logitech, SteelSeries, HyperX, Razer, Corsair, Astro, Audeze, JBL) |
 | 🌤️ **Weather**, 📅 **Calendar** | Open-Meteo; any iCal address (Google, Outlook…) |
 | 🖥️ **Servers** | Hosts from `~/.ssh/config`, online status and latency, SSH in one click |
-| 🪟 **Windows** | Open windows per screen, bring one to the current screen |
+| 🪟 **Windows** | Open windows per screen; bring one to the current screen (click) or send it to another one (right-click) |
 | ✨ **Suggestions** | Apps and sites you use at this time of day |
 | 🌀 **[Essaim](https://github.com/KingsRequin/essaim)** | Pause and tune the music-reactive cursor |
 

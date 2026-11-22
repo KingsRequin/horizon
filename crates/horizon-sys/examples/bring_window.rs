@@ -7,7 +7,7 @@
 //! `cargo run -p horizon-sys --example bring_window`
 
 use horizon_core::geometry::MonitorInfo;
-use horizon_sys::app_windows::{bring_here, list, state};
+use horizon_sys::app_windows::{show_on, list, state};
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::HWND;
@@ -59,7 +59,7 @@ fn run(label: &str, h: isize, monitors: &[MonitorInfo]) -> usize {
     println!("\n== {label} : cadre logique de départ {:.0} × {:.0}", base.0, base.1);
     for to in monitors {
         let before = on(h, monitors);
-        let r = bring_here(h, to, monitors);
+        let r = show_on(h, to, monitors);
         std::thread::sleep(Duration::from_millis(300));
         let (frame, max, min) = state(h).expect("état");
         let now = on(h, monitors);
@@ -110,7 +110,7 @@ fn main() {
                 failures += n + usize::from(!still);
                 for to in &monitors {
                     show(h, SW_MINIMIZE);
-                    let r = bring_here(h, to, &monitors);
+                    let r = show_on(h, to, &monitors);
                     std::thread::sleep(Duration::from_millis(300));
                     let (_, _, min) = state(h).expect("état");
                     let ok = r.is_ok() && !min && on(h, &monitors) == to.id;

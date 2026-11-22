@@ -1,7 +1,8 @@
 // Panneau Fenêtres (app/src/widgets/windows/Panel.svelte) : fenêtres d'application par écran
 // (celui de la barre d'abord, « ici »). Clic = la fenêtre vient sur l'écran de la barre et
-// passe au premier plan ; déjà sur cet écran, elle passe seulement au premier plan. Relu à
-// chaque changement du nombre de fenêtres. Relié par src/widgets/windows/panel.rs.
+// passe au premier plan ; déjà sur cet écran, elle passe seulement au premier plan. Clic droit =
+// menu de la fenêtre (« Envoyer vers » un autre écran). Relu à chaque changement du nombre de
+// fenêtres et après un déplacement. Relié par src/widgets/windows/panel.rs.
 
 import { Theme, StyleTokens } from "../../theme.slint";
 import { Icon } from "../../components.slint";
@@ -39,6 +40,8 @@ export global WindowsPanelData {
     in-out property <[WindowsPanelRow]> rows;
     // Ramener la fenêtre ici (ou la mettre au premier plan).
     callback bring(string);
+    // Menu de la fenêtre (clic droit) : même action, ou l'envoyer vers un autre écran.
+    callback menu(string);
 }
 
 export component WindowsPanel inherits PanelBase {
@@ -102,6 +105,9 @@ export component WindowsPanel inherits PanelBase {
                 tip: r.tip;
                 clicked => {
                     WindowsPanelData.bring(r.hwnd);
+                }
+                context => {
+                    WindowsPanelData.menu(r.hwnd);
                 }
                 VerticalLayout {
                     alignment: center;

@@ -116,6 +116,16 @@ pub fn group_by_screen(windows: Vec<WindowView>, monitors: &[MonitorInfo], here:
     groups
 }
 
+/// Écrans où envoyer une fenêtre de l'écran `current` (identifiant, nom) : tous les autres, le
+/// principal d'abord, puis l'ordre de Windows.
+pub fn send_targets(monitors: &[MonitorInfo], current: &str) -> Vec<(String, String)> {
+    let mut names = screen_names(monitors);
+    let rank = |id: &str| monitors.iter().position(|m| m.id == id).map(|i| (!monitors[i].primary, i));
+    names.retain(|(id, _)| id != current);
+    names.sort_by_key(|(id, _)| rank(id));
+    names
+}
+
 /// Bords invisibles d'une fenêtre (zone de redimensionnement de Windows 10/11) : écart entre
 /// son rectangle et son cadre visible, en pixels physiques.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -259,6 +269,18 @@ mod tests {
         assert!(g[0].here);
         assert_eq!(g[1].monitor_id, "main");
         assert!(group_by_screen(Vec::new(), &s, None).is_empty());
+    }
+
+    #[test]
+    fn a_window_is_sent_to_any_other_screen() {
+        let s = screens();
+        let names = |current: &str| send_targets(&s, current).into_iter().map(|(_, n)| n).collect::<Vec<_>>();
+        assert_eq!(names("right"), ["Écran principal", "Écran du haut", "Écran de gauche"]);
+        assert_eq!(names("main"), ["Écran de droite", "Écran du haut", "Écran de gauche"]);
+        assert_eq!(send_targets(&s, "top")[0], ("main".to_owned(), "Écran principal".to_owned()));
+        // Écran inconnu (débranché entre-temps) : tous les écrans ; un seul écran : aucun.
+        assert_eq!(send_targets(&s, "gone").len(), 4);
+        assert!(send_targets(&s[..1], "main").is_empty());
     }
 
     #[test]

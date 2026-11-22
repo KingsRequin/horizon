@@ -46,7 +46,8 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   mémoire (courbes ou jauges, détail au survol), micro, horloge, sessions Claude Code,
   quota Claude, suggestions selon l'usage (applis utilisées, historique de Vivaldi), batterie du
   casque, météo (Open-Meteo, ville dans les réglages), agenda (adresses iCal secrètes, lien de
-  visio), serveurs (`~/.ssh/config`), fenêtres ouvertes par écran, et
+  visio), serveurs (`~/.ssh/config`), fenêtres ouvertes par écran (clic : ramener ici ; clic
+  droit : envoyer vers un autre écran), et
   [Essaim](https://github.com/KingsRequin/essaim) (curseur animé qui suit la musique : pause et
   réglages en direct ; le widget n'apparaît que quand Essaim tourne).
 - **Raccourcis** : pastille sous l'icône quand l'appli a une fenêtre ouverte (relevé léger des

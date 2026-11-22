@@ -134,6 +134,21 @@ pub fn show(hwnd: isize, entries: Vec<Entry>, keep_active: bool, chosen: impl Fn
 /// Comme [`show`], le coin haut gauche du menu au point d'écran `at` (pixels physiques) au lieu
 /// de la souris : liste déroulante d'une fenêtre de réglages, sous son champ.
 pub fn show_at(hwnd: isize, entries: Vec<Entry>, keep_active: bool, at: Option<(i32, i32)>, chosen: impl FnOnce(String) + 'static) {
+    open(hwnd, entries, keep_active, at, move |picked| {
+        if let Some(id) = picked {
+            chosen(id);
+        }
+    });
+}
+
+/// Comme [`show`], mais `closed` est appelé dans tous les cas à la fermeture du menu : avec
+/// l'identifiant de l'entrée choisie, ou `None` si le menu est fermé sans choix (panneau qui
+/// reste affiché le temps du menu).
+pub fn show_then(hwnd: isize, entries: Vec<Entry>, keep_active: bool, closed: impl FnOnce(Option<String>) + 'static) {
+    open(hwnd, entries, keep_active, None, closed);
+}
+
+fn open(hwnd: isize, entries: Vec<Entry>, keep_active: bool, at: Option<(i32, i32)>, closed: impl FnOnce(Option<String>) + 'static) {
     crate::ui::tooltip::hide();
     REQUESTED.set(true);
     OPEN.set(Some(Instant::now() + Duration::from_secs(3600)));
@@ -141,9 +156,7 @@ pub fn show_at(hwnd: isize, entries: Vec<Entry>, keep_active: bool, at: Option<(
         REQUESTED.set(false);
         let picked = track(hwnd, &entries, keep_active, at);
         OPEN.set(Some(Instant::now()));
-        if let Some(id) = picked {
-            chosen(id);
-        }
+        closed(picked);
     });
 }
 

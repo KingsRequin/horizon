@@ -18,8 +18,8 @@ use slint::ComponentHandle;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use windows::Win32::Foundation::{HWND, RECT};
-use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+use windows::Win32::Foundation::{HWND, POINT, RECT};
+use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
 
 /// Durée de l'état « apparition » : la première image est présentée transparente, puis le fondu
 /// d'entrée joue (comme le retour d'une barre, `ui::bar::set_visible`).
@@ -47,6 +47,8 @@ struct Popup {
     awaiting: bool,
     /// Le panneau a changé dans la fenêtre affichée : fondu du nouveau à son affichage.
     switched: bool,
+    /// Un menu contextuel est ouvert depuis le panneau : il reste affiché (`hold_for_menu`).
+    held: bool,
 }
 
 thread_local! {
@@ -106,6 +108,7 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
         visible: false,
         awaiting: false,
         switched: false,
+        held: false,
     }));
     Ok(())
 }
@@ -427,9 +430,49 @@ fn close_after(asked: Instant) {
     });
 }
 
-/// La fermeture `generation` tient toujours : rien de demandé depuis, souris hors du panneau.
+/// La fermeture `generation` tient toujours : rien de demandé depuis, souris hors du panneau,
+/// pas de menu contextuel ouvert.
 fn wanted(generation: u64) -> bool {
-    with(|p| p.generation == generation && !p.hovered && p.kind.is_some()) == Some(true)
+    with(|p| p.generation == generation && !p.hovered && !p.held && p.kind.is_some()) == Some(true)
+}
+
+/// Le panneau est-il épinglé (il a le focus) ?
+pub fn pinned() -> bool {
+    with(|p| p.pinned && p.kind.is_some()) == Some(true)
+}
+
+/// Un menu contextuel s'ouvre depuis le panneau : la souris va le quitter pour le menu, il reste
+/// affiché jusqu'à [`menu_closed`].
+pub fn hold_for_menu() {
+    with(|p| {
+        p.held = true;
+        p.generation += 1;
+        p.window.set_closing(false);
+    });
+}
+
+/// Le menu contextuel est fermé : un panneau de survol reprend sa règle, d'après la place réelle
+/// de la souris (elle a pu partir pendant le menu sans que la fenêtre le voie).
+pub fn menu_closed() {
+    let Some(Some(window)) = with(|p| {
+        p.held = false;
+        (p.kind.is_some() && !p.pinned).then(|| p.window.clone_strong())
+    }) else {
+        return;
+    };
+    let inside = platform::hwnd(window.window()).is_some_and(cursor_inside);
+    with(|p| p.hovered = inside);
+    if !inside {
+        hide_soon();
+    }
+}
+
+/// La souris est-elle dans le rectangle de la fenêtre `hwnd` ?
+fn cursor_inside(hwnd: isize) -> bool {
+    let (mut r, mut p) = (RECT::default(), POINT::default());
+    // SAFETY : lectures de la position de la souris et du rectangle de notre fenêtre.
+    let read = unsafe { GetWindowRect(HWND(hwnd as *mut _), &mut r).is_ok() && GetCursorPos(&mut p).is_ok() };
+    read && (r.left..r.right).contains(&p.x) && (r.top..r.bottom).contains(&p.y)
 }
 
 /// Cache la fenêtre ; le panneau est déchargé (ses minuteurs s'arrêtent avec lui).
@@ -439,6 +482,7 @@ fn hide_now() {
         p.switched = false;
         p.pinned = false;
         p.hovered = false;
+        p.held = false;
         p.visible = false;
         (p.app.clone(), p.window.clone_strong(), p.kind.take())
     }) else {
@@ -473,9 +517,10 @@ fn hover(on: bool) {
     }
 }
 
-/// Fenêtre désactivée : un panneau épinglé se ferme (clic ailleurs, autre fenêtre).
+/// Fenêtre désactivée : un panneau épinglé se ferme (clic ailleurs, autre fenêtre), sauf le
+/// temps de son menu contextuel.
 fn deactivated() {
-    if with(|p| p.pinned && p.kind.is_some()) == Some(true) {
+    if with(|p| p.pinned && !p.held && p.kind.is_some()) == Some(true) {
         close();
     }
 }

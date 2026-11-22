@@ -195,13 +195,13 @@ fn set_rect(h: HWND, r: Rect) -> Result<(), String> {
         .map_err(|e| format!("déplacement refusé ({e})"))
 }
 
-/// Ramène la fenêtre `h` sur l'écran `to` puis la met au premier plan : réduite, elle est
+/// Met la fenêtre `h` sur l'écran `to` puis au premier plan : réduite, elle est
 /// d'abord restaurée ; agrandie, elle est restaurée, déplacée puis agrandie de nouveau ; sa
 /// taille et sa place dans la zone de travail sont gardées en pixels logiques (réduite si
 /// l'écran d'arrivée est trop petit). Déjà sur cet écran : seulement le premier plan.
 ///
 /// Bloquant (messages envoyés à la fenêtre) : à appeler sur un fil à part.
-pub fn bring_here(h: isize, to: &MonitorInfo, monitors: &[MonitorInfo]) -> Result<(), String> {
+pub fn show_on(h: isize, to: &MonitorInfo, monitors: &[MonitorInfo]) -> Result<(), String> {
     let w = hwnd(h);
     // SAFETY : lectures d'état.
     unsafe {
