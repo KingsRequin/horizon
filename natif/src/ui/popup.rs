@@ -17,7 +17,7 @@ use horizon_core::layout::BAND_HEIGHT;
 use slint::ComponentHandle;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, GetWindowRect};
 
@@ -38,6 +38,9 @@ struct Popup {
     /// Numéro de la dernière demande (affichage, maintien, fermeture) : une fermeture différée
     /// n'aboutit que si rien n'a été demandé depuis.
     generation: u64,
+    /// Numéro de la fermeture demandée sans condition (`close`), tant qu'elle est la dernière
+    /// demande : la souris sur le panneau ne la retient pas.
+    forced: Option<u64>,
     placement: Option<Placement>,
     /// Dernière taille mesurée de chaque panneau (pixels logiques).
     sizes: HashMap<String, (f32, f32)>,
@@ -49,6 +52,13 @@ struct Popup {
     switched: bool,
     /// Un menu contextuel est ouvert depuis le panneau : il reste affiché (`hold_for_menu`).
     held: bool,
+}
+
+impl Popup {
+    /// Une fermeture sans condition est la dernière demande.
+    fn closing_anyway(&self) -> bool {
+        self.forced == Some(self.generation)
+    }
 }
 
 thread_local! {
@@ -103,6 +113,7 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
         pinned: false,
         hovered: false,
         generation: 0,
+        forced: None,
         placement: None,
         sizes: HashMap::new(),
         visible: false,
@@ -383,36 +394,38 @@ fn measured(width: f32, height: f32) {
     }
 }
 
-/// La souris a quitté le widget : le panneau se ferme bientôt, sauf s'il est épinglé ou si elle
-/// y entre.
+/// La souris a quitté le widget : le panneau se ferme bientôt, sauf s'il est épinglé, si elle y
+/// entre ou s'il est déjà en train de se fermer sans condition.
 pub fn hide_soon() {
-    if with(|p| p.pinned) == Some(false) {
-        close_after(Instant::now());
+    if with(|p| p.pinned || p.closing_anyway()) == Some(false) {
+        close_after(HIDE_DELAY, false);
     }
 }
 
-/// Ferme tout de suite (Échap, perte du focus d'un panneau épinglé), avec le fondu de sortie.
+/// Ferme tout de suite (Échap, action choisie, perte du focus d'un panneau épinglé), avec le
+/// fondu de sortie, même si la souris est sur le panneau.
 pub fn close() {
     let open = with(|p| {
         p.pinned = false;
-        p.hovered = false;
         p.kind.is_some()
     });
     if open == Some(true) {
-        close_after(Instant::now().checked_sub(HIDE_DELAY).unwrap_or_else(Instant::now));
+        close_after(Duration::ZERO, true);
     }
 }
 
-/// Fermeture numérotée : délai compté depuis `asked`, fondu de sortie, puis masquage, chaque
-/// étape abandonnée si une demande plus récente (ou la souris dans le panneau) est arrivée.
-fn close_after(asked: Instant) {
+/// Fermeture numérotée : délai, fondu de sortie, puis masquage, chaque étape abandonnée si une
+/// demande plus récente est arrivée, ou la souris dans le panneau quand la fermeture n'est pas
+/// `forced`.
+fn close_after(delay: Duration, forced: bool) {
     let Some(generation) = with(|p| {
         p.generation += 1;
+        p.forced = forced.then_some(p.generation);
         p.generation
     }) else {
         return;
     };
-    slint::Timer::single_shot(HIDE_DELAY.saturating_sub(asked.elapsed()), move || {
+    slint::Timer::single_shot(delay, move || {
         if !wanted(generation) {
             return;
         }
@@ -430,10 +443,10 @@ fn close_after(asked: Instant) {
     });
 }
 
-/// La fermeture `generation` tient toujours : rien de demandé depuis, souris hors du panneau,
-/// pas de menu contextuel ouvert.
+/// La fermeture `generation` tient toujours : rien de demandé depuis, pas de menu contextuel
+/// ouvert, souris hors du panneau (sauf fermeture sans condition).
 fn wanted(generation: u64) -> bool {
-    with(|p| p.generation == generation && !p.hovered && !p.held && p.kind.is_some()) == Some(true)
+    with(|p| p.generation == generation && (!p.hovered || p.closing_anyway()) && !p.held && p.kind.is_some()) == Some(true)
 }
 
 /// Le panneau est-il épinglé (il a le focus) ?
@@ -483,6 +496,7 @@ fn hide_now() {
         p.pinned = false;
         p.hovered = false;
         p.held = false;
+        p.forced = None;
         p.visible = false;
         (p.app.clone(), p.window.clone_strong(), p.kind.take())
     }) else {
@@ -506,7 +520,7 @@ fn hover(on: bool) {
     }
     let open = with(|p| {
         p.hovered = on;
-        if on {
+        if on && !p.closing_anyway() {
             // Retour pendant le fondu de sortie : le panneau reste (la fermeture le constate).
             p.window.set_closing(false);
         }
