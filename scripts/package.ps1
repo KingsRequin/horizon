@@ -12,7 +12,8 @@
 #   .\scripts\package.ps1                  # installateur dans dist-share\ (ignoré par git)
 #   .\scripts\package.ps1 -Out C:\Temp     # ailleurs
 #   .\scripts\package.ps1 -NoBuild         # reprend la dernière compilation partagée
-param([string]$Out, [switch]$NoBuild)
+#   .\scripts\package.ps1 -Timings         # et le rapport de durée de cargo (cargo-timings\ du dossier de compilation)
+param([string]$Out, [switch]$NoBuild, [switch]$Timings)
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -46,7 +47,8 @@ if (-not $NoBuild) {
     Write-Host "Compilation d'Horizon et de son hook Claude Code (édition publique)…"
     Push-Location $repo
     try {
-      & cargo build --release -p horizon-natif -p horizon-hook
+      $timings = if ($Timings) { '--timings' }
+      & cargo build --release -p horizon-natif -p horizon-hook $timings
       if ($LASTEXITCODE) { throw "compilation d'Horizon échouée" }
     } finally { Pop-Location }
   } finally {

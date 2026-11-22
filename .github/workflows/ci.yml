@@ -8,9 +8,16 @@ on:
 permissions:
   contents: read
 
+env:
+  # A fresh checkout never reuses incremental data: without it the build is faster and the cache smaller.
+  CARGO_INCREMENTAL: 0
+
 # No --locked: the committed Cargo.lock comes from a checkout where audio-commun is patched to a
 # local path, so cargo resolves the git dependency here.
+# Only first-party actions (.github/actions/cargo-cache is in this repository).
 jobs:
+  # Clippy and the tests, with the Slint UI interpreted (cargo feature "live", scripts/verifier.ps1):
+  # the Rust that Slint generates is most of the build time and is not compiled here.
   check:
     runs-on: windows-latest
     steps:
@@ -19,14 +26,44 @@ jobs:
           persist-credentials: false
       - name: Rust (version de rust-toolchain.toml)
         run: rustup toolchain install
-      - uses: actions/cache@v4
+      - id: cache
+        uses: ./.github/actions/cargo-cache
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Tests
-        run: cargo test --workspace
+          job: check
+      - name: Clippy and tests
+        shell: pwsh
+        run: ./scripts/verifier.ps1
+      - uses: ./.github/actions/cargo-cache
+        with:
+          job: check
+          save: ${{ steps.cache.outputs.save-key }}
+
+  # The build of a Release (compiled UI, release profile), without packaging: catches what only
+  # builds with the interpreted UI before a tag is pushed, and fills the cache that release.yml
+  # reads (a tag can read a cache saved from master, not one saved from another tag).
+  release-build:
+    runs-on: windows-latest
+    env:
+      CARGO_TARGET_DIR: target-share
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Rust (version de rust-toolchain.toml)
+        run: rustup toolchain install
+      - id: cache
+        uses: ./.github/actions/cargo-cache
+        with:
+          job: release
+          target: target-share
+          profile: release
+          ui: 'true'
+      - name: Build (as scripts/package.ps1)
+        run: cargo build --release -p horizon-natif -p horizon-hook
+      - uses: ./.github/actions/cargo-cache
+        with:
+          job: release
+          target: target-share
+          profile: release
+          ui: 'true'
+          save: ${{ steps.cache.outputs.save-key }}
