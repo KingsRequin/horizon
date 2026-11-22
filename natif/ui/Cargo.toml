@@ -20,9 +20,13 @@ test = false
 doctest = false
 
 [features]
-# Interface interprétée, pour le développement seulement (`scripts/verifier.ps1`) : Slint ne
-# traduit plus les .slint en Rust, il les charge à l'exécution et les recharge quand ils
-# changent. `build.rs` refuse cette fonction dans une version publiée.
+# Interface interprétée : Slint ne traduit plus les .slint en Rust, il les charge à l'exécution
+# et les recharge quand ils changent. C'est le réglage par défaut, pour que tout ce qui compile
+# en développement (cargo, rust-analyzer, `scripts/verifier.ps1`) évite le code généré, de loin
+# le plus long à compiler et le plus lourd à analyser. Une version publiée embarque son
+# interface : elle se compile avec `--no-default-features`, et `build.rs` refuse `live` en
+# profil release.
+default = ["live"]
 live = ["slint/live-preview"]
 
 [dependencies]

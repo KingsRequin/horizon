@@ -16,7 +16,7 @@ env:
 # local path, so cargo resolves the git dependency here.
 # Only first-party actions (.github/actions/cargo-cache is in this repository).
 jobs:
-  # Clippy and the tests, with the Slint UI interpreted (cargo feature "live", scripts/verifier.ps1):
+  # Clippy and the tests, with the Slint UI interpreted (cargo feature "live", the default):
   # the Rust that Slint generates is most of the build time and is not compiled here.
   check:
     runs-on: windows-latest
@@ -60,7 +60,7 @@ jobs:
           profile: release
           ui: 'true'
       - name: Build (as scripts/package.ps1)
-        run: cargo build --release -p horizon-natif -p horizon-hook
+        run: cargo build --release --no-default-features -p horizon-natif -p horizon-hook
       - uses: ./.github/actions/cargo-cache
         with:
           job: release

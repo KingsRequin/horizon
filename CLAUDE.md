@@ -14,17 +14,19 @@ et comment l'installer : `README.md` (`README.en.md` en anglais). Mode d'emploi 
 .\scripts\verifier.ps1 -Exe     et l'exe de debug, pour le contrôle en vrai
 ```
 
-Le script compile avec l'interface **interprétée** (fonction cargo `live`) : les `.slint` sont
-chargés à l'exécution au lieu d'être traduits en Rust, ce qui était l'essentiel du temps de
-compilation. À savoir :
+En développement l'interface est **interprétée** (fonction cargo `live`, par défaut : le script,
+une commande `cargo` sans option et rust-analyzer l'utilisent tous) : les `.slint` sont chargés
+à l'exécution au lieu d'être traduits en Rust, ce qui était l'essentiel du temps de compilation.
+À savoir :
 
 - l'exe de debug relit les `.slint` du dépôt et les recharge quand ils changent (un changement de
   `.slint` se voit sans recompiler) ; il met quelques secondes à démarrer et occupe plus de
   1 Go : c'est normal dans ce mode ;
-- l'exe publié reste la référence. Il est compilé par GitHub avec l'interface compilée, que la
-  CI vérifie à chaque poussée (ici : `.\scripts\verifier.ps1 -Compile`) ; `natif/ui/build.rs`
-  refuse `live` dans une version publiée ;
-- sans le script, ajouter `--features horizon-natif/live` aux commandes `cargo`.
+- l'exe publié reste la référence. Il est compilé par GitHub avec l'interface compilée
+  (`--no-default-features`), que la CI vérifie à chaque poussée (ici : `.\scripts\verifier.ps1
+  -Compile`) ;
+- une compilation release demande donc `--no-default-features` (`scripts\package.ps1` et
+  `scripts\install.ps1` le font) : sans lui, `natif/ui/build.rs` l'arrête avec ce message.
 
 Un changement visible se vérifie aussi en vrai : `horizon.exe --quit` sur l'installée, lancer
 `<dossier de compilation>\debug\horizon.exe`, provoquer la fonction (arguments

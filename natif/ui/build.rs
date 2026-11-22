@@ -51,13 +51,13 @@ fn main() {
     slint_build::compile_with_config("main.slint", config).expect("compilation de main.slint");
 }
 
-/// Fonction cargo `live` : demande à Slint une façade qui charge les `.slint` à l'exécution
-/// (interpréteur) au lieu de les traduire en Rust. Refusée dans une version publiée, qui doit
-/// embarquer son interface.
+/// Fonction cargo `live` (par défaut) : demande à Slint une façade qui charge les `.slint` à
+/// l'exécution (interpréteur) au lieu de les traduire en Rust. Refusée dans une version
+/// publiée, qui doit embarquer son interface (`--no-default-features`).
 fn live() {
     println!("cargo:rerun-if-env-changed=HORIZON_RELEASE");
     let published = std::env::var("PROFILE").is_ok_and(|p| p == "release") || std::env::var_os("HORIZON_RELEASE").is_some();
-    assert!(!published, "mode live interdit dans une version publiée : retirer `--features live`");
+    assert!(!published, "interface interprétée (fonction `live`, par défaut) interdite dans une version publiée : ajouter `--no-default-features`");
     // SAFETY : un script de compilation n'a qu'un fil, et rien d'autre ne lit l'environnement
     // pendant cet appel. Slint ne connaît pas d'autre interrupteur que cette variable.
     unsafe { std::env::set_var("SLINT_LIVE_PREVIEW", "1") };

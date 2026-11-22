@@ -9,8 +9,10 @@ titre d'historique. Données :
 ## Lancer
 
 ```
-scripts\verifier.ps1 -Exe               (clippy, tests, exe de debug à l'interface interprétée)
-cargo build -p horizon-natif [--release]  (interface compilée, comme l'exe publié)
+scripts\verifier.ps1 -Exe               (clippy, tests, exe de debug ; interface interprétée)
+cargo build -p horizon-natif             (le même exe de debug, seul)
+cargo build -p horizon-natif --no-default-features [--release]   (interface compilée, comme
+                                         l'exe publié ; obligatoire avec --release)
 %LOCALAPPDATA%\Programs\Horizon\horizon.exe --quit      (les deux réservent le haut des écrans)
 <dossier de compilation>\{debug|release}\horizon.exe [--essai]   (target\ par défaut ; en
                                          debug : la dernière des deux formes compilées)

@@ -16,7 +16,9 @@ name = "horizon"
 path = "src/main.rs"
 
 [features]
-# Interface interprétée, pour le développement seulement : voir `ui/Cargo.toml`.
+# Interface interprétée (voir `ui/Cargo.toml`) : le réglage par défaut. Une version publiée se
+# compile avec `--no-default-features` (interface compilée).
+default = ["live"]
 live = ["horizon-ui/live"]
 
 [dependencies]

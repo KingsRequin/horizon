@@ -22,7 +22,7 @@ if (-not $NoBuild) {
   Write-Host "Compilation d'Horizon et de son hook Claude Code…"
   Push-Location $repo
   try {
-    & cargo build --release -p horizon-natif -p horizon-hook
+    & cargo build --release --no-default-features -p horizon-natif -p horizon-hook
     if ($LASTEXITCODE) { throw "compilation d'Horizon échouée" }
   } finally { Pop-Location }
 }

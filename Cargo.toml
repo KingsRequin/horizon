@@ -12,7 +12,7 @@ repository = "https://github.com/KingsRequin/horizon"
 [workspace.dependencies]
 horizon-core = { path = "crates/horizon-core" }
 horizon-sys = { path = "crates/horizon-sys" }
-horizon-ui = { path = "natif/ui" }
+horizon-ui = { path = "natif/ui", default-features = false }
 # Capture et analyse du son, partagées avec Essaim et Prisme (dépôt à part). Pour travailler
 # dessus en même temps : [patch] vers un clone voisin dans .cargo/config.toml (README).
 audio-commun = { git = "https://github.com/KingsRequin/audio-commun", tag = "v0.1.0" }

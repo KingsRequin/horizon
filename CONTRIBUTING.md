@@ -8,8 +8,8 @@ Requirements: Windows 10 or 11, [Rust](https://rustup.rs) (the version is pinned
 `rust-toolchain.toml` and installed automatically by `rustup`), and the MSVC build tools.
 
 ```
-scripts\verifier.ps1           # clippy and tests, with the Slint UI interpreted (fast; -Compile for the compiled UI)
-cargo build -p horizon-natif --release
+scripts\verifier.ps1           # clippy and tests (the Slint UI is interpreted by default: fast; -Compile for the compiled UI)
+cargo build -p horizon-natif --release --no-default-features   # a release build embeds the compiled UI
 scripts\install.ps1            # build in release, install to %LOCALAPPDATA%\Programs\Horizon and start
 scripts\uninstall.ps1          # remove it (settings are kept unless -RemoveConfig)
 ```
