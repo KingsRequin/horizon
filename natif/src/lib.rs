@@ -189,12 +189,20 @@ pub fn run() {
     if let Err(e) = slint::run_event_loop_until_quit() {
         log::error!("boucle d'événements : {e}");
     }
+    // Réglages ouverts : ce qui y attend part (enregistrement, retrait) avant l'arrêt des services.
+    ui::settings_window::close(&app);
     // Place réservée rendue, icône retirée.
     widgets::exit_all(&app);
     // Les scripts des plugins disent au revoir (500 ms au plus).
     plugins::script::quit();
     bars::close_all(&app);
+    // Chaque fenêtre est lâchée ici, sur le fil de l'interface et les autres fils encore en vie.
+    // Laissée à la fin du processus, elle serait détruite après leur arrêt : avec l'interface
+    // interprétée (fonction `live`), le surveillant de fichiers de Slint attend alors un fil
+    // qui n'existe plus, et panique.
     ui::popup::stop();
+    ui::palette::stop();
+    ui::essai::stop();
     ui::tooltip::close();
     tray::stop();
     // L'affichage du volume de Windows revient.
