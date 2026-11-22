@@ -47,8 +47,10 @@ if (-not $NoBuild) {
     Write-Host "Compilation d'Horizon et de son hook Claude Code (édition publique)…"
     Push-Location $repo
     try {
-      $timings = if ($Timings) { '--timings' }
-      & cargo build --release -p horizon-natif -p horizon-hook $timings
+      # Interface compilée (--no-default-features : voir natif/ui/Cargo.toml).
+      $build = 'build', '--release', '--no-default-features', '-p', 'horizon-natif', '-p', 'horizon-hook'
+      if ($Timings) { $build += '--timings' }
+      & cargo @build
       if ($LASTEXITCODE) { throw "compilation d'Horizon échouée" }
     } finally { Pop-Location }
   } finally {
