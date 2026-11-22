@@ -36,7 +36,8 @@ jobs:
       - uses: ./.github/actions/cargo-cache
         with:
           job: check
-          save: ${{ steps.cache.outputs.save-key }}
+          phase: save
+          key: ${{ steps.cache.outputs.save-key }}
 
   # The build of a Release (compiled UI, release profile), without packaging: catches what only
   # builds with the interpreted UI before a tag is pushed, and fills the cache that release.yml
@@ -66,4 +67,5 @@ jobs:
           target: target-share
           profile: release
           ui: 'true'
-          save: ${{ steps.cache.outputs.save-key }}
+          phase: save
+          key: ${{ steps.cache.outputs.save-key }}

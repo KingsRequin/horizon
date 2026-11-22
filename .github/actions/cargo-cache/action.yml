@@ -10,8 +10,8 @@
 #   Otherwise the files keep the date of the checkout and cargo rebuilds the crate.
 # - The other workspace crates are removed before saving: a fresh checkout always rebuilds them.
 #
-# Use it twice in a job: first without "save" (restores), then at the end with
-# "save: ${{ steps.<id>.outputs.save-key }}" (saves, and only when the key was not found).
+# Use it twice in a job: first as is (restores), then at the end with "phase: save" and
+# "key: ${{ steps.<id>.outputs.save-key }}" (saves, and only when the key was not found).
 name: Cargo cache
 description: Restores, then saves, what a job does not need to compile again.
 inputs:
@@ -27,19 +27,22 @@ inputs:
   ui:
     description: "'true' to keep the compiled Slint UI (horizon-ui) too."
     default: 'false'
-  save:
-    description: Key to save under (output "save-key" of the restore call); empty = restore.
+  phase:
+    description: restore (start of the job) or save (end of the job).
+    default: restore
+  key:
+    description: "With phase: save, the key to save under (output save-key of the restore call); empty = nothing to save."
     default: ''
 outputs:
   save-key:
-    description: The key when it was not found (to pass back as "save"), empty otherwise.
+    description: The key when it was not found (to pass back as "key"), empty otherwise.
     value: ${{ steps.restore.outputs.cache-hit != 'true' && steps.key.outputs.key || '' }}
 runs:
   using: composite
   steps:
     - name: Cache key
       id: key
-      if: inputs.save == ''
+      if: inputs.phase == 'restore'
       shell: pwsh
       run: |
         function Get-Hash([string]$text) {
@@ -59,7 +62,7 @@ runs:
         }
     - name: Restore
       id: restore
-      if: inputs.save == ''
+      if: inputs.phase == 'restore'
       uses: actions/cache/restore@v4
       with:
         path: |
@@ -69,7 +72,7 @@ runs:
         key: ${{ steps.key.outputs.key }}
         restore-keys: ${{ steps.key.outputs.fallback }}
     - name: Reuse the compiled UI
-      if: inputs.save == '' && inputs.ui == 'true' && steps.restore.outputs.cache-hit == 'true'
+      if: inputs.phase == 'restore' && inputs.ui == 'true' && steps.restore.outputs.cache-hit == 'true'
       shell: pwsh
       run: |
         $old = Get-Date '2000-01-01'
@@ -77,7 +80,7 @@ runs:
         $roots = Get-Item natif/ui, natif/fonts, natif/icons
         @($roots) + @($roots | Get-ChildItem -Recurse) | ForEach-Object { $_.LastWriteTime = $old }
     - name: Remove the workspace crates
-      if: inputs.save != ''
+      if: inputs.phase == 'save' && inputs.key != ''
       shell: pwsh
       env:
         CARGO_TARGET_DIR: ${{ inputs.target }}
@@ -87,11 +90,11 @@ runs:
         $packages = $names | ForEach-Object { '-p', $_ }
         cargo clean --profile ${{ inputs.profile }} @packages
     - name: Save
-      if: inputs.save != ''
+      if: inputs.phase == 'save' && inputs.key != ''
       uses: actions/cache/save@v4
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
           ${{ inputs.target }}
-        key: ${{ inputs.save }}
+        key: ${{ inputs.key }}
