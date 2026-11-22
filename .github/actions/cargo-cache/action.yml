@@ -43,7 +43,7 @@ runs:
       shell: pwsh
       run: |
         function Get-Hash([string]$text) {
-          $bytes = [Text.Encoding]::UTF8.GetBytes($text -replace "`r", '')
+          $bytes = [Text.Encoding]::UTF8.GetBytes(($text -replace "`r", ''))
           [BitConverter]::ToString([Security.Cryptography.SHA256]::HashData($bytes)).Replace('-', '').ToLowerInvariant().Substring(0, 32)
         }
         $lock = (Get-Content Cargo.lock -Raw) -replace '(name = "horizon-[^"]+"\r?\nversion = ")[^"]+', '$1'
