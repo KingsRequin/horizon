@@ -18,6 +18,7 @@ path = "src/main.rs"
 [dependencies]
 horizon-core.workspace = true
 horizon-sys.workspace = true
+horizon-ui.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
@@ -40,9 +41,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # Toiles de la fenêtre Prisme (plan en direct, éditeur du plan) : déjà tirée par le rendu des
 # SVG de Slint (resvg), même version.
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
-# 1.18 : la 1.19 demande Rust 1.95. Rendu logiciel seulement, plateforme maison
-# (`src/platform`) : ni winit, ni skia, ni femtovg.
-slint = { version = "~1.18", default-features = false, features = ["std", "compat-1-2", "renderer-software"] }
+slint.workspace = true
 # Même version que celle tirée par `slint` (qui la fixe à `=`) : accès à `WindowAdapterInternal`
 # (curseur de la souris), au rendu des icônes SVG (`svg`) et des images embarquées par
 # `@image-url` (`image-decoders`), absents de l'API publique.
@@ -59,7 +58,6 @@ url = "2.5"
 rquickjs = { version = "0.14", default-features = false, features = ["std"] }
 
 [build-dependencies]
-slint-build = "~1.18"
 embed-resource = "3"
 serde_json.workspace = true
 

@@ -4,7 +4,7 @@
 //!
 //! Un widget porté a aussi son module ici (service repris de `app/src-tauri/src/widgets/<id>`,
 //! liaison à l'interface) et son [`Backend`] dans [`BACKENDS`]. Son panneau surgissant
-//! (`ui/widgets/<id>/panel.slint`, trouvé par `build.rs` : [`PANELS`]) est relié par
+//! (`ui/widgets/<id>/panel.slint`, trouvé par `ui/build.rs` : [`PANELS`]) est relié par
 //! [`Backend::panel`].
 
 pub mod calendar;
@@ -47,6 +47,8 @@ pub struct Manifest {
 }
 
 include!(concat!(env!("OUT_DIR"), "/widgets.rs"));
+
+pub use horizon_ui::PANELS;
 
 /// Manifeste du widget `id` ; `None` pour un genre inconnu (dossier retiré : la disposition le
 /// garde, rien n'est affiché). Un plugin chargeable
