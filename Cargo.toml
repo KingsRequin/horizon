@@ -27,12 +27,19 @@ windows = "0.62"
 # (`natif/src/platform`) : ni winit, ni skia, ni femtovg.
 slint = { version = "~1.18", default-features = false, features = ["std", "compat-1-2", "renderer-software"] }
 
+# Pas de LTO entre paquets : mesurée, elle n'apportait ni vitesse ni taille (exe de 48 Mo sans,
+# 49 Mo avec), et refaisait à chaque version 7 minutes d'édition de liens que rien ne peut
+# mettre en cache. Sans elle, un paquet inchangé n'est pas recompilé.
 [profile.release]
-lto = "thin"
 codegen-units = 1
 opt-level = 3
 strip = true
 panic = "abort"
+
+# Code généré par Slint : énorme, et froid (il décrit l'interface ; le rendu est dans
+# i-slint-core). En une seule unité, il se compilerait sur un seul cœur.
+[profile.release.package.horizon-ui]
+codegen-units = 16
 
 [profile.dev.package."*"]
 opt-level = 2

@@ -31,7 +31,8 @@ Un changement visible se vérifie aussi en vrai : `horizon.exe --quit` sur l'ins
 d'essai : `natif/README.md`, « Lancer »), captures BitBlt (CAPTUREBLT, processus
 PER_MONITOR_AWARE_V2) des écrans concernés, puis `--quit` et relancer l'installée. Contrôler le
 journal `%APPDATA%\Horizon\horizon.log` : pas de vérification « à l'aveugle ». La compilation
-release (LTO) dépasse 10 minutes : la lancer en processus détaché.
+release dure 3 minutes après un changement de Rust, 10 après un changement de `.slint` (le code
+que Slint génère) et plus de 20 depuis zéro : la lancer alors en processus détaché.
 
 ## Organisation
 
