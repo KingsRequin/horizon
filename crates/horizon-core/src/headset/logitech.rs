@@ -21,12 +21,14 @@
 //!    - 0x1001 (tension), fonction 0 : `<mV fort> <mV faible> <drapeaux>`, bit 7 = en charge ;
 //!    - 0x1F20 (mesure ADC des casques), fonction 0 : `<mV fort> <mV faible> <drapeaux>`, bit 0 =
 //!      casque relié au dongle, bit 1 = en charge ; une réponse d'erreur = casque relié mais
-//!      inactif. Tension → pourcentage par la courbe de décharge de Halo.
+//!      inactif. Tension → pourcentage par le modèle de batterie du casque (`curves`).
 //!
 //! Casque éteint (`Status::Off`) : ping sans réponse ou refusé (0x04, 0x08, 0x09), ou mesure ADC
 //! qui dit le casque absent ou inactif. Seules des requêtes de lecture sont envoyées. Les
 //! registres HID++ 1.0 de Halo ne servent qu'aux récepteurs (il faut la collection courte) : ils
 //! ne concernent pas les casques. Le PRO X 2 LIGHTSPEED (0AF7) est lu par `centurion`.
+
+mod curves;
 
 use super::{Driver, Family, HidInfo, Link, Status};
 use std::time::{Duration, Instant};
@@ -64,7 +66,7 @@ pub const FAMILY: Family = Family {
         let name = HEADSETS.iter().find(|(pid, _)| d.vid == VID && *pid == d.pid)?.1;
         ((d.usage_page, d.usage) == collection(d.pid)).then_some(name)
     },
-    new: |_: &HidInfo| Box::new(HidPP::default()),
+    new: |d: &HidInfo| Box::new(HidPP::new(d.pid)),
 };
 
 const LONG: u8 = 0x11;
@@ -93,46 +95,24 @@ const ERR_UNREACHABLE: u8 = 0x09;
 const ON_CHARGER: [u8; 4] = [1, 2, 3, 4];
 /// Niveau approché de 0x1004 quand le pourcentage vaut 0 : drapeau → pourcentage.
 const APPROX_LEVELS: [(u8, u8); 4] = [(8, 90), (4, 50), (2, 20), (1, 5)];
-/// Courbe de décharge (mV, %) de Halo, du plus chargé au moins chargé.
-const VOLTAGE_CURVE: [(u16, u8); 13] = [
-    (4186, 100),
-    (4067, 90),
-    (3989, 80),
-    (3922, 70),
-    (3859, 60),
-    (3811, 50),
-    (3778, 40),
-    (3751, 30),
-    (3717, 20),
-    (3671, 10),
-    (3646, 5),
-    (3579, 2),
-    (3500, 0),
-];
 
-/// Pourcentage d'une tension, par interpolation sur la courbe (arrondi au pair, comme Python).
-fn voltage_to_percent(mv: u16) -> u8 {
-    if mv >= VOLTAGE_CURVE[0].0 {
-        return 100;
-    }
-    for w in VOLTAGE_CURVE.windows(2) {
-        let ((hi_mv, hi_p), (lo_mv, lo_p)) = (w[0], w[1]);
-        if mv >= lo_mv {
-            let p = f64::from(lo_p)
-                + f64::from(mv - lo_mv) * f64::from(hi_p - lo_p) / f64::from(hi_mv - lo_mv);
-            return p.round_ties_even() as u8;
-        }
-    }
-    0
+/// Ce que donne une fonctionnalité de batterie.
+#[derive(Debug, PartialEq, Eq)]
+enum Measure {
+    Percent(u8),
+    /// Tension de la batterie, à passer par le modèle du casque.
+    Millivolts(u16),
 }
 
-/// Niveau et charge d'une réponse de fonctionnalité de batterie (`p` complétée de zéros).
-fn parse_battery(feature: u16, p: &[u8]) -> Option<(u8, bool)> {
+/// Mesure et charge d'une réponse de fonctionnalité de batterie (`p` complétée de zéros).
+fn parse_battery(feature: u16, p: &[u8]) -> Option<(Measure, bool)> {
     let on_charger = ON_CHARGER.contains(&p[2]);
     match feature {
-        F_UNIFIED if (1..=100).contains(&p[0]) => Some((p[0], on_charger)),
-        F_UNIFIED if p[0] == 0 => APPROX_LEVELS.iter().find(|(flag, _)| *flag == p[1]).map(|(_, l)| (*l, on_charger)),
-        F_STATUS if (1..=100).contains(&p[0]) => Some((p[0], on_charger)),
+        F_UNIFIED if (1..=100).contains(&p[0]) => Some((Measure::Percent(p[0]), on_charger)),
+        F_UNIFIED if p[0] == 0 => {
+            APPROX_LEVELS.iter().find(|(flag, _)| *flag == p[1]).map(|(_, l)| (Measure::Percent(*l), on_charger))
+        }
+        F_STATUS if (1..=100).contains(&p[0]) => Some((Measure::Percent(p[0]), on_charger)),
         F_VOLTAGE | F_ADC => {
             if feature == F_ADC && p[2] & 0x01 == 0 {
                 return None;
@@ -142,7 +122,7 @@ fn parse_battery(feature: u16, p: &[u8]) -> Option<(u8, bool)> {
                 return None;
             }
             let charging = if feature == F_VOLTAGE { p[2] & 0x80 != 0 } else { p[2] & 0x02 != 0 };
-            Some((voltage_to_percent(mv), charging))
+            Some((Measure::Millivolts(mv), charging))
         }
         _ => None,
     }
@@ -168,18 +148,41 @@ pub struct HidPP {
     asleep: bool,
     /// Index de chaque fonctionnalité de `BATTERY_FEATURES` (0 = absente), une fois connu.
     indexes: [Option<u8>; 4],
-}
-
-impl Default for HidPP {
-    fn default() -> Self {
-        HidPP::with_timeouts(Duration::from_millis(600), Duration::from_millis(2000))
-    }
+    /// Modèle de batterie du casque, pour ceux qui ne donnent qu'une tension.
+    model: &'static curves::Model,
+    /// Plus haute tension lue depuis le début de la charge en cours (`None` hors charge).
+    charge_peak: Option<u16>,
 }
 
 impl HidPP {
+    fn new(pid: u16) -> HidPP {
+        HidPP::with_timeouts(pid, Duration::from_millis(600), Duration::from_millis(2000))
+    }
+
     /// `timeout` : attente d'une réponse ; `ping_timeout` : celle du ping d'un appareil éveillé.
-    pub(crate) fn with_timeouts(timeout: Duration, ping_timeout: Duration) -> HidPP {
-        HidPP { timeout, ping_timeout, swid: 0, asleep: false, indexes: [None; 4] }
+    fn with_timeouts(pid: u16, timeout: Duration, ping_timeout: Duration) -> HidPP {
+        HidPP {
+            timeout,
+            ping_timeout,
+            swid: 0,
+            asleep: false,
+            indexes: [None; 4],
+            model: curves::model(pid),
+            charge_peak: None,
+        }
+    }
+
+    /// Pourcentage d'une mesure ; une tension passe par le modèle de batterie du casque.
+    fn level(&mut self, measure: Measure, charging: bool) -> u8 {
+        match measure {
+            Measure::Percent(p) => p,
+            Measure::Millivolts(mv) if charging => {
+                let peak = self.charge_peak.map_or(mv, |p| p.max(mv));
+                self.charge_peak = Some(peak);
+                self.model.charging(mv, peak)
+            }
+            Measure::Millivolts(mv) => self.model.discharging(mv),
+        }
     }
 
     fn request(&mut self, link: &mut dyn Link, index: u8, function: u8, params: &[u8], timeout: Duration) -> anyhow::Result<Reply> {
@@ -249,8 +252,8 @@ impl HidPP {
             let t = self.timeout;
             match self.request(link, index, function, &[], t)? {
                 Reply::Data(p) => {
-                    if let Some((level, charging)) = parse_battery(feature, &p) {
-                        return Ok(Status::Battery { level, charging });
+                    if let Some((measure, charging)) = parse_battery(feature, &p) {
+                        return Ok(Status::Battery { level: self.level(measure, charging), charging });
                     }
                     off |= feature == F_ADC && p[2] & 0x01 == 0;
                 }
@@ -265,10 +268,14 @@ impl HidPP {
 
 impl Driver for HidPP {
     /// Lit la batterie. Une erreur efface les index : ils sont redécouverts la fois suivante.
+    /// Le sommet de tension ne vaut que pour une charge suivie : oublié dès que le casque est lu
+    /// hors charge ou éteint, gardé après une erreur (une réponse perdue est fréquente).
     fn read(&mut self, link: &mut dyn Link) -> anyhow::Result<Status> {
         let s = self.try_read(link);
-        if s.is_err() {
-            self.indexes = [None; 4];
+        match s {
+            Err(_) => self.indexes = [None; 4],
+            Ok(Status::Battery { charging: true, .. }) => {}
+            Ok(_) => self.charge_peak = None,
         }
         s
     }
@@ -354,8 +361,13 @@ mod tests {
         }
     }
 
+    /// Lecteur d'un casque sans fiche de batterie (G733).
     fn reader() -> HidPP {
-        HidPP::with_timeouts(Duration::from_millis(30), Duration::from_millis(30))
+        reader_for(0x0AB5)
+    }
+
+    fn reader_for(pid: u16) -> HidPP {
+        HidPP::with_timeouts(pid, Duration::from_millis(30), Duration::from_millis(30))
     }
 
     fn read(dev: &mut Fake) -> anyhow::Result<Status> {
@@ -447,14 +459,31 @@ mod tests {
     }
 
     #[test]
-    fn voltage_curve() {
-        assert_eq!(voltage_to_percent(4300), 100);
-        assert_eq!(voltage_to_percent(4186), 100);
-        assert_eq!(voltage_to_percent(3811), 50);
-        assert_eq!(voltage_to_percent(3500), 0);
-        assert_eq!(voltage_to_percent(3000), 0);
-        // À mi-chemin entre 3778 (40 %) et 3811 (50 %) : 44,8 → 45.
-        assert_eq!(voltage_to_percent(3794), 45);
+    fn pro_x_is_read_with_its_own_battery_model() {
+        let adc = |mv: u16, flags: u8| {
+            let [hi, lo] = mv.to_be_bytes();
+            Some([hi, lo, flags])
+        };
+        let mut h = reader_for(0x0ABA);
+        let mut dev = Fake::new(F_ADC, adc(3758, 0x01));
+        assert_eq!(h.read(&mut dev).unwrap(), Status::Battery { level: 50, charging: false });
+        // La même tension sur un casque sans fiche.
+        assert_eq!(read(&mut dev).unwrap(), Status::Battery { level: 33, charging: false });
+        // En charge : la tension monte jusqu'au sommet, puis redescend pendant que la charge finit.
+        for (mv, level) in [(4139, 65), (4250, 84), (4275, 87), (4250, 91), (4200, 100)] {
+            dev.battery = adc(mv, 0x03);
+            assert_eq!(h.read(&mut dev).unwrap(), Status::Battery { level, charging: true }, "{mv} mV");
+        }
+        // Une lecture ratée ne fait pas oublier le sommet.
+        dev.battery = adc(0x0500, 0x03);
+        assert!(h.read(&mut dev).is_err());
+        dev.battery = adc(4250, 0x03);
+        assert_eq!(h.read(&mut dev).unwrap(), Status::Battery { level: 91, charging: true });
+        // Débranché puis rebranché : une nouvelle charge repart de la courbe montante.
+        dev.battery = adc(4100, 0x01);
+        assert_eq!(h.read(&mut dev).unwrap(), Status::Battery { level: 100, charging: false });
+        dev.battery = adc(4250, 0x03);
+        assert_eq!(h.read(&mut dev).unwrap(), Status::Battery { level: 84, charging: true });
     }
 
     #[test]
