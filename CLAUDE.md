@@ -9,15 +9,25 @@ et comment l'installer : `README.md` (`README.en.md` en anglais). Mode d'emploi 
 
 ## Vérification (avant de dire « terminé »)
 
-Lancer `cargo` depuis la racine du dépôt (`-j 2` si une compilation est tuée faute de mémoire).
+```
+.\scripts\verifier.ps1          clippy (-D warnings) puis les tests de tout le workspace
+.\scripts\verifier.ps1 -Exe     et l'exe de debug, pour le contrôle en vrai
+```
 
-```
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-```
+Le script compile avec l'interface **interprétée** (fonction cargo `live`) : les `.slint` sont
+chargés à l'exécution au lieu d'être traduits en Rust, ce qui était l'essentiel du temps de
+compilation. À savoir :
+
+- l'exe de debug relit les `.slint` du dépôt et les recharge quand ils changent (un changement de
+  `.slint` se voit sans recompiler) ; il met quelques secondes à démarrer et occupe plus de
+  1 Go : c'est normal dans ce mode ;
+- l'exe publié reste la référence. Il est compilé par GitHub avec l'interface compilée, que la
+  CI vérifie à chaque poussée (ici : `.\scripts\verifier.ps1 -Compile`) ; `natif/ui/build.rs`
+  refuse `live` dans une version publiée ;
+- sans le script, ajouter `--features horizon-natif/live` aux commandes `cargo`.
 
 Un changement visible se vérifie aussi en vrai : `horizon.exe --quit` sur l'installée, lancer
-`<dossier de compilation>\{debug|release}\horizon.exe`, provoquer la fonction (arguments
+`<dossier de compilation>\debug\horizon.exe`, provoquer la fonction (arguments
 d'essai : `natif/README.md`, « Lancer »), captures BitBlt (CAPTUREBLT, processus
 PER_MONITOR_AWARE_V2) des écrans concernés, puis `--quit` et relancer l'installée. Contrôler le
 journal `%APPDATA%\Horizon\horizon.log` : pas de vérification « à l'aveugle ». La compilation
