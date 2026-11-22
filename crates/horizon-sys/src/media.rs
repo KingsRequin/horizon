@@ -1,10 +1,10 @@
 //! Lecture en cours de Windows (SMTC) : un fil dédié écoute les sessions, relit l'état à chaque
 //! changement (et, pendant la lecture, l'état de lecture et la position chaque seconde, sans
-//! redemander titres ni pochette) et exécute les commandes.
+//! redemander les titres) et exécute les commandes. La pochette est relue quand elle a pu
+//! changer (`horizon_core::media::ArtTracker`).
 
-use horizon_core::media::{seek_target, timeline_ms};
 use crossbeam_channel::{Receiver, Sender, unbounded};
-use horizon_core::media::{MediaInfo, merge};
+use horizon_core::media::{ArtTracker, MediaInfo, merge, seek_target, timeline_ms};
 use std::time::{Duration, Instant};
 use windows::Foundation::TypedEventHandler;
 use windows::Media::Control::{
@@ -42,7 +42,10 @@ pub struct MediaSnapshot {
 }
 
 enum Msg {
+    /// État de lecture ou position d'une session.
     Changed,
+    /// Titre, artiste ou miniature d'une session.
+    PropertiesChanged,
     SessionsChanged,
     Command(MediaCommand),
 }
@@ -73,8 +76,6 @@ fn wait<T: windows::core::RuntimeType + 'static>(op: &IAsyncOperation<T>) -> any
         }
     }
 }
-
-
 
 /// État d'une session. `known` : titre et artiste déjà lus pour cette appli (relecture
 /// périodique) ; sinon ils sont redemandés à l'appli (appel asynchrone, plus coûteux).
@@ -122,26 +123,19 @@ struct Watcher {
     subscriptions: Vec<(Session, i64, i64, i64)>,
     selected: Option<String>,
     last: Option<MediaInfo>,
-    last_art_key: Option<(String, String)>,
-    /// Pochette trouvée pour le morceau courant ; sinon on la redemande à chaque événement, et
-    /// aux relectures périodiques pendant `ART_RETRY` après le changement de morceau (beaucoup
-    /// d'applis publient le titre avant la miniature).
-    last_art_found: bool,
-    art_retry_until: Instant,
+    art: ArtTracker,
     /// Sessions ouvertes et leur titre, relues seulement sur un événement.
     sessions: Vec<(String, String)>,
 }
 
-/// Durée pendant laquelle une pochette absente est redemandée à chaque relecture.
-const ART_RETRY: Duration = Duration::from_secs(10);
-
-fn notifier<S, A>(tx: Sender<Msg>, sessions: bool) -> TypedEventHandler<S, A>
+/// Rappel d'un événement WinRT : envoie `msg()` au fil média.
+fn notifier<S, A>(tx: Sender<Msg>, msg: fn() -> Msg) -> TypedEventHandler<S, A>
 where
     S: windows::core::RuntimeType + 'static,
     A: windows::core::RuntimeType + 'static,
 {
     TypedEventHandler::new(move |_, _| {
-        let _ = tx.send(if sessions { Msg::SessionsChanged } else { Msg::Changed });
+        let _ = tx.send(msg());
         Ok(())
     })
 }
@@ -156,9 +150,9 @@ impl Watcher {
         let Ok(sessions) = self.manager.GetSessions() else { return };
         for s in sessions {
             let sub = (|| -> windows::core::Result<_> {
-                let a = s.PlaybackInfoChanged(&notifier(self.tx.clone(), false))?;
-                let b = s.MediaPropertiesChanged(&notifier(self.tx.clone(), false))?;
-                let c = s.TimelinePropertiesChanged(&notifier(self.tx.clone(), false))?;
+                let a = s.PlaybackInfoChanged(&notifier(self.tx.clone(), || Msg::Changed))?;
+                let b = s.MediaPropertiesChanged(&notifier(self.tx.clone(), || Msg::PropertiesChanged))?;
+                let c = s.TimelinePropertiesChanged(&notifier(self.tx.clone(), || Msg::Changed))?;
                 Ok((s.clone(), a, b, c))
             })();
             match sub {
@@ -182,29 +176,15 @@ impl Watcher {
 
     /// État courant. `changed` : un événement est arrivé (morceau, sessions, commande) et tout
     /// est relu ; sinon (relecture périodique pendant la lecture) seuls l'état de lecture et la
-    /// position le sont, titre, sessions et pochette sont repris de la dernière lecture.
-    fn snapshot(&mut self, changed: bool) -> MediaSnapshot {
+    /// position le sont, titre et sessions sont repris de la dernière lecture. `announced` : une
+    /// appli a annoncé de nouvelles propriétés (la miniature a pu changer).
+    fn snapshot(&mut self, changed: bool, announced: bool) -> MediaSnapshot {
         let session = self.current();
         let known = if changed { None } else { self.last.as_ref() };
-        let info = session
-            .as_ref()
-            .and_then(|s| read_info(s, known).ok())
-            .map(|i| merge(self.last.as_ref(), i, horizon_core::time::now_ms()));
-        let key = info.as_ref().map(|i| (i.app_id.clone(), i.title.clone()));
-        let new_track = key != self.last_art_key;
-        if new_track {
-            self.art_retry_until = Instant::now() + ART_RETRY;
-        }
-        let retry = !self.last_art_found && (changed || Instant::now() < self.art_retry_until);
-        let art = if new_track || retry {
-            let a = session.as_ref().and_then(read_art);
-            let changed = new_track || a.is_some();
-            self.last_art_key = key;
-            self.last_art_found = a.is_some();
-            changed.then_some(a)
-        } else {
-            None
-        };
+        let now = horizon_core::time::now_ms();
+        let info = session.as_ref().and_then(|s| read_info(s, known).ok()).map(|i| merge(self.last.as_ref(), i, now));
+        let track = info.as_ref().map(|i| (i.app_id.clone(), i.title.clone()));
+        let art = self.art.update(track, announced, now, || session.as_ref().and_then(read_art));
         if changed {
             self.sessions = self
                 .subscriptions
@@ -222,6 +202,21 @@ impl Watcher {
         }
         self.last = info.clone();
         MediaSnapshot { info, sessions: self.sessions.clone(), art }
+    }
+
+    /// Traite un message ; rend `true` si une appli a annoncé de nouvelles propriétés.
+    fn handle(&mut self, msg: Msg) -> bool {
+        match msg {
+            Msg::Changed => {}
+            Msg::PropertiesChanged => return true,
+            Msg::SessionsChanged => self.resubscribe(),
+            Msg::Command(c) => {
+                if let Err(e) = self.run_command(c) {
+                    log::warn!("commande média : {e:#}");
+                }
+            }
+        }
+        false
     }
 
     fn run_command(&mut self, c: MediaCommand) -> anyhow::Result<()> {
@@ -254,21 +249,19 @@ fn run(tx: &Sender<Msg>, rx: &Receiver<Msg>, on_update: &mut impl FnMut(MediaSna
     // SAFETY : initialisation WinRT de ce fil, une fois.
     unsafe { RoInitialize(RO_INIT_MULTITHREADED)? };
     let manager = wait(&Manager::RequestAsync()?)?;
-    manager.CurrentSessionChanged(&notifier(tx.clone(), true))?;
-    manager.SessionsChanged(&notifier(tx.clone(), true))?;
+    manager.CurrentSessionChanged(&notifier(tx.clone(), || Msg::SessionsChanged))?;
+    manager.SessionsChanged(&notifier(tx.clone(), || Msg::SessionsChanged))?;
     let mut w = Watcher {
         manager,
         tx: tx.clone(),
         subscriptions: Vec::new(),
         selected: None,
         last: None,
-        last_art_key: None,
-        last_art_found: false,
-        art_retry_until: Instant::now(),
+        art: ArtTracker::default(),
         sessions: Vec::new(),
     };
     w.resubscribe();
-    on_update(w.snapshot(true));
+    on_update(w.snapshot(true, true));
     loop {
         let tick = Duration::from_secs(1);
         let msg = match rx.recv_timeout(tick) {
@@ -276,30 +269,17 @@ fn run(tx: &Sender<Msg>, rx: &Receiver<Msg>, on_update: &mut impl FnMut(MediaSna
             Err(crossbeam_channel::RecvTimeoutError::Timeout) => None,
             Err(_) => return Ok(()),
         };
-        let changed = msg.is_some();
-        match msg {
-            Some(Msg::SessionsChanged) => w.resubscribe(),
-            Some(Msg::Command(c)) => {
-                if let Err(e) = w.run_command(c) {
-                    log::warn!("commande média : {e:#}");
-                }
-            }
-            Some(Msg::Changed) => {}
-            // Rien de nouveau : on ne relit que pendant la lecture (position qui avance).
-            None if !w.last.as_ref().is_some_and(|i| i.playing) => continue,
-            None => {}
+        // Rien de nouveau : on ne relit que pendant la lecture (position qui avance).
+        if msg.is_none() && !w.last.as_ref().is_some_and(|i| i.playing) {
+            continue;
         }
+        let changed = msg.is_some();
+        let mut announced = msg.is_some_and(|m| w.handle(m));
         // Les événements arrivent en rafale : on laisse passer les suivants.
         while let Ok(m) = rx.recv_timeout(Duration::from_millis(40)) {
-            match m {
-                Msg::SessionsChanged => w.resubscribe(),
-                Msg::Command(c) => {
-                    let _ = w.run_command(c);
-                }
-                Msg::Changed => {}
-            }
+            announced |= w.handle(m);
         }
-        on_update(w.snapshot(changed));
+        on_update(w.snapshot(changed, announced));
     }
 }
 
