@@ -27,10 +27,13 @@ windows = "0.62"
 # (`natif/src/platform`) : ni winit, ni skia, ni femtovg.
 slint = { version = "~1.18", default-features = false, features = ["std", "compat-1-2", "renderer-software"] }
 
-# Pas de LTO entre paquets : mesurée, elle n'apportait ni vitesse ni taille (exe de 48 Mo sans,
-# 49 Mo avec), et refaisait à chaque version 7 minutes d'édition de liens que rien ne peut
-# mettre en cache. Sans elle, un paquet inchangé n'est pas recompilé.
+# Aucune LTO. Entre paquets, elle n'apportait ni vitesse ni taille (mesuré), et refaisait à
+# chaque version 7 minutes d'édition de liens que rien ne peut mettre en cache : sans elle, un
+# paquet inchangé n'est pas recompilé. À l'intérieur d'un paquet (`false`, le réglage par défaut
+# de cargo), elle ne concernait que horizon-ui, seul à avoir plusieurs unités : `"off"` le
+# compile un quart plus vite, pour un exe plus petit (46 Mo contre 49 avec LTO) et aussi rapide.
 [profile.release]
+lto = "off"
 codegen-units = 1
 opt-level = 3
 strip = true
