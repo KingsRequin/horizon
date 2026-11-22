@@ -15,6 +15,10 @@ name = "horizon_natif"
 name = "horizon"
 path = "src/main.rs"
 
+[features]
+# Interface interprétée, pour le développement seulement : voir `ui/Cargo.toml`.
+live = ["horizon-ui/live"]
+
 [dependencies]
 horizon-core.workspace = true
 horizon-sys.workspace = true

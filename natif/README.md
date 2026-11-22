@@ -9,9 +9,11 @@ titre d'historique. Données :
 ## Lancer
 
 ```
-cargo build -p horizon-natif [--release]  (depuis la racine du dépôt)
+scripts\verifier.ps1 -Exe               (clippy, tests, exe de debug à l'interface interprétée)
+cargo build -p horizon-natif [--release]  (interface compilée, comme l'exe publié)
 %LOCALAPPDATA%\Programs\Horizon\horizon.exe --quit      (les deux réservent le haut des écrans)
-<dossier de compilation>\{debug|release}\horizon.exe [--essai]   (target\ par défaut)
+<dossier de compilation>\{debug|release}\horizon.exe [--essai]   (target\ par défaut ; en
+                                         debug : la dernière des deux formes compilées)
 horizon.exe --quit                       (ferme l'instance en cours)
 Start-Process "$env:LOCALAPPDATA\Programs\Horizon\horizon.exe"   (toujours relancer l'installée)
 ```
@@ -534,8 +536,8 @@ widget). Modèle complet : Lecture en cours (`ui/widgets/media/panel.slint`,
      (`host.inline()`).
 3. **Ce que lit un autre fil** : `app.state::<crate::popup::PopupState>().is_open("system")`
    (mesures rapides panneau ouvert), `is_open_kind("servers")`, `is_shown("servers")`.
-4. **Vérifier** : `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test
-   --workspace` (`every_panel_is_bound_by_its_backend` vérifie `panel.slint` ↔
+4. **Vérifier** : `scripts\verifier.ps1` (clippy et tests ;
+   `every_panel_is_bound_by_its_backend` vérifie `panel.slint` ↔
    `Backend::panel`), puis en vrai (voir « Lancer ») : survol (aperçu), clic (épinglé, Tab,
    Échap), passage depuis un widget voisin, style îlots (D1) et graphique (autres écrans), 4K à
    150 % ; captures BitBlt comparées au panneau Tauri (relancer l'installée, le capturer de la
@@ -648,8 +650,7 @@ de la version Tauri.
    coûte rien ; un modèle se met à jour ligne par ligne, `model::sync`) ; ce qui suit le son
    est posé au plus 20 fois par seconde ; aucune animation sans fin ; jamais de `PopupWindow`
    (elle serait coupée par la barre : panneau = fenêtre surgissante, voir « Panneaux »).
-6. **Vérifier** : `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test
-   --workspace`, puis l'exe en vrai (voir « Lancer ») et des captures BitBlt des quatre écrans
+6. **Vérifier** : `scripts\verifier.ps1`, puis l'exe en vrai (voir « Lancer ») et des captures BitBlt des quatre écrans
    comparées à la version Tauri.
 
 ## Plugins (`src/plugins/`)

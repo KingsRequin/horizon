@@ -19,6 +19,9 @@ use std::time::SystemTime;
 fn main() {
     let dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    if std::env::var_os("CARGO_FEATURE_LIVE").is_some() {
+        live();
+    }
     let panels = panels(&dir);
     let list: Vec<String> = panels.iter().map(|id| format!("{id:?}")).collect();
     let catalog = format!(
@@ -46,6 +49,18 @@ fn main() {
     ]);
     let config = slint_build::CompilerConfiguration::new().with_library_paths(libraries);
     slint_build::compile_with_config("main.slint", config).expect("compilation de main.slint");
+}
+
+/// Fonction cargo `live` : demande à Slint une façade qui charge les `.slint` à l'exécution
+/// (interpréteur) au lieu de les traduire en Rust. Refusée dans une version publiée, qui doit
+/// embarquer son interface.
+fn live() {
+    println!("cargo:rerun-if-env-changed=HORIZON_RELEASE");
+    let published = std::env::var("PROFILE").is_ok_and(|p| p == "release") || std::env::var_os("HORIZON_RELEASE").is_some();
+    assert!(!published, "mode live interdit dans une version publiée : retirer `--features live`");
+    // SAFETY : un script de compilation n'a qu'un fil, et rien d'autre ne lit l'environnement
+    // pendant cet appel. Slint ne connaît pas d'autre interrupteur que cette variable.
+    unsafe { std::env::set_var("SLINT_LIVE_PREVIEW", "1") };
 }
 
 /// Écrit `text` dans `path` s'il n'y est pas déjà : un fichier réécrit à l'identique ferait
