@@ -26,8 +26,9 @@ de texte, focus, clavier, clics, double-clic, clic droit, molette, curseurs.
 
 ```
 natif/
-  build.rs              interface Slint, catalogues (widgets, icônes), manifeste de l'exe
-  ui/                   interface Slint
+  build.rs              catalogues (widgets, icônes), manifeste et icône de l'exe
+  ui/                   interface Slint, dans son paquet (horizon-ui) : Cargo.toml, lib.rs,
+                        build.rs (compile main.slint, trouve les panneaux)
     theme.slint         jetons d'app/src/app.css (Theme, Styles.islands / Styles.graphic)
     components.slint    Icon, Island, Slot / SlotView (emplacement nommé)
     widget-view.slint   WidgetView : le widget d'un emplacement selon son genre
@@ -428,7 +429,7 @@ jour, et les barres qui en ont une tuile), ou `panel_hosts::host(étiquette)` po
 
 `ui/bar.slint` (zone `tiles`), `ui/tile.slint`, `src/ui/bar.rs`, rangement pur `src/tiles.rs`
 (testé). Une tuile par widget de la zone `tiles` qui a un panneau ; le panneau (`PanelFill`,
-généré par `build.rs` à côté de `PanelView`) prend la largeur de sa colonne. Chaque tuile
+généré par `ui/build.rs` à côté de `PanelView`) prend la largeur de sa colonne. Chaque tuile
 annonce sa hauteur naturelle (`tile-measured`) ; Rust range (`tiles::flow` : colonnes d'au
 moins 330 px, écart 10 px, de haut en bas puis colonne suivante, équilibrées, une tuile jamais
 coupée ni plus haute que la zone − 10 px) et pose `x`, `y`, `width`, `height` (`TileBox`). La
@@ -496,7 +497,7 @@ nouvelle ou un correctif de brique touchent un fichier commun.
 ### Ajouter le panneau d'un widget
 
 Chaque panneau ne touche que les fichiers de son widget : **aucun fichier commun à modifier**
-(`build.rs` trouve `panel.slint`, génère `PanelView` — `$OUT_DIR/panel-view.slint` — et
+(`ui/build.rs` trouve `panel.slint`, génère `PanelView` — `$OUT_DIR/panel-view.slint` — et
 réexporte ses globaux vers Rust — `$OUT_DIR/panels.slint` ; le `Backend` est dans le module du
 widget). Modèle complet : Lecture en cours (`ui/widgets/media/panel.slint`,
 `src/widgets/media/panel.rs`).
@@ -504,7 +505,7 @@ widget). Modèle complet : Lecture en cours (`ui/widgets/media/panel.slint`,
 1. **Interface** `ui/widgets/<id>/panel.slint`, d'après `app/src/widgets/<id>/Panel.svelte` :
    `export component <Id>Panel inherits PanelBase { width: <largeur du .panel>; spacing: <gap>;
    … }` (`<Id>` : identifiant en CamelCase, `claude_quota` → `ClaudeQuotaPanel`, vérifié par
-   `build.rs`). Il reçoit `t` (style de la barre), `instance` (« w1 » pour « weather:w1 ») et
+   `ui/build.rs`). Il reçoit `t` (style de la barre), `instance` (« w1 » pour « weather:w1 ») et
    `pinned`. Ses données dans un global **du même fichier**, `<Id>PanelData` (structures
    `<Id>Panel…`) : tout `export global|struct|enum` du fichier est réexporté vers Rust, les noms
    doivent donc être uniques dans Horizon. Rien à montrer (`{#if …}` autour de tout le panneau)

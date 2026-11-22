@@ -1,5 +1,6 @@
-//! Interface Slint (`natif/ui/`) : fenêtres et leur liaison aux services. Tout ici vit sur le fil
-//! de l'interface ; les services y envoient leurs changements par événements (`host::listen`).
+//! Interface Slint (`natif/ui/`, compilée par le paquet `horizon-ui`) : fenêtres et leur liaison
+//! aux services. Tout ici vit sur le fil de l'interface ; les services y envoient leurs
+//! changements par événements (`host::listen`).
 
 pub mod accent;
 pub mod bar;
@@ -28,4 +29,4 @@ pub mod time;
 pub mod tooltip;
 pub mod widget_settings;
 
-slint::include_modules!();
+pub use horizon_ui::generated::*;

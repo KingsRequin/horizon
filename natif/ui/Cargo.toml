@@ -1,0 +1,26 @@
+[package]
+name = "horizon-ui"
+description = "Interface Slint d'Horizon, compilée à part de horizon-natif"
+# Version fixe : avec celle du workspace, chaque nouvelle version d'Horizon recompilerait tout le
+# code que Slint génère.
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+build = "build.rs"
+
+[lib]
+name = "horizon_ui"
+path = "lib.rs"
+# Ni tests ni exemples de documentation ici : sans ces deux lignes, `cargo test` et clippy
+# `--all-targets` compileraient une seconde fois tout le code généré, pour rien.
+test = false
+doctest = false
+
+[dependencies]
+slint.workspace = true
+
+[build-dependencies]
+slint-build = "~1.18"

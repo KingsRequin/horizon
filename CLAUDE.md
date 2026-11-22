@@ -27,9 +27,11 @@ release (LTO) dépasse 10 minutes : la lancer en processus détaché.
 
 ```
 natif/                      l'appli (paquet horizon-natif, exe horizon.exe)
-  build.rs                  interface Slint, catalogues (widgets, icônes), manifeste, icône
+  build.rs                  catalogues (widgets, icônes), manifeste, icône
   horizon.exe.manifest      identité de paquet (notifications), DPI par écran
-  ui/                       interface Slint : thème, briques, barres, panneaux, réglages…
+  ui/                       interface Slint : thème, briques, barres, panneaux, réglages… C'est
+                            un paquet à part (horizon-ui : Cargo.toml, lib.rs, build.rs), pour
+                            que le code que Slint génère ne soit recompilé que si un .slint change
     widgets/<id>/           UN DOSSIER PAR WIDGET (widget.json, widget.slint, panel.slint)
     widget-settings/        pages de réglages des widgets
     prisme/                 interface du moteur RGB Prisme (WebSocket 28650)
