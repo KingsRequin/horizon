@@ -2,7 +2,11 @@
 # horizon.exe, horizon-hook.exe and SHA256SUMS are what the auto-updater downloads
 # (natif/src/update.rs); Horizon-Setup-X.Y.Z.exe (Inno Setup, preinstalled on the runner) is for
 # a first install.
-# Only first-party actions; the build job has read-only rights, a separate job publishes.
+# Only first-party actions (.github/actions/cargo-cache is in this repository); the test and build
+# jobs have read-only rights, a separate job publishes. Tests and build run side by side: a
+# Release takes the time of the longer one, and nothing is published unless both succeed.
+# The caches are only read here: ci.yml saves them from master (a cache saved from a tag cannot be
+# read from another tag, and saving it would delay the publication).
 name: Release
 
 on:
@@ -12,7 +16,27 @@ on:
 permissions:
   contents: read
 
+env:
+  # A fresh checkout never reuses incremental data: without it the build is faster and the cache smaller.
+  CARGO_INCREMENTAL: 0
+
 jobs:
+  # Same checks as ci.yml (interpreted UI): the build job below is what compiles the real one.
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Rust (version de rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: ./.github/actions/cargo-cache
+        with:
+          job: check
+      - name: Clippy and tests
+        shell: pwsh
+        run: ./scripts/verifier.ps1
+
   build:
     runs-on: windows-latest
     steps:
@@ -27,11 +51,15 @@ jobs:
           $meta = cargo metadata --format-version 1 --no-deps | ConvertFrom-Json
           $version = ($meta.packages | Where-Object name -eq 'horizon-natif').version
           if ("v$version" -ne $env:GITHUB_REF_NAME) { throw "tag $env:GITHUB_REF_NAME, workspace version $version" }
-      - name: Test
-        run: cargo test --workspace
+      - uses: ./.github/actions/cargo-cache
+        with:
+          job: release
+          target: target-share
+          profile: release
+          ui: 'true'
       - name: Build and package (public edition)
         shell: pwsh
-        run: ./scripts/package.ps1 -Out dist
+        run: ./scripts/package.ps1 -Out dist -Timings
       - uses: actions/upload-artifact@v4
         with:
           name: release
@@ -41,9 +69,15 @@ jobs:
             dist/horizon-hook.exe
             dist/SHA256SUMS
           if-no-files-found: error
+      # Where the build time goes (cargo --timings), to keep an eye on it.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-timings
+          path: target-share/cargo-timings/cargo-timing.html
+          if-no-files-found: warn
 
   publish:
-    needs: build
+    needs: [test, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write

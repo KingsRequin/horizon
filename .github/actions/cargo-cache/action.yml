@@ -1,0 +1,97 @@
+# Cache of what a job does not need to compile again, shared by ci.yml and release.yml.
+#
+# - The dependencies. Their key ignores the version of the workspace: a release only changes
+#   "version" in Cargo.toml and in the horizon-* entries of Cargo.lock, and must find the cache of
+#   the previous one.
+# - With "ui: true", the compiled Slint UI as well (the horizon-ui crate: by far the longest thing
+#   to build, and it only depends on natif/ui, natif/fonts and natif/icons). The key then ends
+#   with a hash of these folders. On an exact match the cached crate is the build of these very
+#   files: they are given an old date, so that cargo, which compares dates, does not rebuild it.
+#   Otherwise the files keep the date of the checkout and cargo rebuilds the crate.
+# - The other workspace crates are removed before saving: a fresh checkout always rebuilds them.
+#
+# Use it twice in a job: first without "save" (restores), then at the end with
+# "save: ${{ steps.<id>.outputs.save-key }}" (saves, and only when the key was not found).
+name: Cargo cache
+description: Restores, then saves, what a job does not need to compile again.
+inputs:
+  job:
+    description: Name of the cache (jobs that build the same thing share it).
+    required: true
+  target:
+    description: Cargo target directory, relative to the repository.
+    default: target
+  profile:
+    description: Cargo profile built by the job (dev or release).
+    default: dev
+  ui:
+    description: "'true' to keep the compiled Slint UI (horizon-ui) too."
+    default: 'false'
+  save:
+    description: Key to save under (output "save-key" of the restore call); empty = restore.
+    default: ''
+outputs:
+  save-key:
+    description: The key when it was not found (to pass back as "save"), empty otherwise.
+    value: ${{ steps.restore.outputs.cache-hit != 'true' && steps.key.outputs.key || '' }}
+runs:
+  using: composite
+  steps:
+    - name: Cache key
+      id: key
+      if: inputs.save == ''
+      shell: pwsh
+      run: |
+        function Get-Hash([string]$text) {
+          $bytes = [Text.Encoding]::UTF8.GetBytes($text -replace "`r", '')
+          [BitConverter]::ToString([Security.Cryptography.SHA256]::HashData($bytes)).Replace('-', '').ToLowerInvariant().Substring(0, 32)
+        }
+        $lock = (Get-Content Cargo.lock -Raw) -replace '(name = "horizon-[^"]+"\r?\nversion = ")[^"]+', '$1'
+        $manifest = (Get-Content Cargo.toml -Raw) -replace '(\[workspace\.package\]\r?\nversion = ")[^"]+', '$1'
+        $deps = "cargo-${{ runner.os }}-${{ inputs.job }}-" + (Get-Hash ($lock + $manifest + (Get-Content rust-toolchain.toml -Raw)))
+        if ('${{ inputs.ui }}' -eq 'true') {
+          # Git's own hashes of the three folders: their exact contents, whatever the checkout did to line ends.
+          $ui = Get-Hash ((git ls-tree -r HEAD natif/ui natif/fonts natif/icons) -join "`n")
+          "key=$deps-$ui" >> $env:GITHUB_OUTPUT
+          "fallback=$deps-" >> $env:GITHUB_OUTPUT
+        } else {
+          "key=$deps" >> $env:GITHUB_OUTPUT
+        }
+    - name: Restore
+      id: restore
+      if: inputs.save == ''
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ${{ inputs.target }}
+        key: ${{ steps.key.outputs.key }}
+        restore-keys: ${{ steps.key.outputs.fallback }}
+    - name: Reuse the compiled UI
+      if: inputs.save == '' && inputs.ui == 'true' && steps.restore.outputs.cache-hit == 'true'
+      shell: pwsh
+      run: |
+        $old = Get-Date '2000-01-01'
+        # Folders too: cargo takes the latest date of everything under a watched folder.
+        $roots = Get-Item natif/ui, natif/fonts, natif/icons
+        @($roots) + @($roots | Get-ChildItem -Recurse) | ForEach-Object { $_.LastWriteTime = $old }
+    - name: Remove the workspace crates
+      if: inputs.save != ''
+      shell: pwsh
+      env:
+        CARGO_TARGET_DIR: ${{ inputs.target }}
+      run: |
+        $names = (cargo metadata --format-version 1 --no-deps | ConvertFrom-Json).packages.name
+        if ('${{ inputs.ui }}' -eq 'true') { $names = $names | Where-Object { $_ -ne 'horizon-ui' } }
+        $packages = $names | ForEach-Object { '-p', $_ }
+        cargo clean --profile ${{ inputs.profile }} @packages
+    - name: Save
+      if: inputs.save != ''
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ${{ inputs.target }}
+        key: ${{ inputs.save }}
