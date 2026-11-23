@@ -338,7 +338,7 @@ mod tests {
         assert_eq!(d[0], "Se connecter à une application de ce PC (127.0.0.1:28650)");
         assert_eq!(d[3], "Recevoir : « Ne pas déranger »");
         let system = Permissions { system: vec!["probe".into(), "ssh".into()], ..Default::default() };
-        assert_eq!(system.describe(), ["Tester si des machines du réseau répondent", "Ouvrir un terminal SSH"]);
+        assert_eq!(system.describe(), ["Tester si des machines répondent (ce PC, réseau local, internet)", "Ouvrir un terminal SSH"]);
         assert!(!system.is_empty() && !system.added_since(&Permissions::default()).is_empty());
     }
 }

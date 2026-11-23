@@ -299,7 +299,7 @@ En-têtes HTTP permis : `Accept`, `Accept-Language`, `Authorization`, `Content-T
 
 | Appel | Effet |
 |---|---|
-| `const r = await horizon.net.probe(cible)` | la machine répond-elle ? `{ ok, ms, error }` (`ms` : latence si `ok`, `error` : texte sinon ; jamais rejetée). `cible` : `"hôte:port"` (connexion TCP, 1,5 s) ou une adresse `http://` / `https://` (requête `HEAD`, 4 s, certificat non vérifié, toute réponse HTTP vaut `ok`). Rien n'est lu de la machine. Action `probe` ; 16 requêtes en cours au plus, `http` compris |
+| `const r = await horizon.net.probe(cible)` | la machine répond-elle ? `{ ok, ms, error }` (`ms` : latence si `ok`, `error` : texte sinon ; jamais rejetée). `cible` : `"hôte:port"` (connexion TCP, 1,5 s) ou une adresse `http://` / `https://` (requête `HEAD` à la racine du serveur, 4 s, certificat non vérifié, toute réponse HTTP vaut `ok`). D'une adresse, seuls le schéma, l'hôte et le port servent : le chemin et les paramètres ne sont jamais envoyés. Rien n'est lu de la machine. Action `probe` ; 16 requêtes en cours au plus, `http` compris |
 | `horizon.ssh.open(cible)` | ouvre un terminal SSH (Windows Terminal, sinon une console) vers `cible` : un alias de `~/.ssh/config`, un hôte ou `utilisateur@hôte` (lettres, chiffres, `. - _ @ : [ ]`). Action `ssh` ; un par seconde |
 
 ### Événements d'Horizon (`permissions.events`)
@@ -327,7 +327,8 @@ chargement (sauf `alert` et `timer`).
   `%USERPROFILE%` permis en tête ; ni `..`, ni chemin réseau.
 - `events` : noms du §6.
 - `system` (niveau 1) : actions sur le système, par leur nom. `probe` : tester si des machines
-  répondent (`horizon.net.probe`) ; `ssh` : ouvrir un terminal SSH (`horizon.ssh.open`) ;
+  répondent, sur ce PC, le réseau local ou internet (`horizon.net.probe` : une connexion ou une
+  requête sans contenu, vers l'hôte et le port donnés) ; `ssh` : ouvrir un terminal SSH (`horizon.ssh.open`) ;
   `open` : ouvrir n'importe quel lien web (`horizon.open`).
 
 L'utilisateur voit ces demandes en clair et doit les accepter (page *Plugins* › *Autoriser*)
