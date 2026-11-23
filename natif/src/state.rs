@@ -17,7 +17,7 @@
 
 use horizon_core::config::{self, LayoutLoad, OrderedWriter};
 use horizon_core::geometry::MonitorInfo;
-use horizon_core::layout::{BarLayout, Layout, UndoStack, WidgetKind};
+use horizon_core::layout::{BarLayout, Layout, UndoStack};
 use horizon_core::settings::{Settings, SettingsFile};
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -81,8 +81,6 @@ pub struct AppState {
     /// Faux tant que le fichier présent au démarrage n'a pas pu être lu : il ne doit pas être
     /// écrasé par la disposition par défaut.
     writable: AtomicBool,
-    /// Widgets ajoutés par une migration au chargement, à annoncer (« Nouveautés »).
-    news: Mutex<Vec<WidgetKind>>,
 }
 
 impl AppState {
@@ -113,7 +111,7 @@ impl AppState {
             );
         }
         let mut layout = loaded.into_layout();
-        let news = layout.migrate();
+        layout.migrate();
         AppState {
             layout: Mutex::new(layout),
             undo: Mutex::new(UndoStack::default()),
@@ -121,13 +119,7 @@ impl AppState {
             renamed: Mutex::default(),
             writer: OrderedWriter::new(),
             writable: AtomicBool::new(writable),
-            news: Mutex::new(news),
         }
-    }
-
-    /// Widgets ajoutés par les migrations du chargement (une seule fois).
-    pub fn take_news(&self) -> Vec<WidgetKind> {
-        std::mem::take(&mut *lock(&self.news))
     }
 
     /// Faux si `layout.json` était illisible au démarrage (il n'est pas écrasé).

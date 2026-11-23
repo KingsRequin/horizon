@@ -87,9 +87,13 @@ mod tests {
     use crate::layout::tests::real_monitors;
     use serde_json::json;
 
+    /// Disposition de départ avec un widget `kind` ainsi réglé (ajouté s'il n'y est pas).
     fn with(kind: WidgetKind, settings: serde_json::Value) -> Layout {
         let mut l = Layout::default_for(&real_monitors());
-        let id = l.first_of(kind).unwrap().id.clone();
+        let id = match l.first_of(kind) {
+            Some(w) => w.id.clone(),
+            None => l.add_widget("main", crate::layout::Zone::Right, kind).unwrap(),
+        };
         l.set_widget_settings(&id, settings).unwrap();
         l
     }
@@ -107,10 +111,8 @@ mod tests {
 
     #[test]
     fn global_values_work_without_any_widget() {
-        let mut l = Layout::default_for(&real_monitors());
-        for b in &mut l.bars {
-            b.right.retain(|w| !matches!(w.kind, WidgetKind::CLAUDE_SESSIONS | WidgetKind::HEADSET));
-        }
+        // Une barre neuve n'a ni Sessions Claude ni Casque.
+        let l = Layout::default_for(&real_monitors());
         assert_eq!(AlertSettings::default().claude(&l), AlertOptions { island: false, light: false });
         assert_eq!(AlertSettings::default().headset_threshold(&l), None);
         let a = AlertSettings { claude_island: Some(true), headset_low: Some(20), ..AlertSettings::default() };
@@ -122,7 +124,8 @@ mod tests {
 
     #[test]
     fn resolved_fills_everything() {
-        let l = with(WidgetKind::HEADSET, json!({ "lowAlert": 30 }));
+        let mut l = with(WidgetKind::HEADSET, json!({ "lowAlert": 30 }));
+        l.add_widget("main", crate::layout::Zone::Right, WidgetKind::CLAUDE_SESSIONS).unwrap();
         let r = AlertSettings::default().resolved(&l);
         assert_eq!(r.headset_low, Some(30));
         assert_eq!(r.dnd_light, Some(false));

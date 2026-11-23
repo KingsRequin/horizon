@@ -384,8 +384,8 @@ mod tests {
         use crate::layout::tests::real_monitors;
         let mut l = Layout::default_for(&real_monitors());
         let paris = serde_json::json!({ "place": { "name": "Paris", "lat": 48.8566, "lon": 2.3522 } });
-        let ids: Vec<String> = l.widgets_of(WidgetKind::WEATHER).map(|w| w.id.clone()).collect();
-        assert!(ids.len() >= 2, "la disposition par défaut a plusieurs widgets Météo");
+        let ids: Vec<String> =
+            ["main", "top"].iter().map(|bar| l.add_widget(bar, crate::layout::Zone::Right, WidgetKind::WEATHER).unwrap()).collect();
         assert!(wanted_places(&l).is_empty());
         for id in &ids {
             l.set_widget_settings(id, paris.clone()).unwrap();

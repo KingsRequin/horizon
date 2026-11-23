@@ -83,10 +83,9 @@ const STARTS: &[(&str, Start)] = &[
     // Abonné du premier plan (démarré après les widgets).
     ("profils", profiles::start),
 ];
-/// Après les widgets : le premier plan après ses abonnés, l'annonce des nouveautés et l'état
-/// des intégrations (qui lit celui des widgets).
-const STARTS_AFTER: &[(&str, Start)] =
-    &[("premier plan", foreground::start), ("nouveautés", alerts::announce_news), ("état des intégrations", status::start)];
+/// Après les widgets : le premier plan après ses abonnés et l'état des intégrations (qui lit
+/// celui des widgets).
+const STARTS_AFTER: &[(&str, Start)] = &[("premier plan", foreground::start), ("état des intégrations", status::start)];
 
 /// Affiche les notifications lues pendant 60 s (diagnostic de l'identité de paquet,
 /// `horizon.exe --notif-probe` depuis PowerShell).

@@ -1,10 +1,7 @@
 //! Tests de la disposition (aides partagées avec les autres modules de tests).
 
 use super::*;
-use super::migrations::{
-    MIGRATIONS, MIGRATION_CLAUDE_SESSIONS, MIGRATION_HEADSET, MIGRATION_SERVERS, MIGRATION_TOP_HOVER, MIGRATION_WIDGETS_2,
-    MIGRATION_WINDOWS, MIGRATION_ESSAIM, MIGRATION_PLUGINS,
-};
+use super::migrations::{MIGRATIONS, MIGRATION_PLUGINS, MIGRATION_TOP_HOVER};
 use super::profiles::DEFAULT_PROFILE;
 use crate::geometry::{MonitorInfo, Rect};
 use serde_json::json;
@@ -47,30 +44,29 @@ fn default_layout_matches_spec_screens() {
 
     let main = bar(&l, "main");
     assert_eq!((main.role, main.style, main.interaction), (BarRole::Main, BarStyle::Islands, Interaction::Click));
-    assert_eq!(kinds(&main.left), vec![WidgetKind::MEDIA, WidgetKind::DISCORD_VOICE, WidgetKind::CALENDAR, WidgetKind::WINDOWS]);
-    assert_eq!(kinds(&main.center), vec![WidgetKind::SHORTCUTS, WidgetKind::SUGGESTIONS]);
-    assert_eq!(
-        kinds(&main.right),
-        vec![WidgetKind::CLAUDE_SESSIONS, WidgetKind::NOTIFICATIONS, WidgetKind::HEADSET, WidgetKind::SHARKAPP_PLUGIN, WidgetKind::MIC_KRISP, WidgetKind::PRISME_PLUGIN, WidgetKind::ESSAIM, WidgetKind::SYSTEM, WidgetKind::WEATHER, WidgetKind::CLOCK]
-    );
+    assert_eq!(kinds(&main.left), vec![WidgetKind::MEDIA]);
+    assert_eq!(kinds(&main.center), vec![WidgetKind::SHORTCUTS]);
+    assert_eq!(kinds(&main.right), vec![WidgetKind::NOTIFICATIONS, WidgetKind::SYSTEM, WidgetKind::CLOCK]);
 
     let top = bar(&l, "top");
     assert_eq!((top.role, top.style, top.interaction), (BarRole::Top, BarStyle::Graphic, Interaction::Hover));
-    assert_eq!(kinds(&top.left), vec![WidgetKind::CLOCK, WidgetKind::WEATHER, WidgetKind::CALENDAR, WidgetKind::SERVERS]);
+    assert_eq!(kinds(&top.left), vec![WidgetKind::CLOCK]);
     assert_eq!(top.left[0].settings["showDate"], json!(true));
     assert_eq!(kinds(&top.center), vec![WidgetKind::MEDIA]);
-    assert_eq!(kinds(&top.right), vec![WidgetKind::NOTIFICATIONS, WidgetKind::CLAUDE_SESSIONS, WidgetKind::CLAUDE_QUOTA, WidgetKind::SYSTEM]);
+    assert_eq!(kinds(&top.right), vec![WidgetKind::NOTIFICATIONS, WidgetKind::SYSTEM]);
 
     let right = bar(&l, "right");
     assert_eq!((right.role, right.style, right.interaction), (BarRole::Portrait, BarStyle::Graphic, Interaction::Click));
-    assert_eq!(kinds(&right.left), vec![WidgetKind::SHORTCUTS, WidgetKind::SUGGESTIONS]);
-    assert_eq!(kinds(&right.right), vec![WidgetKind::CLAUDE_SESSIONS, WidgetKind::NOTIFICATIONS, WidgetKind::MIC_KRISP, WidgetKind::SYSTEM, WidgetKind::CLOCK]);
+    assert_eq!(kinds(&right.left), vec![WidgetKind::SHORTCUTS]);
+    assert_eq!(kinds(&right.right), vec![WidgetKind::NOTIFICATIONS, WidgetKind::SYSTEM, WidgetKind::CLOCK]);
 
     let left = bar(&l, "left");
     assert_eq!((left.role, left.style, left.interaction), (BarRole::Side, BarStyle::Graphic, Interaction::Click));
-    assert_eq!(kinds(&left.left), vec![WidgetKind::SHORTCUTS, WidgetKind::SUGGESTIONS]);
+    assert_eq!(kinds(&left.left), vec![WidgetKind::SHORTCUTS]);
     assert_eq!(kinds(&left.center), vec![WidgetKind::MEDIA]);
     assert_eq!(kinds(&left.right), vec![WidgetKind::SYSTEM, WidgetKind::CLOCK]);
+    // Rien que le socle : ni module intégré, ni plugin.
+    assert!(l.widgets().all(|w| crate::plugin::id_of_kind(w.kind.as_str()).is_none()));
 }
 
 #[test]
@@ -83,75 +79,26 @@ fn new_layout_has_every_migration_and_migrate_changes_nothing() {
     assert_eq!(again, l);
 }
 
-#[test]
-fn fully_migrated_legacy_layout_matches_a_new_one() {
-    let mut l = legacy();
-    l.migrate();
-    let new = Layout::default_for(&real_monitors());
-    assert_eq!(l.migrations, new.migrations);
-    for (a, b) in l.bars.iter().zip(&new.bars) {
-        for z in [Zone::Left, Zone::Center, Zone::Right] {
-            let (mut a, mut b) = (a.clone(), b.clone());
-            assert_eq!(kinds(a.zone_mut(z)), kinds(b.zone_mut(z)), "barre {} zone {z:?}", a.monitor_id);
-        }
-    }
-}
-
-const WIDGETS_2: [WidgetKind; 5] =
-    [WidgetKind::DISCORD_VOICE, WidgetKind::CALENDAR, WidgetKind::SHARKAPP_PLUGIN, WidgetKind::PRISME_PLUGIN, WidgetKind::WEATHER];
-
-/// Disposition d'avant le widget Suggestions (version installée le 10 novembre 2026).
-fn legacy() -> Layout {
+/// Disposition enregistrée par une version d'avant les migrations (aucune marque).
+fn unmigrated() -> Layout {
     let mut l = Layout::default_for(&real_monitors());
-    for b in &mut l.bars {
-        for z in [Zone::Left, Zone::Center, Zone::Right] {
-            b.zone_mut(z).retain(|w| {
-                !matches!(
-                    w.kind,
-                    WidgetKind::SUGGESTIONS | WidgetKind::HEADSET | WidgetKind::SERVERS | WidgetKind::WINDOWS | WidgetKind::ESSAIM
-                )
-                    && !WIDGETS_2.contains(&w.kind)
-            });
-        }
-    }
     l.migrations.clear();
     l
 }
 
-/// Disposition installée le 11 novembre 2026 (avant les widgets de la v2).
-fn before_widgets_2() -> Layout {
-    let mut l = Layout::default_for(&real_monitors());
-    for b in &mut l.bars {
-        for z in [Zone::Left, Zone::Center, Zone::Right] {
-            b.zone_mut(z).retain(|w| {
-                !WIDGETS_2.contains(&w.kind) && !matches!(w.kind, WidgetKind::SERVERS | WidgetKind::WINDOWS | WidgetKind::ESSAIM)
-            });
-        }
-    }
-    l.migrations.retain(|m| ![MIGRATION_WIDGETS_2, MIGRATION_SERVERS, MIGRATION_WINDOWS, MIGRATION_ESSAIM].contains(&m.as_str()));
-    l
+#[test]
+fn migrate_never_adds_a_widget() {
+    // Une disposition ancienne garde ses widgets, sans en recevoir : chacun ajoute ce qu'il veut.
+    let mut l = unmigrated();
+    let before: Vec<String> = l.widgets().map(|w| w.id.clone()).collect();
+    l.migrate();
+    assert_eq!(l.widgets().map(|w| w.id.clone()).collect::<Vec<_>>(), before);
+    assert_eq!(l.migrations, Layout::default_for(&real_monitors()).migrations);
 }
 
 #[test]
-fn migrate_adds_widgets_2_once_where_expected() {
-    let mut l = before_widgets_2();
-    let added = l.migrate();
-    assert_eq!(added, vec![WidgetKind::DISCORD_VOICE, WidgetKind::CALENDAR, WidgetKind::SHARKAPP_PLUGIN, WidgetKind::PRISME_PLUGIN, WidgetKind::WEATHER, WidgetKind::SERVERS, WidgetKind::WINDOWS, WidgetKind::ESSAIM], "ajouts annoncés");
-    assert_eq!(
-        kinds(&bar(&l, "main").right),
-        vec![WidgetKind::CLAUDE_SESSIONS, WidgetKind::NOTIFICATIONS, WidgetKind::HEADSET, WidgetKind::SHARKAPP_PLUGIN, WidgetKind::MIC_KRISP, WidgetKind::PRISME_PLUGIN, WidgetKind::ESSAIM, WidgetKind::SYSTEM, WidgetKind::WEATHER, WidgetKind::CLOCK]
-    );
-    assert_eq!(kinds(&bar(&l, "main").left), vec![WidgetKind::MEDIA, WidgetKind::DISCORD_VOICE, WidgetKind::CALENDAR, WidgetKind::WINDOWS]);
-    assert_eq!(kinds(&bar(&l, "top").left), vec![WidgetKind::CLOCK, WidgetKind::WEATHER, WidgetKind::CALENDAR, WidgetKind::SERVERS]);
-    assert!(!bar(&l, "left").widgets().any(|w| WIDGETS_2.contains(&w.kind)));
-    assert!(l.migrate().is_empty());
-    assert_eq!(count(&l, WidgetKind::WEATHER), 2);
-}
-
-#[test]
-fn new_layout_announces_nothing_and_new_profile_can_wait() {
+fn new_profile_can_wait() {
     let mut l = Layout::default_for(&real_monitors());
-    assert!(l.migrate().is_empty());
     let id = l.add_profile("Jeu", false).unwrap();
     assert_eq!(l.active_profile, DEFAULT_PROFILE, "pas activé");
     assert_eq!(l.profiles.iter().find(|p| p.id == id).unwrap().bars, l.bars, "copie de l'actif");
@@ -160,6 +107,9 @@ fn new_layout_announces_nothing_and_new_profile_can_wait() {
 #[test]
 fn move_to_monitor_keeps_the_place() {
     let mut l = Layout::default_for(&real_monitors());
+    for kind in [WidgetKind::WEATHER, WidgetKind::CALENDAR] {
+        l.add_widget("main", Zone::Right, kind).unwrap();
+    }
     let id = bar(&l, "main").right[2].id.clone();
     l.move_to_monitor(&id, "left").unwrap();
     assert_eq!(bar(&l, "left").right[2].id, id);
@@ -170,28 +120,11 @@ fn move_to_monitor_keeps_the_place() {
 }
 
 #[test]
-fn migrate_adds_servers_to_top_bar_once() {
-    let mut l = Layout::default_for(&real_monitors());
-    for b in &mut l.bars {
-        b.left.retain(|w| w.kind != WidgetKind::SERVERS);
-    }
-    l.migrations.retain(|m| m != MIGRATION_SERVERS);
-    l.migrate();
-    assert_eq!(kinds(&bar(&l, "top").left), vec![WidgetKind::CLOCK, WidgetKind::WEATHER, WidgetKind::CALENDAR, WidgetKind::SERVERS]);
-    assert_eq!(count(&l, WidgetKind::SERVERS), 1);
-    // Retiré ensuite par l'utilisateur : pas remis.
-    for b in &mut l.bars {
-        b.left.retain(|w| w.kind != WidgetKind::SERVERS);
-    }
-    l.migrate();
-    assert_eq!(count(&l, WidgetKind::SERVERS), 0);
-}
-
-#[test]
 fn weather_place_is_shared_between_copies() {
     let mut l = Layout::default_for(&real_monitors());
     let find = |l: &Layout, id: &str| bar(l, id).widgets().find(|w| w.kind == WidgetKind::WEATHER).unwrap().clone();
-    let (main, top) = (find(&l, "main").id, find(&l, "top").id);
+    let main = l.add_widget("main", Zone::Right, WidgetKind::WEATHER).unwrap();
+    let top = l.add_widget("top", Zone::Left, WidgetKind::WEATHER).unwrap();
     let place = json!({ "place": { "name": "Lyon", "lat": 45.75, "lon": 4.85 } });
     l.set_widget_settings(&main, place.clone()).unwrap();
     assert_eq!(find(&l, "top").settings, place, "un exemplaire pas encore réglé suit");
@@ -226,88 +159,16 @@ fn old_bar_format_and_bar_options() {
     assert!(l.set_bar_options("absent", BarOptionsPatch::default()).is_err());
 }
 
-/// Disposition d'avant le widget Casque (suggestions déjà migrées).
-fn before_headset() -> Layout {
-    let mut l = legacy();
-    l.migrate();
-    for b in &mut l.bars {
-        b.right.retain(|w| w.kind != WidgetKind::HEADSET);
-    }
-    l.migrations.retain(|m| m != MIGRATION_HEADSET);
-    l
-}
-
-#[test]
-fn migrate_adds_headset_before_mic_on_main_bar_once() {
-    let mut l = before_headset();
-    l.migrate();
-    let right: Vec<WidgetKind> = kinds(&bar(&l, "main").right).into_iter().filter(|k| !WIDGETS_2.contains(k) && *k != WidgetKind::ESSAIM).collect();
-    assert_eq!(right, vec![WidgetKind::CLAUDE_SESSIONS, WidgetKind::NOTIFICATIONS, WidgetKind::HEADSET, WidgetKind::MIC_KRISP, WidgetKind::SYSTEM, WidgetKind::CLOCK]);
-    assert_eq!(count(&l, WidgetKind::HEADSET), 1);
-    l.migrate();
-    assert_eq!(count(&l, WidgetKind::HEADSET), 1);
-}
-
-#[test]
-fn migrate_headset_without_mic_goes_first_right() {
-    let mut l = before_headset();
-    l.bars.iter_mut().find(|b| b.monitor_id == "main").unwrap().right.retain(|w| w.kind != WidgetKind::MIC_KRISP);
-    l.migrate();
-    assert_eq!(bar(&l, "main").right[0].kind, WidgetKind::HEADSET);
-}
-
-fn count(l: &Layout, k: WidgetKind) -> usize {
-    l.widgets_of(k).count()
-}
-
-#[test]
-fn migrate_adds_suggestions_once() {
-    let mut l = legacy();
-    l.migrate();
-    assert_eq!(kinds(&bar(&l, "main").center), vec![WidgetKind::SHORTCUTS, WidgetKind::SUGGESTIONS]);
-    assert_eq!(count(&l, WidgetKind::SUGGESTIONS), 3);
-    l.migrate();
-    assert_eq!(count(&l, WidgetKind::SUGGESTIONS), 3);
-}
-
-#[test]
-fn migrate_skips_non_interactive_bar() {
-    let mut l = legacy();
-    l.migrate();
-    assert!(!bar(&l, "top").widgets().any(|w| w.kind == WidgetKind::SUGGESTIONS));
-}
-
-#[test]
-fn migrate_respects_removal() {
-    let mut l = legacy();
-    l.migrate();
-    let id = bar(&l, "main").center[1].id.clone();
-    l.remove_widget(&id).unwrap();
-    // Rechargée depuis le fichier (marque conservée), la disposition n'est pas modifiée.
-    let mut reloaded: Layout = serde_json::from_str(&serde_json::to_string(&l).unwrap()).unwrap();
-    reloaded.migrate();
-    assert_eq!(count(&reloaded, WidgetKind::SUGGESTIONS), 2);
-}
-
-#[test]
-fn migrate_without_shortcuts_appends_left() {
-    let mut l = legacy();
-    let b = l.bars.iter_mut().find(|b| b.monitor_id == "left").unwrap();
-    b.left.clear();
-    l.migrate();
-    assert_eq!(kinds(&bar(&l, "left").left), vec![WidgetKind::SUGGESTIONS]);
-}
-
 #[test]
 fn old_snake_case_setting_keys_are_renamed_once() {
-    let mut l = legacy();
+    let mut l = unmigrated();
     let id = l.first_of(WidgetKind::SHORTCUTS).unwrap().id.clone();
     l.set_widget_settings(&id, json!({ "low_alert": 20, "items": [] })).unwrap();
     l.migrate();
     assert_eq!(l.widget(&id).unwrap().settings, json!({ "lowAlert": 20, "items": [] }));
     assert!(l.migrations.iter().any(|m| m == "camel-case"));
     // Déjà renommé : la nouvelle clé l'emporte sur une ancienne revenue.
-    let mut both = legacy();
+    let mut both = unmigrated();
     let id = both.first_of(WidgetKind::SHORTCUTS).unwrap().id.clone();
     both.set_widget_settings(&id, json!({ "low_alert": 5, "lowAlert": 30 })).unwrap();
     both.migrate();
@@ -316,7 +177,7 @@ fn old_snake_case_setting_keys_are_renamed_once() {
 
 #[test]
 fn old_file_without_migrations_field_loads() {
-    let mut v = serde_json::to_value(legacy()).unwrap();
+    let mut v = serde_json::to_value(unmigrated()).unwrap();
     v.as_object_mut().unwrap().remove("migrations");
     let l: Layout = serde_json::from_value(v).unwrap();
     assert!(l.migrations.is_empty());
@@ -511,13 +372,14 @@ fn layout_without_profiles_gets_default_one() {
 
 #[test]
 fn migrations_reach_inactive_profiles() {
-    let mut l = legacy();
-    l.ensure_profiles();
+    let mut l = unmigrated();
+    l.add_widget("main", Zone::Right, WidgetKind::LIGHTING).unwrap();
     let jeu = l.add_profile("Jeu", true).unwrap();
     l.switch_profile(DEFAULT_PROFILE, false).unwrap();
     l.migrate();
+    assert!(l.first_of(WidgetKind::PRISME_PLUGIN).is_some());
     l.switch_profile(&jeu, false).unwrap();
-    assert!(l.first_of(WidgetKind::HEADSET).is_some());
+    assert!(l.first_of(WidgetKind::PRISME_PLUGIN).is_some() && l.first_of(WidgetKind::LIGHTING).is_none());
 }
 
 #[test]
@@ -621,104 +483,38 @@ fn undo_keeps_last_20() {
 }
 
 #[test]
-fn claude_sessions_and_top_hover_migrations() {
+fn top_hover_migration() {
     let mut l = Layout::default_for(&real_monitors());
-    for b in &mut l.bars {
-        if b.role != BarRole::Top {
-            b.right.retain(|w| w.kind != WidgetKind::CLAUDE_SESSIONS);
-        }
-        if b.role == BarRole::Top {
-            b.interaction = Interaction::Info;
-        }
-    }
-    l.migrations.retain(|m| m != MIGRATION_CLAUDE_SESSIONS && m != MIGRATION_TOP_HOVER);
-    let added = l.migrate();
-    assert_eq!(added, vec![WidgetKind::CLAUDE_SESSIONS], "ajout annoncé, pas le changement de mode");
-    assert_eq!(kinds(&bar(&l, "main").right)[..2], [WidgetKind::CLAUDE_SESSIONS, WidgetKind::NOTIFICATIONS]);
-    assert_eq!(kinds(&bar(&l, "right").right)[..2], [WidgetKind::CLAUDE_SESSIONS, WidgetKind::NOTIFICATIONS]);
-    assert!(!kinds(&bar(&l, "left").right).contains(&WidgetKind::CLAUDE_SESSIONS), "pas sur l'écran de gauche");
+    bar_mut(&mut l, "top").interaction = Interaction::Info;
+    l.migrations.retain(|m| m != MIGRATION_TOP_HOVER);
+    l.migrate();
     assert_eq!(bar(&l, "top").interaction, Interaction::Hover);
 
-    // Une barre du haut réglée « Cliquable » le reste ; un widget retiré ne revient pas.
+    // Une barre du haut réglée « Cliquable » le reste.
     let mut l = Layout::default_for(&real_monitors());
-    for b in &mut l.bars {
-        if b.role == BarRole::Top {
-            b.interaction = Interaction::Click;
-        }
-        b.right.retain(|w| w.kind != WidgetKind::CLAUDE_SESSIONS);
-    }
+    bar_mut(&mut l, "top").interaction = Interaction::Click;
     l.migrations.retain(|m| m != MIGRATION_TOP_HOVER);
     l.migrate();
     assert_eq!(bar(&l, "top").interaction, Interaction::Click);
-    assert!(!kinds(&bar(&l, "main").right).contains(&WidgetKind::CLAUDE_SESSIONS));
-}
-
-#[test]
-fn windows_widget_migration_reaches_main_bar_once() {
-    let mut l = Layout::default_for(&real_monitors());
-    for b in &mut l.bars {
-        b.left.retain(|w| w.kind != WidgetKind::WINDOWS);
-    }
-    l.migrations.retain(|m| m != MIGRATION_WINDOWS);
-    let added = l.migrate();
-    assert_eq!(added, vec![WidgetKind::WINDOWS], "annoncé dans « Nouveautés »");
-    assert_eq!(kinds(&bar(&l, "main").left), vec![WidgetKind::MEDIA, WidgetKind::DISCORD_VOICE, WidgetKind::CALENDAR, WidgetKind::WINDOWS]);
-    assert_eq!(count(&l, WidgetKind::WINDOWS), 1, "seulement sur la barre principale");
-    // Retiré ensuite : il ne revient pas ; déjà présent : pas de doublon.
-    bar_mut(&mut l, "main").left.retain(|w| w.kind != WidgetKind::WINDOWS);
-    assert!(l.migrate().is_empty());
-    assert_eq!(count(&l, WidgetKind::WINDOWS), 0);
-    let mut l = Layout::default_for(&real_monitors());
-    l.migrations.retain(|m| m != MIGRATION_WINDOWS);
-    l.migrate();
-    assert_eq!(count(&l, WidgetKind::WINDOWS), 1);
-}
-
-#[test]
-fn migrate_adds_essaim_next_to_lighting_once() {
-    let without = |l: &mut Layout| {
-        for b in &mut l.bars {
-            b.right.retain(|w| w.kind != WidgetKind::ESSAIM);
-        }
-        l.migrations.retain(|m| m != MIGRATION_ESSAIM);
-    };
-    let mut l = Layout::default_for(&real_monitors());
-    without(&mut l);
-    assert_eq!(l.migrate(), vec![WidgetKind::ESSAIM], "ajout annoncé");
-    let right = kinds(&bar(&l, "main").right);
-    let i = right.iter().position(|k| *k == WidgetKind::PRISME_PLUGIN).unwrap();
-    assert_eq!(right[i + 1], WidgetKind::ESSAIM, "juste après l'Éclairage");
-    assert_eq!(count(&l, WidgetKind::ESSAIM), 1, "barre principale seulement");
-    // Retiré ensuite : il ne revient pas.
-    bar_mut(&mut l, "main").right.retain(|w| w.kind != WidgetKind::ESSAIM);
-    assert!(l.migrate().is_empty());
-    assert_eq!(count(&l, WidgetKind::ESSAIM), 0);
-    // Sans Éclairage : avant le système.
-    let mut l = Layout::default_for(&real_monitors());
-    without(&mut l);
-    bar_mut(&mut l, "main").right.retain(|w| w.kind != WidgetKind::PRISME_PLUGIN);
-    l.migrate();
-    let right = kinds(&bar(&l, "main").right);
-    let i = right.iter().position(|k| *k == WidgetKind::SYSTEM).unwrap();
-    assert_eq!(right[i - 1], WidgetKind::ESSAIM);
 }
 
 fn bar_mut<'a>(l: &'a mut Layout, id: &str) -> &'a mut BarLayout {
     l.bars.iter_mut().find(|b| b.monitor_id == id).unwrap()
 }
+
 #[test]
 fn lighting_and_batteries_become_plugins_in_place() {
-    let mut l = Layout::default_for(&real_monitors());
-    let main = bar_mut(&mut l, "main");
-    let i = main.right.iter().position(|w| w.kind == WidgetKind::PRISME_PLUGIN).unwrap();
     // Disposition d'avant la migration : les widgets intégrés, avec un seuil réglé.
-    main.right[i].kind = WidgetKind::LIGHTING;
-    let j = main.right.iter().position(|w| w.kind == WidgetKind::SHARKAPP_PLUGIN).unwrap();
-    main.right[j].kind = WidgetKind::BATTERIES;
+    let mut l = Layout::default_for(&real_monitors());
+    let ids = (
+        l.add_widget("main", Zone::Right, WidgetKind::LIGHTING).unwrap(),
+        l.add_widget("main", Zone::Right, WidgetKind::BATTERIES).unwrap(),
+    );
+    let main = bar_mut(&mut l, "main");
+    let (i, j) = (main.right.len() - 2, main.right.len() - 1);
     main.right[j].settings = json!({ "lowAlert": 20 });
-    let ids = (main.right[i].id.clone(), main.right[j].id.clone());
     l.migrations.retain(|m| m != MIGRATION_PLUGINS);
-    assert!(l.migrate().is_empty(), "rien d'annoncé");
+    l.migrate();
     let main = bar(&l, "main");
     assert_eq!(main.right[i].kind, WidgetKind::PRISME_PLUGIN);
     assert_eq!(main.right[i].id, ids.0, "même exemplaire");

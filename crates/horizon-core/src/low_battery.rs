@@ -115,8 +115,9 @@ mod tests {
     #[test]
     fn threshold_needs_the_widget_in_the_layout() {
         let mut l = Layout::default_for(&real_monitors());
+        assert_eq!(threshold_in(&l, WidgetKind::HEADSET), None, "pas de widget Casque sur une barre neuve");
+        let id = l.add_widget("main", crate::layout::Zone::Right, WidgetKind::HEADSET).unwrap();
         assert_eq!(threshold_in(&l, WidgetKind::HEADSET), Some(DEFAULT_THRESHOLD));
-        let id = l.first_of(WidgetKind::HEADSET).unwrap().id.clone();
         l.set_widget_settings(&id, json!({ "lowAlert": 30 })).unwrap();
         assert_eq!(threshold_in(&l, WidgetKind::HEADSET), Some(30));
         l.remove_widget(&id).unwrap();

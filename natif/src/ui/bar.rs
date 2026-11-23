@@ -145,7 +145,7 @@ pub fn open(app: &AppHandle, label: &str, monitor: &MonitorInfo, rect: (i32, i32
     let models =
         [slots(&layout, &layout.left), slots(&layout, &layout.center), slots(&layout, &layout.right)].map(|v| Rc::new(VecModel::from(v)));
     super::panels::bind(app, label, &window);
-    super::island::bind(app, &window, label, &layout);
+    super::island::bind(app, &window, &layout);
     if layout.role == BarRole::Main {
         window.set_main(true);
         super::bar_status::bind(app, &window, label);

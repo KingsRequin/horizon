@@ -102,7 +102,6 @@ struct View {
 fn action_tip(a: Option<&Action>) -> &'static str {
     match a {
         Some(Action::Session { .. }) => "Afficher le terminal",
-        Some(Action::Edit) => "Voir en mode édition",
         Some(Action::Capture { .. }) => "Coller le chemin dans le terminal (sans l’envoyer)",
         Some(Action::Update) => "Installer et redémarrer Horizon",
         None => "",
@@ -280,9 +279,9 @@ fn ensure_ticking() {
     });
 }
 
-/// Clic sur l'alerte montrée dans la barre `label` (seulement si elle a une action et que la
-/// barre est cliquable).
-fn run(app: &AppHandle, label: &str) {
+/// Clic sur l'alerte montrée dans une barre (seulement si elle a une action et que la barre est
+/// cliquable).
+fn run(app: &AppHandle) {
     let action = STATE.with_borrow(|s| s.flash.as_ref().and_then(|a| a.action.clone()));
     match action {
         Some(Action::Session { id }) => {
@@ -292,13 +291,6 @@ fn run(app: &AppHandle, label: &str) {
                     log::warn!("terminal de la session : {e}");
                 }
             });
-        }
-        // « Nouveautés » : mode édition de cette barre.
-        Some(Action::Edit) => {
-            let edit = crate::edit::monitor_of(app, label).ok_or("barre inconnue".to_owned());
-            if let Err(e) = edit.and_then(|m| crate::edit::edit_bar(app, &m, true)) {
-                log::warn!("îlot, mode édition : {e}");
-            }
         }
         // Chemin vide : alerte d'essai (`alerts::essai`), rien à coller.
         Some(Action::Capture { path, session }) => {
@@ -326,7 +318,7 @@ pub fn relayout(window: &BarWindow, bar: &BarLayout) {
 
 /// Relie l'îlot d'une barre (toutes les barres : celles sans widget qui le montre ne
 /// l'affichent pas).
-pub fn bind(app: &AppHandle, window: &BarWindow, label: &str, bar: &BarLayout) {
+pub fn bind(app: &AppHandle, window: &BarWindow, bar: &BarLayout) {
     if !WATCHING.replace(true) {
         host::listen(EV_ALERT, None, |e| {
             if let Some(a) = e.payload::<Alert>() {
@@ -336,8 +328,8 @@ pub fn bind(app: &AppHandle, window: &BarWindow, label: &str, bar: &BarLayout) {
     }
     let g = window.global::<FlashData>();
     relayout(window, bar);
-    let (a, l) = (app.clone(), label.to_owned());
-    g.on_run(move || run(&a, &l));
+    let a = app.clone();
+    g.on_run(move || run(&a));
     BARS.with_borrow_mut(|b| b.push(window.as_weak()));
     let now = horizon_core::time::now_ms();
     STATE.with_borrow(|s| apply(window, shown(s.flash.as_ref(), s.activities.last().map(|a| &a.1), now).as_ref(), s.out, s.thumbs.as_ref()));
@@ -365,7 +357,7 @@ mod tests {
 
     #[test]
     fn tooltips_of_the_actions() {
-        assert_eq!(action_tip(Some(&Action::Edit)), "Voir en mode édition");
+        assert_eq!(action_tip(Some(&Action::Update)), "Installer et redémarrer Horizon");
         let c = Action::Capture { path: "p".into(), session: "s".into() };
         assert_eq!(action_tip(Some(&c)), "Coller le chemin dans le terminal (sans l’envoyer)");
         assert_eq!(action_tip(None), "");

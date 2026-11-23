@@ -1,11 +1,10 @@
 //! Îlot dynamique : un seul canal pour tout ce qui s'y montre quelques secondes — notification
-//! Windows qui arrive, « Claude attend », batterie faible du casque, serveur hors ligne ou revenu, fin du minuteur, retour d'une action, « Nouveautés ».
+//! Windows qui arrive, « Claude attend », batterie faible du casque, serveur hors ligne ou revenu, fin du minuteur, retour d'une action.
 //! « Ne pas déranger » filtre ici, et seulement ici (`allowed`). L'affichage (durée, fondu,
 //! activités des plugins, clic) est dans `ui::island`.
 //!
-//! Repris de `app/src-tauri/src/alerts.rs`. Différences : la miniature d'une capture est en
-//! pixels (`Thumb`, pas d'URL `data:`) ; l'annonce des « Nouveautés » (`announce_news`,
-//! `app/src-tauri/src/edit.rs`) est ici.
+//! Repris de `app/src-tauri/src/alerts.rs`. Différence : la miniature d'une capture est en
+//! pixels (`Thumb`, pas d'URL `data:`).
 
 use crate::events::EV_ALERT;
 use crate::host::{AppHandle, Emitter, Manager};
@@ -43,8 +42,6 @@ pub enum Source {
 pub enum Action {
     /// Ramène au premier plan le terminal de la session Claude Code.
     Session { id: String },
-    /// Ouvre le mode édition de la barre (« Nouveautés »).
-    Edit,
     /// Colle le chemin d'une capture dans le terminal de la session (`capture_send`).
     Capture { path: String, session: String },
     /// Installe tout de suite la nouvelle version prête et redémarre Horizon.
@@ -178,32 +175,6 @@ fn low_battery(icon: &'static str, name: &str, level: u8) -> Alert {
     Alert::icon(icon, Severity::Alert, format!("{name} : batterie faible"), format!("{level} % restants"))
 }
 
-/// Délai avant d'annoncer les nouveautés : les barres ont fini de charger.
-const NEWS_DELAY: std::time::Duration = std::time::Duration::from_secs(6);
-
-/// Texte de l'annonce des widgets ajoutés.
-fn news_body(names: &[&str]) -> String {
-    format!("Ajouté : {} — clic pour les voir en mode édition", names.join(", "))
-}
-
-/// « Nouveautés » : widgets ajoutés par une migration au chargement, annoncés une fois dans
-/// l'îlot (clic = mode édition de la barre).
-pub fn announce_news(app: &AppHandle) -> anyhow::Result<()> {
-    let added = app.state::<crate::state::AppState>().take_news();
-    if added.is_empty() {
-        return Ok(());
-    }
-    let app = app.clone();
-    crate::util::start_thread("nouveautes", move || {
-        std::thread::sleep(NEWS_DELAY);
-        let names: Vec<&str> =
-            added.iter().map(|k| crate::widgets::manifest(k.as_str()).map_or(k.as_str(), |m| m.label)).collect();
-        let alert = Alert::icon("squaresFour", Severity::Info, "Nouveautés dans tes barres".into(), news_body(&names))
-            .with_action(Action::Edit);
-        show(&app, AlertKind::Feedback, alert);
-    })
-}
-
 /// Alerte d'essai de chaque genre, pour voir l'îlot sans attendre l'événement réel
 /// (`horizon.exe --alerte-essai <genre>` pendant qu'Horizon tourne). Elle passe
 /// par le même filtre « Ne pas déranger » ; ses actions ne visent rien de réel.
@@ -224,10 +195,6 @@ pub fn essai(app: &AppHandle, what: &str) {
         "fenetre" => Some((
             AlertKind::Feedback,
             Alert::icon("browsers", Severity::Attention, "Fenêtre non déplacée".into(), "fenêtre introuvable".into()),
-        )),
-        "nouveautes" => Some((
-            AlertKind::Feedback,
-            Alert::icon("squaresFour", Severity::Info, "Nouveautés dans tes barres".into(), news_body(&["Météo"])).with_action(Action::Edit),
         )),
         "capture" => Some((
             AlertKind::Claude,
@@ -291,6 +258,5 @@ mod tests {
     fn texts_of_the_alerts() {
         let a = low_battery("headset", "Casque", 12);
         assert_eq!((a.title.as_str(), a.body.as_str(), a.severity), ("Casque : batterie faible", "12 % restants", Severity::Alert));
-        assert_eq!(news_body(&["Météo", "Agenda"]), "Ajouté : Météo, Agenda — clic pour les voir en mode édition");
     }
 }
