@@ -271,6 +271,7 @@ fn fill() {
     g.set_fallback_chosen(chosen);
     g.set_fallback_missing(missing);
     g.set_capture_to_claude(f.capture_to_claude);
+    g.set_claude_sessions(crate::modules::enabled("claude_sessions"));
     g.set_headset_switch(f.headset_switch);
     g.set_osd(f.osd);
     g.set_osd_track(f.osd_track);
@@ -524,6 +525,7 @@ fn load_plugins() {
     g.set_library_known(known);
     super::model::sync_rc(&g.get_plugins(), installed, |m| g.set_plugins(m));
     super::model::sync_rc(&g.get_library(), library, |m| g.set_library(m));
+    super::model::sync_rc(&g.get_modules(), super::plugin_tiles::module_tiles(), |m| g.set_modules(m));
     g.set_library_error(crate::plugins::library::last_error().unwrap_or_default().into());
     g.set_plugins_dir(crate::plugins::plugins_dir().display().to_string().into());
 }

@@ -23,6 +23,7 @@ pub mod host;
 pub mod instance;
 pub mod journal;
 pub mod mixer;
+pub mod modules;
 pub mod motion;
 pub mod options;
 pub mod osd;
@@ -151,6 +152,8 @@ pub fn run() {
     app.manage(autohide::Autohide::default());
     app.manage(comfort::Night::default());
     app.manage(state::AppState::load());
+    // Avant les barres et les services : un module désactivé n'a ni widget ni fils.
+    modules::resolve(&app);
     app.manage(foreground::ForegroundHub::default());
     app.manage(relay::Relay::default());
     app.manage(discord::Discord::default());

@@ -109,27 +109,30 @@ fn checks(app: &AppHandle) -> Vec<Check> {
     let health = app.state::<Health>();
     let mut out = Vec::new();
 
-    // Hooks de Claude Code.
-    let addr = horizon_hook::ADDR;
-    out.push(match health.start_error("sessions Claude Code") {
-        Some(e) => Check::new("hooks", "Hooks Claude Code", Level::Error, format!("récepteur indisponible sur {addr} : {e}")),
-        None => {
-            let last = app.state::<crate::widgets::claude_sessions::ClaudeSessions>().last_hook_ms();
-            let detail = if last.is_some() { format!("écoute sur {addr}") } else { format!("écoute sur {addr} · aucun reçu depuis le démarrage") };
-            Check::new("hooks", "Hooks Claude Code", Level::Ok, detail).at("dernier reçu", last)
-        }
-    });
-    // Autorisations (hook PermissionRequest, ajouté en v4 : un ancien réglage ne l'a pas).
-    let claude = app.state::<crate::widgets::claude_sessions::ClaudeSessions>();
-    out.push(match claude.last_permission_ms() {
-        Some(t) => Check::new("permissions", "Autorisations Claude", Level::Ok, "demandes suivies").at("dernière demande", Some(t)),
-        None => Check::new(
-            "permissions",
-            "Autorisations Claude",
-            Level::Off,
-            "aucune demande reçue depuis le démarrage (hook PermissionRequest : s’il manque, relancer l’installation d’Horizon)",
-        ),
-    });
+    // Module Sessions Claude Code (rien à dire s'il est désactivé : page Plugins).
+    if crate::modules::enabled("claude_sessions") {
+        // Hooks de Claude Code.
+        let addr = horizon_hook::ADDR;
+        out.push(match health.start_error("sessions Claude Code") {
+            Some(e) => Check::new("hooks", "Hooks Claude Code", Level::Error, format!("récepteur indisponible sur {addr} : {e}")),
+            None => {
+                let last = app.state::<crate::widgets::claude_sessions::ClaudeSessions>().last_hook_ms();
+                let detail = if last.is_some() { format!("écoute sur {addr}") } else { format!("écoute sur {addr} · aucun reçu depuis le démarrage") };
+                Check::new("hooks", "Hooks Claude Code", Level::Ok, detail).at("dernier reçu", last)
+            }
+        });
+        // Autorisations (hook PermissionRequest, ajouté en v4 : un ancien réglage ne l'a pas).
+        let claude = app.state::<crate::widgets::claude_sessions::ClaudeSessions>();
+        out.push(match claude.last_permission_ms() {
+            Some(t) => Check::new("permissions", "Autorisations Claude", Level::Ok, "demandes suivies").at("dernière demande", Some(t)),
+            None => Check::new(
+                "permissions",
+                "Autorisations Claude",
+                Level::Off,
+                "aucune demande reçue depuis le démarrage (hook PermissionRequest : s’il manque, relancer l’installation d’Horizon)",
+            ),
+        });
+    }
 
     // Mode jeu (plein écran sur l'écran principal).
     let game = crate::state::settings().features.game_mode;
@@ -380,6 +383,8 @@ pub fn status_action(app: &AppHandle, id: &str) -> Result<(), String> {
         other => {
             let plugins = app.state::<crate::plugins::Plugins>();
             match other.split_once(':') {
+                Some(("module_enable", m)) => crate::modules::set(app, m, true)?,
+                Some(("module_disable", m)) => crate::modules::set(app, m, false)?,
                 Some(("plugin_accept", p)) => plugins.accept(app, p),
                 Some(("plugin_enable", p)) => plugins.set_disabled(app, p, None),
                 Some(("plugin_disable", p)) => plugins.set_disabled(app, p, Some(crate::plugins::Disabled::User)),

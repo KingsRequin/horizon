@@ -32,6 +32,10 @@ pub struct FeatureSettings {
     /// Versions publiées (Releases GitHub) : nouvelle version cherchée, téléchargée, vérifiée,
     /// puis installée au démarrage suivant.
     pub auto_update: bool,
+    /// Module intégré « Sessions Claude Code » (hooks, « Claude attend », consommation du jour).
+    /// `None` : jamais choisi — activé seulement s'il sert déjà (son widget est sur une barre, ou
+    /// les hooks d'Horizon sont dans Claude Code).
+    pub claude_sessions: Option<bool>,
 }
 
 impl Default for FeatureSettings {
@@ -47,6 +51,7 @@ impl Default for FeatureSettings {
             osd_track: true,
             bar_pulse: true,
             auto_update: true,
+            claude_sessions: None,
         }
     }
 }

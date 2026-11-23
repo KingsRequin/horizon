@@ -110,13 +110,8 @@ impl Settings {
              bar_pulse = {}
              # Versions publiées : nouvelle version cherchée sur GitHub, installée au démarrage suivant.
              auto_update = {}
-
-             [discord]
-             # Widget Discord vocal : ta propre application Discord (portail des développeurs, avec
-             # http://localhost dans « RPC Origins »). Vide : StreamKit, l'application de Discord pour
-             # les overlays, sans rien à régler (certaines commandes peuvent alors être refusées).
-             client_id = {}
-             client_secret = {}
+             # Module « Sessions Claude Code » (page Plugins des réglages). Non réglé : activé
+             # seulement si son widget est sur une barre ou si les hooks d'Horizon sont dans Claude Code.
 ",
             f.capture_to_claude,
             f.headset_switch,
@@ -128,6 +123,18 @@ impl Settings {
             f.osd_track,
             f.bar_pulse,
             f.auto_update,
+        );
+        line(&mut o, "claude_sessions", f.claude_sessions, "true");
+        let _ = write!(
+            o,
+            "
+             [discord]
+             # Widget Discord vocal : ta propre application Discord (portail des développeurs, avec
+             # http://localhost dans « RPC Origins »). Vide : StreamKit, l'application de Discord pour
+             # les overlays, sans rien à régler (certaines commandes peuvent alors être refusées).
+             client_id = {}
+             client_secret = {}
+",
             quoted(&self.discord.client_id),
             quoted(&self.discord.client_secret),
         );

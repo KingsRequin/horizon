@@ -232,6 +232,18 @@ export component PluginsSection inherits VerticalLayout {
     }
 
     SettingsHeading {
+        text: "Modules intégrés";
+        below: 2px;
+    }
+    SettingsNote {
+        text: "Fonctions d’Horizon qui demandent plus que ce qu’un plugin peut faire. Désactivé, un module ne lance rien et son widget n’est pas proposé.";
+        below: 10px;
+    }
+    Grid {
+        tiles: OptionsData.modules;
+    }
+
+    SettingsHeading {
         text: "Bibliothèque";
         below: 2px;
     }

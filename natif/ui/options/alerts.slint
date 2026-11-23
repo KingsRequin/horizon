@@ -33,44 +33,48 @@ export component AlertsSection inherits VerticalLayout {
         text: "Alertes";
         description: "Ce que l’îlot annonce, et ce qui passe quand même pendant « Ne pas déranger ».";
     }
-    SettingsHeading {
-        text: "Quand Claude attend ou a terminé";
-    }
-    Flag {
-        key: "alerts.claude_island";
-        checked: OptionsData.claude-island;
-        label: "Montrer le projet et le message dans l’îlot";
-        hint: "Un clic sur l’îlot ramène le terminal de la session.";
-    }
-    Flag {
-        key: "alerts.claude_light";
-        checked: OptionsData.claude-light;
-        label: "Signal lumineux (plugin Prisme)";
-        hint: "Scène « claude » de Prisme si elle existe, sinon un bref clignotement. Rien si l’éclairage est éteint.";
-    }
-    SettingsNote {
-        text: "Une seule alerte par attente : la suivante vient quand la session s’est remise au travail.";
-        above: 2px;
-    }
+    // Module Sessions Claude Code (page Plugins) : ses réglages seulement s'il est activé.
+    if OptionsData.claude-sessions: VerticalLayout {
+        SettingsHeading {
+            text: "Quand Claude attend ou a terminé";
+        }
+        Flag {
+            key: "alerts.claude_island";
+            checked: OptionsData.claude-island;
+            label: "Montrer le projet et le message dans l’îlot";
+            hint: "Un clic sur l’îlot ramène le terminal de la session.";
+        }
+        Flag {
+            key: "alerts.claude_light";
+            checked: OptionsData.claude-light;
+            label: "Signal lumineux (plugin Prisme)";
+            hint: "Scène « claude » de Prisme si elle existe, sinon un bref clignotement. Rien si l’éclairage est éteint.";
+        }
+        SettingsNote {
+            text: "Une seule alerte par attente : la suivante vient quand la session s’est remise au travail.";
+            above: 2px;
+        }
 
-    SettingsHeading {
-        text: "Captures d’écran vers Claude";
-    }
-    Flag {
-        key: "features.capture_to_claude";
-        checked: OptionsData.capture-to-claude;
-        label: "Proposer chaque nouvelle capture à la session Claude qui attend";
-        hint: "L’îlot montre la miniature quelques secondes ; un clic ramène le terminal et y colle le chemin de l’image. Rien n’est envoyé : à toi d’appuyer sur Entrée.";
-    }
-    SettingsNote {
-        text: "Dossier surveillé : Images › Captures d’écran (Win+Maj+S, Impr. écran). Sans session qui attend ou terminée, rien n’est proposé.";
-        above: 2px;
+        SettingsHeading {
+            text: "Captures d’écran vers Claude";
+        }
+        Flag {
+            key: "features.capture_to_claude";
+            checked: OptionsData.capture-to-claude;
+            label: "Proposer chaque nouvelle capture à la session Claude qui attend";
+            hint: "L’îlot montre la miniature quelques secondes ; un clic ramène le terminal et y colle le chemin de l’image. Rien n’est envoyé : à toi d’appuyer sur Entrée.";
+        }
+        SettingsNote {
+            text: "Dossier surveillé : Images › Captures d’écran (Win+Maj+S, Impr. écran). Sans session qui attend ou terminée, rien n’est proposé.";
+            above: 2px;
+        }
     }
 
     SettingsHeading {
         text: "Pendant « Ne pas déranger », l’îlot montre quand même";
+        first: !OptionsData.claude-sessions;
     }
-    Flag {
+    if OptionsData.claude-sessions: Flag {
         key: "alerts.dnd_claude";
         checked: OptionsData.dnd-claude;
         label: "« Claude attend »";

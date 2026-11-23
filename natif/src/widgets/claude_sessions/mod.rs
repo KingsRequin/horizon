@@ -142,7 +142,21 @@ fn refresh_git(app: &AppHandle, cwd: String) {
     });
 }
 
+/// Le module vient d'être désactivé (`crate::modules`) : sessions et consommation oubliées, plus
+/// rien sur les barres, dans la palette ni dans l'îlot. Les hooks qui arrivent encore sont
+/// ignorés ([`on_hook`]) ; les fils ne sont plus lancés au démarrage suivant.
+pub fn clear(app: &AppHandle) {
+    let state = app.state::<ClaudeSessions>();
+    *tracker(app) = SessionTracker::default();
+    *lock(&state.usage) = UsageBook::default();
+    broadcast(app);
+    state.usage_shown.set(app, UsageView::default());
+}
+
 fn on_hook(app: &AppHandle, ev: HookEvent) {
+    if !crate::modules::enabled(BACKEND.id) {
+        return;
+    }
     let state = app.state::<ClaudeSessions>();
     state.last_hook_ms.store(now(), Ordering::Relaxed);
     if ev.hook_event_name == "PermissionRequest" {

@@ -51,12 +51,14 @@ include!(concat!(env!("OUT_DIR"), "/widgets.rs"));
 pub use horizon_ui::PANELS;
 
 /// Manifeste du widget `id` ; `None` pour un genre inconnu (dossier retiré : la disposition le
-/// garde, rien n'est affiché). Un plugin chargeable
-/// (`plugin:<id>`) a le sien (`plugins::widget_manifest`).
+/// garde, rien n'est affiché) et pour le widget d'un module intégré désactivé
+/// (`crate::modules`). Un plugin chargeable (`plugin:<id>`) a le sien
+/// (`plugins::widget_manifest`).
 pub fn manifest(id: &str) -> Option<&'static Manifest> {
     MANIFESTS
         .iter()
         .find(|m| m.id == id)
+        .filter(|m| crate::modules::enabled(m.id))
         .or_else(|| crate::plugins::widget_manifest(id))
 }
 
@@ -184,20 +186,40 @@ pub fn manage_all(app: &AppHandle) {
     }
 }
 
-/// Démarre les fils des widgets (ceux des applis personnelles seulement dans l'édition
-/// personnelle) ; l'échec de l'un n'empêche pas les suivants (il est noté pour le témoin
-/// d'état, `status.rs`).
+/// Widgets dont le service est démarré (un service ne démarre qu'une fois).
+static STARTED: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
+
+/// Démarre les fils des widgets (pas ceux d'un module intégré désactivé) ; l'échec de l'un
+/// n'empêche pas les suivants (il est noté pour le témoin d'état, `status.rs`).
 pub fn start_all(app: &AppHandle) {
     for b in BACKENDS {
-        if manifest(b.id).is_none() {
-            continue;
+        if manifest(b.id).is_some() {
+            start_backend(app, b);
         }
-        if let Some(start) = b.start
-            && let Err(e) = start(app)
-        {
-            log::error!("{} : démarrage impossible : {e:#}", b.name);
-            app.state::<crate::status::Health>().start_failed(b.name, format!("{e:#}"));
+    }
+}
+
+/// Démarre le service du widget `id` s'il ne l'est pas déjà (module intégré activé en cours de
+/// route).
+pub fn start_one(app: &AppHandle, id: &str) {
+    if let Some(b) = by_id(id) {
+        start_backend(app, b);
+    }
+}
+
+fn start_backend(app: &AppHandle, b: &'static Backend) {
+    {
+        let mut started = crate::util::lock(&STARTED);
+        if started.contains(&b.id) {
+            return;
         }
+        started.push(b.id);
+    }
+    if let Some(start) = b.start
+        && let Err(e) = start(app)
+    {
+        log::error!("{} : démarrage impossible : {e:#}", b.name);
+        app.state::<crate::status::Health>().start_failed(b.name, format!("{e:#}"));
     }
 }
 

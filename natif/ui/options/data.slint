@@ -117,6 +117,10 @@ export global OptionsData {
     in property <bool> library-known;
     in property <string> plugins-dir;
     in property <string> plugins-error;
+    // Modules intégrés (src/modules.rs) : fonctions d'Horizon à activer ou non.
+    in property <[PluginTile]> modules;
+    // Le module Sessions Claude Code est activé (sinon ses réglages d'alertes sont masqués).
+    in property <bool> claude-sessions;
 
     // Apparence, son, alertes, général.
     in property <bool> capture-to-claude;

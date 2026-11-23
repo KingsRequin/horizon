@@ -134,6 +134,26 @@ pub fn tiles(app: &AppHandle) -> (Vec<PluginTile>, Vec<PluginTile>, bool) {
     (installed, available, known)
 }
 
+/// Texte de la tuile d'un module intégré (`crate::modules`).
+pub fn module_text(id: &str, on: bool) -> TileText {
+    if on {
+        TileText { chip: "Actif", level: 0, detail: "Son widget s’ajoute par le menu « + » d’une barre".into(), action: Some((format!("module_disable:{id}"), "Désactiver")) }
+    } else {
+        TileText { chip: "Désactivé", level: 1, detail: "Rien ne tourne".into(), action: Some((format!("module_enable:{id}"), "Activer")) }
+    }
+}
+
+/// Tuiles des modules intégrés (page Plugins, « Modules intégrés »).
+pub fn module_tiles() -> Vec<PluginTile> {
+    crate::modules::MODULES
+        .iter()
+        .map(|m| {
+            let text = module_text(m.id, crate::modules::enabled(m.id));
+            tile(m.id, m.name.to_owned(), "Intégré à Horizon".to_owned(), Some(m.description.to_owned()), icon(Some(m.icon), None), text, String::new(), String::new())
+        })
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn tile(id: &str, name: String, meta: String, description: Option<String>, icon: slint::Image, text: TileText, folder: String, remove: String) -> PluginTile {
     let (action_id, action_label) = text.action.unwrap_or_default();
