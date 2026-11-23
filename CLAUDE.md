@@ -65,7 +65,8 @@ crates/
 packaging/                  paquet « sparse » (identité de paquet) et ses icônes ; installateur
                             (horizon.iss, Inno Setup 6)
 scripts/                    installation, désinstallation, paquet d'une Release, hooks Claude,
-                            icônes (icones.ps1 redessine le symbole à chaque taille)
+                            icônes (icones.ps1 redessine le symbole à chaque taille), logo
+                            animé du README (logo-anime.ps1 écrit docs/images/logo-anime.svg)
 .github/workflows/          vérification (ci.yml) et publication d'une Release (release.yml)
 ```
 

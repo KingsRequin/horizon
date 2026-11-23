@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/images/logo.svg" width="96" alt="Horizon logo">
+<img src="docs/images/logo-anime.svg" width="136" alt="Horizon logo">
 
 # Horizon
 
