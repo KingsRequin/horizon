@@ -26,6 +26,7 @@ pub mod night;
 pub mod notifs;
 pub mod options_search;
 pub mod palette;
+pub mod phone;
 pub mod plugin;
 pub mod resume;
 pub mod series;
