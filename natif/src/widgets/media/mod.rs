@@ -82,10 +82,12 @@ pub struct MediaState {
 
 type SentMedia = (Option<MediaInfo>, Vec<(String, String)>);
 
-/// Pochette décodée et réduite, et sa couleur d'accent lisible ; `None` si illisible.
+/// Pochette décodée et réduite, et sa couleur d'accent lisible (aucune pour le logo qu'un
+/// navigateur publie à la place d'une pochette : il est montré, sans teinter l'accent) ; `None`
+/// si illisible.
 fn art_pixels(bytes: &[u8]) -> Option<(Art, Option<[u8; 3]>)> {
     let (w, h, px) = horizon_sys::art::decode_rgba(bytes)?;
-    let accent = horizon_core::accent::dominant_color(&px, w, h).map(horizon_core::accent::readable_accent);
+    let accent = horizon_core::accent::cover_accent(&px, w, h);
     let mut panel = cover_square(w, h, &px, PANEL_ART_SIZE)?;
     round_corners(&mut panel, PANEL_ART_SIZE, PANEL_ART_RADIUS);
     let art = Art {

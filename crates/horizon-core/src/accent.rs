@@ -33,6 +33,31 @@ pub fn dominant_color(rgba: &[u8], w: u32, h: u32) -> Option<[u8; 3]> {
     (total > 0.0).then(|| sum[best].map(|c| (c / total).round().clamp(0.0, 255.0) as u8))
 }
 
+/// Part de pixels transparents au-delà de laquelle une image est une icône détourée et non une
+/// pochette. Une pochette est opaque ; le logo que Chrome, Vivaldi ou Sigma publient quand la
+/// page n'en fournit pas a un fond transparent (6 % pour le plus plein des trois, Sigma).
+const ICON_TRANSPARENCY: f32 = 0.03;
+
+/// L'image RGBA (`w` × `h`) est une icône détourée (fond transparent), pas une pochette.
+pub fn is_cutout(rgba: &[u8], w: u32, h: u32) -> bool {
+    let n = w as usize * h as usize;
+    if n == 0 || rgba.len() < n * 4 {
+        return false;
+    }
+    let clear = rgba[..n * 4].chunks_exact(4).filter(|px| px[3] < 32).count();
+    clear as f32 > n as f32 * ICON_TRANSPARENCY
+}
+
+/// Couleur d'accent lisible d'une pochette RGBA (`w` × `h`). `None` si elle est grise, noire ou
+/// blanche, ou si ce n'est pas une pochette mais le logo d'une appli (`is_cutout`) : sa couleur
+/// ne dit rien du morceau.
+pub fn cover_accent(rgba: &[u8], w: u32, h: u32) -> Option<[u8; 3]> {
+    if is_cutout(rgba, w, h) {
+        return None;
+    }
+    dominant_color(rgba, w, h).map(readable_accent)
+}
+
 fn to_hsv([r, g, b]: [u8; 3]) -> (f32, f32, f32) {
     let (r, g, b) = (r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0);
     let max = r.max(g).max(b);
@@ -218,6 +243,28 @@ mod tests {
         assert_eq!(dominant_color(&[], 0, 0), None);
         // Taille incohérente avec le tampon : pas de panique.
         assert_eq!(dominant_color(&[1, 2, 3], 10, 10), None);
+    }
+
+    #[test]
+    fn app_logo_gives_no_cover_accent() {
+        // Logo rond sur fond transparent (ce que Chrome publie sans pochette) : pas une pochette.
+        let mut logo = image(64, 64, |_, _| [252, 201, 63]);
+        for (i, px) in logo.chunks_exact_mut(4).enumerate() {
+            let (x, y) = ((i % 64) as f32 - 31.5, (i / 64) as f32 - 31.5);
+            if x * x + y * y > 30.0 * 30.0 {
+                px[3] = 0;
+            }
+        }
+        assert!(is_cutout(&logo, 64, 64));
+        assert_eq!(cover_accent(&logo, 64, 64), None);
+        // Pochette opaque, même avec un liseré adouci : sa couleur compte.
+        let mut cover = image(64, 64, |_, _| [40, 90, 230]);
+        for px in cover.chunks_exact_mut(4).take(64) {
+            px[3] = 0;
+        }
+        assert!(!is_cutout(&cover, 64, 64));
+        assert!(close(cover_accent(&cover, 64, 64).unwrap(), [40, 90, 230]));
+        assert!(!is_cutout(&[], 0, 0) && !is_cutout(&[1, 2, 3], 10, 10));
     }
 
     #[test]

@@ -6,7 +6,7 @@
 //!
 //! `cargo run -p horizon-sys --example media_probe -- [secondes] [dossier des miniatures]`
 
-use horizon_core::accent::{dominant_color, readable_accent};
+use horizon_core::accent::{cover_accent, is_cutout};
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::PathBuf;
@@ -33,7 +33,7 @@ fn stamp() -> String {
     format!("{:02}:{:02}:{:02}.{:03}", ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000)
 }
 
-/// Octets → « 512 o PNG #1a2b3c4d 64×64 dominante [r, g, b] → accent [r, g, b] ».
+/// Octets → « 512 o PNG #1a2b3c4d 64×64 accent [r, g, b] ».
 fn describe(bytes: &[u8], keep: Option<&PathBuf>) -> String {
     let mut h = DefaultHasher::new();
     bytes.hash(&mut h);
@@ -50,8 +50,9 @@ fn describe(bytes: &[u8], keep: Option<&PathBuf>) -> String {
         let _ = std::fs::write(dir.join(format!("miniature-{hash:08x}.bin")), bytes);
     }
     let picture = match horizon_sys::art::decode_rgba(bytes) {
-        Some((w, h, px)) => match dominant_color(&px, w, h) {
-            Some(c) => format!("{w}×{h} dominante {c:?} → accent {:?}", readable_accent(c)),
+        Some((w, h, px)) if is_cutout(&px, w, h) => format!("{w}×{h} logo détouré : pas d'accent"),
+        Some((w, h, px)) => match cover_accent(&px, w, h) {
+            Some(c) => format!("{w}×{h} accent {c:?}"),
             None => format!("{w}×{h} sans couleur dominante (grise)"),
         },
         None => "INDÉCODABLE par Horizon".into(),
