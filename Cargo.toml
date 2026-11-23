@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/horizon-core", "crates/horizon-sys", "crates/horizon-hook", "natif", "natif/ui"]
 
 [workspace.package]
-version = "0.6.8"
+version = "0.6.9"
 edition = "2024"
 rust-version = "1.90"
 license = "MIT"
