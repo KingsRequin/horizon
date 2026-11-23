@@ -1,7 +1,9 @@
 //! Masquage en plein écran : la barre d'un écran se cache quand la fenêtre du dessus y est en
 //! plein écran, réapparaît quand la souris s'arrête dans la bande du haut de cet écran
-//! (`[autohide]` de `settings.toml`), et se recache 600 ms après que la souris l'a quittée. La place réservée (appbar) est gardée : les
-//! fenêtres plein écran l'ignorent, et les fenêtres maximisées ne sont pas redimensionnées.
+//! (`[autohide]` de `settings.toml` ; jamais si `reveal` est coupé ou si le curseur est caché,
+//! comme dans un jeu qui capture la souris), et se recache 600 ms après que la souris l'a
+//! quittée. La place réservée (appbar) est gardée : les fenêtres plein écran l'ignorent, et les
+//! fenêtres maximisées ne sont pas redimensionnées.
 //!
 //! L'ordre des fenêtres n'est relu que sur un événement (appli passée en plein écran ou sortie,
 //! avis `ABN_FULLSCREENAPP` des appbars ; changement de premier plan) et, par sécurité, toutes
@@ -91,7 +93,9 @@ fn step(app: &AppHandle, states: &mut HashMap<String, Visibility>, settings: &Au
     let kept: Vec<String> = app
         .state::<crate::state::AppState>()
         .read(|l| l.bars.iter().filter(|b| !b.autohide).map(|b| b.monitor_id.clone()).collect());
-    let cursor = horizon_sys::fullscreen::cursor();
+    // Seul un curseur affiché fait revenir une barre : caché par un jeu qui capture la souris, il
+    // bute en haut de l'écran dès que le joueur lève la vue.
+    let cursor = settings.reveal.then(horizon_sys::fullscreen::shown_cursor).flatten();
     let mut any_full = false;
     for (label, m, hwnd, height) in &list {
         let Some(w) = app.get_window(label) else { continue };
@@ -102,7 +106,12 @@ fn step(app: &AppHandle, states: &mut HashMap<String, Visibility>, settings: &Au
         if now.visible() != next.visible() {
             let _ = if next.visible() { crate::bars::show(&w, *hwnd) } else { crate::bars::hide(&w) };
             app.state::<crate::widgets::media::audio::AudioHub>().set_hidden(label, !next.visible());
-            log::info!("{label} : {}", if next.visible() { "affichée" } else { "masquée (plein écran)" });
+            let what = match next {
+                Visibility::Shown => "affichée",
+                Visibility::Revealed(_) => "affichée au-dessus du plein écran (souris en haut de l'écran)",
+                Visibility::Hidden(_) => "masquée (plein écran)",
+            };
+            log::info!("{label} : {what}");
         }
         states.insert(label.clone(), next);
     }

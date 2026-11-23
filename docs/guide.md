@@ -145,7 +145,10 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   coupée et à la fermeture (pas après un plantage : redémarrer l'Explorateur le remet).
 - La barre d'un écran se cache quand une fenêtre y est en plein écran ; elle revient si la
   souris reste 150 ms dans les 12 px du haut de l'écran (traverser vers l'écran du dessus ne
-  la fait pas apparaître).
+  la fait pas apparaître). Un curseur caché, comme dans un jeu qui capture la souris, ne la
+  fait jamais revenir ; pour un jeu dont les menus touchent le haut de l'écran, décocher
+  *Réglages d'Horizon › Barres › Faire revenir la barre avec la souris* : elle ne revient
+  alors qu'à la fin du plein écran.
 - Molette sur une zone vide d'une barre : volume général. L'écran du haut s'assombrit la nuit.
 - **Panneau Audio** (survol du widget micro) : sortie et micro par défaut (clic = devient
   le défaut pour la console, le multimédia et les communications), épingle = favori en tête
@@ -238,6 +241,7 @@ connaît la batterie. Sonde : `cargo run -p horizon-sys --example headset_probe`
   côté en `layout.json.bak` et la disposition par défaut est reprise) ;
 - `dnd.json` : « Ne pas déranger » activé à la main, option du minuteur ;
 - `settings.toml` : `[night]` `start`, `end` (« 22:00 »), `opacity` (0–1) ; `[autohide]`
+  `reveal` (la souris en haut de l'écran fait revenir une barre masquée ; `true` par défaut),
   `reveal_px` (hauteur de la zone de réapparition, px logiques, 200 au plus), `reveal_ms`
   (délai, 5000 au plus) ; `[palette]` `hotkey` (« Ctrl+Alt+P » par défaut ; Ctrl+Alt+Espace est souvent pris par la Command Palette de PowerToys). Créé seulement s'il n'existe pas ; jamais réécrit ensuite. Illisible,
   il est copié en `settings.toml.bak`, laissé en place, et les valeurs par défaut servent ;

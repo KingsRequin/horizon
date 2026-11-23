@@ -45,6 +45,7 @@ pub const ENTRIES: &[SearchEntry] = &[
     e("barres", "Écrans", "Souris", "cliquable survol information clic interaction"),
     e("barres", "Écrans", "Hauteur", "taille tuiles px"),
     e("barres", "Écrans", "Masquer au-dessus d’une appli en plein écran", "cacher jeu vidéo autohide"),
+    e("barres", "Réapparition au-dessus d’un plein écran", "Faire revenir la barre avec la souris", "réapparition jeu menu désactiver"),
     e("barres", "Réapparition au-dessus d’un plein écran", "Hauteur de la bande du haut", "réapparition souris px"),
     e("barres", "Réapparition au-dessus d’un plein écran", "Temps d’arrêt de la souris", "délai ms réapparition"),
     e("apparence", "Pulsation", "Faire vivre les barres avec la musique", "pulsation basse kick pochette couleur"),

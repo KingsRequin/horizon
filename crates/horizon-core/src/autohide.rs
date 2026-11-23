@@ -156,6 +156,16 @@ mod tests {
     }
 
     #[test]
+    fn without_a_cursor_nothing_reveals_and_the_bar_hides() {
+        // Curseur caché par un jeu, ou réapparition coupée : pas de position.
+        let t = Instant::now();
+        assert_eq!(next(Hidden(Some(t)), true, None, &M, &P, ms(t, 200)), Hidden(None));
+        let s = next(Revealed(None), true, None, &M, &P, t);
+        assert_eq!(s, Revealed(Some(t)));
+        assert_eq!(next(s, true, None, &M, &P, ms(t, 650)), Hidden(None));
+    }
+
+    #[test]
     fn zero_dwell_reveals_at_once() {
         let p = Params { dwell: Duration::ZERO, ..P };
         assert_eq!(next(Hidden(None), true, Some((1, 0)), &M, &p, Instant::now()), Revealed(None));

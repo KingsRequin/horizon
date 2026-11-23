@@ -4,8 +4,8 @@ use crate::win32::{class_name, frame_bounds, is_cloaked};
 use horizon_core::geometry::WinInfo;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GWL_EXSTYLE, GetCursorPos, GetWindowLongPtrW, IsIconic, IsWindowVisible,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+    CURSOR_SHOWING, CURSORINFO, EnumWindows, GWL_EXSTYLE, GetCursorInfo, GetCursorPos, GetWindowLongPtrW, IsIconic,
+    IsWindowVisible, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
 };
 use windows::core::BOOL;
 
@@ -56,4 +56,14 @@ pub fn cursor() -> Option<(i32, i32)> {
     let mut p = POINT::default();
     // SAFETY : sortie POINT valide.
     unsafe { GetCursorPos(&mut p) }.ok().map(|_| (p.x, p.y))
+}
+
+/// Position du curseur s'il est affiché ; `None` quand l'appli du dessus l'a caché (jeu qui
+/// capture la souris : sa position ne dit plus où l'utilisateur veut aller).
+pub fn shown_cursor() -> Option<(i32, i32)> {
+    let mut info = CURSORINFO { cbSize: size_of::<CURSORINFO>() as u32, ..Default::default() };
+    // SAFETY : sortie CURSORINFO valide, taille renseignée.
+    unsafe { GetCursorInfo(&mut info) }.ok()?;
+    let shown = info.flags.0 & CURSOR_SHOWING.0 != 0 && !info.hCursor.is_invalid();
+    shown.then_some((info.ptScreenPos.x, info.ptScreenPos.y))
 }

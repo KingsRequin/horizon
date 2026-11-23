@@ -45,6 +45,9 @@ impl Default for TimerSettings {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AutohideSettings {
+    /// La souris arrêtée en haut de l'écran fait réapparaître la barre. Coupé : elle ne revient
+    /// qu'à la fin du plein écran (jeux dont les menus touchent le haut de l'écran).
+    pub reveal: bool,
     /// Hauteur de la zone, en haut de l'écran, où la souris fait réapparaître la barre
     /// (pixels logiques). Assez haute pour s'y arrêter quand un écran est au-dessus.
     pub reveal_px: u32,
@@ -62,7 +65,7 @@ impl AutohideSettings {
 
 impl Default for AutohideSettings {
     fn default() -> Self {
-        AutohideSettings { reveal_px: 12, reveal_ms: 150 }
+        AutohideSettings { reveal: true, reveal_px: 12, reveal_ms: 150 }
     }
 }
 
@@ -239,6 +242,8 @@ mod tests {
         let s = Settings::parse("[autohide]\nreveal_px = 20\n").unwrap();
         assert_eq!(s.autohide.reveal_px, 20);
         assert_eq!(s.autohide.reveal_ms, 150);
+        assert!(s.autohide.reveal, "réapparition gardée quand le fichier n'en dit rien");
+        assert!(!Settings::parse("[autohide]\nreveal = false\n").unwrap().autohide.reveal);
     }
 
     #[test]

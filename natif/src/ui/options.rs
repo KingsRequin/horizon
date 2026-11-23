@@ -242,6 +242,7 @@ fn fill() {
         })
         .collect();
     super::model::sync_rc(&g.get_bars(), bars, |m| g.set_bars(m));
+    g.set_reveal(s.autohide.reveal);
     g.set_reveal_px(s.autohide.reveal_px as i32);
     g.set_reveal_ms(s.autohide.reveal_ms as i32);
     // Alertes.

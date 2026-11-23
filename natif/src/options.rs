@@ -253,6 +253,7 @@ pub fn apply_edit(s: &mut Settings, id: &str, v: &Edit) -> Result<(), String> {
         "night.end" => n.end = normalize_time(&text()?).ok_or_else(bad)?,
         "night.opacity" => n.opacity = int(10, 100)? as f32 / 100.0,
         "night.dnd" => n.dnd = flag()?,
+        "autohide.reveal" => s.autohide.reveal = flag()?,
         "autohide.reveal_px" => s.autohide.reveal_px = int(0, 200)? as u32,
         "autohide.reveal_ms" => s.autohide.reveal_ms = int(0, 5000)? as u64,
         "timer.focus" => s.timer.focus = int(1, 600)? as u32,

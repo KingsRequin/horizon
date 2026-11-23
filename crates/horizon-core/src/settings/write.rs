@@ -40,8 +40,11 @@ impl Settings {
              dnd = {}\n\
              \n\
              [autohide]\n\
-             # Réapparition d'une barre cachée par un plein écran : hauteur de la bande du haut de\n\
-             # l'écran (pixels) et temps d'arrêt de la souris dedans (millisecondes).\n\
+             # Une barre cachée par un plein écran revient quand la souris s'arrête en haut de\n\
+             # l'écran (false : seulement à la fin du plein écran).\n\
+             reveal = {}\n\
+             # Hauteur de cette bande du haut de l'écran (pixels) et temps d'arrêt de la souris\n\
+             # dedans (millisecondes).\n\
              reveal_px = {}\n\
              reveal_ms = {}\n\
              \n\
@@ -63,6 +66,7 @@ impl Settings {
             quoted(&n.end),
             (n.opacity * 100.0).round() / 100.0,
             n.dnd,
+            a.reveal,
             a.reveal_px,
             a.reveal_ms,
             quoted(&self.palette.hotkey),
@@ -167,6 +171,7 @@ mod tests {
         assert_eq!(Settings::inspect(&p).unwrap(), SettingsFile::Missing);
         let mut s = Settings::default();
         s.autohide.reveal_px = 30;
+        s.autohide.reveal = false;
         s.save(&p).unwrap();
         assert_eq!(Settings::inspect(&p).unwrap(), SettingsFile::Valid(s));
     }
