@@ -56,10 +56,10 @@ fn main() -> anyhow::Result<()> {
     let Some(every) = every else { return Ok(()) };
     let mut level = percent;
     loop {
-        // `next` rend la main au bout de 5 s sans message : on en profite pour compter le temps.
+        // `receive` rend la main au bout de 5 s sans message : on en profite pour compter le temps.
         let started = std::time::Instant::now();
         while started.elapsed() < Duration::from_secs(every) {
-            match client.next() {
+            match client.receive() {
                 Ok(text) => println!("reçu : {text}"),
                 Err(e) if e.to_string().contains("fermée") => {
                     println!("coupure : {e} ; nouvel essai dans 2 s");

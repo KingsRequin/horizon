@@ -195,7 +195,7 @@ impl Client {
     }
 
     /// Prochain message du PC ; erreur si rien n'arrive en 5 s ou si la connexion est fermée.
-    pub fn next(&mut self) -> anyhow::Result<String> {
+    pub fn receive(&mut self) -> anyhow::Result<String> {
         loop {
             match self.ws.read().map_err(|e| anyhow!("lecture impossible : {e}"))? {
                 Message::Text(text) => return Ok(text.to_string()),
