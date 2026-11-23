@@ -3,3 +3,4 @@
 //! `natif/src/widgets/phone/`.
 
 pub mod proto;
+pub mod pairing;
