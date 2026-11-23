@@ -58,8 +58,8 @@ every kick, in the colors of the album art (the graphic style shows a spectrum).
 bar glows with the bass, in the colors of the album art.</td>
 <td valign="top"><b>System</b> — CPU, GPU and memory as graphs or gauges, and the apps that use
 them the most.</td>
-<td valign="top"><b>Weather</b> — now, hour by hour and the next days (Open-Meteo, no account
-needed).</td>
+<td valign="top"><b>Weather</b> — now, hour by hour and the next days, for one to three cities
+(Open-Meteo, no account needed).</td>
 </tr>
 </table>
 

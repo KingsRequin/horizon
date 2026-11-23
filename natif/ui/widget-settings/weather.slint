@@ -1,10 +1,12 @@
-// Réglages Météo (app/src/widgets/weather/Settings.svelte) : ville choisie, recherche par nom
-// (géocodage Open-Meteo, 350 ms après la dernière frappe, 2 caractères au moins), résultats à
-// choisir. Service : src/ui/widget_settings/weather.rs.
+// Réglages Météo (app/src/widgets/weather/Settings.svelte) : villes suivies (trois au plus, la
+// première est celle de la barre), recherche par nom (géocodage Open-Meteo, 350 ms après la
+// dernière frappe, 2 caractères au moins), résultats à ajouter. Service :
+// src/ui/widget_settings/weather.rs.
 
 import { Theme } from "../theme.slint";
 import { SettingsLayout } from "../settings/layout.slint";
 import { SettingsSubheading, SettingsNote } from "../settings/text.slint";
+import { SettingsButton, RemoveButton } from "../settings/button.slint";
 import { InputField } from "../settings/input.slint";
 
 export struct PlaceRow {
@@ -13,15 +15,41 @@ export struct PlaceRow {
 }
 
 export global WeatherSettingsData {
-    in property <string> place-name;
-    in property <string> place-detail;
+    // Villes suivies, la principale d'abord.
+    in property <[PlaceRow]> places;
+    // Le nombre maximal de villes est atteint : plus de recherche.
+    in property <bool> full;
     in property <[PlaceRow]> results;
-    // « Aucune ville trouvée. » ou l'erreur de la recherche.
+    // « Aucune ville trouvée. », « Cette ville est déjà suivie. » ou l'erreur de la recherche.
     in property <string> message;
     // Vide le champ de recherche (après un choix).
     in property <int> cleared;
     callback search(string);
     callback choose(int);
+    // Fait de la ville de ce rang la principale.
+    callback promote(int);
+    callback remove(int);
+}
+
+// Nom en gras puis région et pays, sur une ligne.
+component PlaceLabel inherits HorizontalLayout {
+    in property <PlaceRow> place;
+    spacing: 4px;
+    alignment: start;
+    Text {
+        text: root.place.name;
+        color: SettingsLayout.t.text;
+        font-weight: 700;
+        vertical-alignment: center;
+    }
+    Text {
+        text: root.place.detail;
+        color: SettingsLayout.t.text-dim;
+        font-size: Theme.fs-meta;
+        vertical-alignment: center;
+        overflow: elide;
+        horizontal-stretch: 1;
+    }
 }
 
 component PlaceButton inherits Rectangle {
@@ -36,64 +64,79 @@ component PlaceButton inherits Rectangle {
             root.clicked();
         }
     }
-    HorizontalLayout {
+    PlaceLabel {
         padding-left: 10px;
         padding-right: 10px;
-        spacing: 4px;
-        alignment: start;
-        Text {
-            text: root.place.name;
-            color: SettingsLayout.t.text;
-            font-weight: 700;
-            vertical-alignment: center;
-        }
-        Text {
-            text: root.place.detail;
-            color: SettingsLayout.t.text-dim;
-            font-size: Theme.fs-meta;
-            vertical-alignment: center;
-            overflow: elide;
-            horizontal-stretch: 1;
-        }
+        place: root.place;
     }
 }
 
 export component WeatherSettings inherits VerticalLayout {
     alignment: start;
     SettingsSubheading {
-        text: "Ville";
+        text: "Villes";
     }
-    HorizontalLayout {
+    if WeatherSettingsData.places.length == 0: SettingsNote {
+        text: "Aucune ville choisie.";
+        below: 10px;
+    }
+    if WeatherSettingsData.places.length > 0: VerticalLayout {
         padding-bottom: 10px;
         spacing: 4px;
-        alignment: start;
-        if WeatherSettingsData.place-name != "": Text {
-            text: WeatherSettingsData.place-name;
-            color: SettingsLayout.t.text;
-            font-weight: 700;
-            vertical-alignment: center;
-        }
-        if WeatherSettingsData.place-name != "": Text {
-            text: WeatherSettingsData.place-detail;
-            color: SettingsLayout.t.text-dim;
-            font-size: Theme.fs-meta;
-            vertical-alignment: center;
-        }
-        if WeatherSettingsData.place-name == "": Text {
-            text: "Aucune ville choisie.";
-            color: SettingsLayout.t.text-dim;
-            font-size: Theme.fs-meta;
+        for p[i] in WeatherSettingsData.places: Rectangle {
+            height: 36px;
+            border-radius: Theme.r-lg;
+            background: SettingsLayout.t.surface-1;
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 4px;
+                spacing: 8px;
+                PlaceLabel {
+                    horizontal-stretch: 1;
+                    place: p;
+                }
+                if i == 0 && WeatherSettingsData.places.length > 1: Text {
+                    text: "Dans la barre";
+                    color: SettingsLayout.t.text-dim;
+                    font-size: Theme.fs-meta;
+                    vertical-alignment: center;
+                }
+                if i > 0: VerticalLayout {
+                    alignment: center;
+                    SettingsButton {
+                        small: true;
+                        text: "Mettre en premier";
+                        tip: "Montrer " + p.name + " dans la barre";
+                        clicked => {
+                            WeatherSettingsData.promote(i);
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    RemoveButton {
+                        what: "la ville « " + p.name + " »";
+                        clicked => {
+                            WeatherSettingsData.remove(i);
+                        }
+                    }
+                }
+            }
         }
     }
-    query := InputField {
+    if !WeatherSettingsData.full: query := InputField {
         width: SettingsLayout.content-w;
         height: 33px;
         padding-x: 10px;
         radius: Theme.r-lg;
-        placeholder: "Rechercher une ville…";
+        placeholder: WeatherSettingsData.places.length == 0 ? "Rechercher une ville…" : "Ajouter une ville…";
         edited(t) => {
             WeatherSettingsData.search(t);
         }
+        changed cleared => {
+            self.set-text("");
+        }
+        property <int> cleared: WeatherSettingsData.cleared;
     }
     if WeatherSettingsData.results.length > 0: VerticalLayout {
         padding-top: 8px;
@@ -110,11 +153,11 @@ export component WeatherSettings inherits VerticalLayout {
         above: 8px;
     }
     SettingsNote {
-        text: "Prévisions d’Open-Meteo, relues toutes les 15 minutes. Seules les coordonnées de la ville sont envoyées.";
+        text: WeatherSettingsData.full ? "Trois villes au plus : retire-en une pour en ajouter une autre." : "Jusqu’à trois villes : la première est montrée dans la barre, le panneau les résume toutes et un clic déplie le détail de l’une.";
         above: 14px;
     }
-    changed cleared => {
-        query.set-text("");
+    SettingsNote {
+        text: "Prévisions d’Open-Meteo, relues toutes les 15 minutes. Seules les coordonnées des villes sont envoyées.";
+        above: 6px;
     }
-    property <int> cleared: WeatherSettingsData.cleared;
 }

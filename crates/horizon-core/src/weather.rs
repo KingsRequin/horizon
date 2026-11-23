@@ -183,14 +183,45 @@ pub fn place_key(p: &Place) -> String {
     format!("{:.3},{:.3}", p.lat, p.lon)
 }
 
+/// Villes qu'un widget Météo peut suivre.
+pub const MAX_PLACES: usize = 3;
+
+/// Ajoute `p` à `places` s'il n'y est pas déjà (même clé).
+fn push_new(places: &mut Vec<Place>, p: Place) {
+    if !places.iter().any(|q| place_key(q) == place_key(&p)) {
+        places.push(p);
+    }
+}
+
+/// Villes des réglages d'un widget Météo : la principale (`place`, montrée dans la barre) puis
+/// les autres (`others`), sans doublon, `MAX_PLACES` au plus. Ce qui est illisible est ignoré.
+pub fn places_of(settings: &Value) -> Vec<Place> {
+    let others = settings.get("others").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+    let mut places = Vec::new();
+    for v in settings.get("place").into_iter().chain(others) {
+        if let Ok(p) = serde_json::from_value::<Place>(v.clone()) {
+            push_new(&mut places, p);
+        }
+    }
+    places.truncate(MAX_PLACES);
+    places
+}
+
+/// Réglages (`place`, `others`) qui enregistrent ces villes, la première étant la principale.
+pub fn places_settings(places: &[Place]) -> Value {
+    let (main, others) = match places.split_first() {
+        Some((main, others)) => (serde_json::json!(main), &others[..others.len().min(MAX_PLACES - 1)]),
+        None => (Value::Null, &[][..]),
+    };
+    serde_json::json!({ "place": main, "others": others })
+}
+
 /// Lieux des widgets Météo des barres actives (une fois chacun).
 pub fn wanted_places(layout: &Layout) -> Vec<Place> {
     let mut places: Vec<Place> = Vec::new();
     for w in layout.widgets_of(WidgetKind::WEATHER) {
-        if let Ok(p) = serde_json::from_value::<Place>(w.settings["place"].clone())
-            && !places.iter().any(|q| place_key(q) == place_key(&p))
-        {
-            places.push(p);
+        for p in places_of(&w.settings) {
+            push_new(&mut places, p);
         }
     }
     places
@@ -362,5 +393,29 @@ mod tests {
         let places = wanted_places(&l);
         assert_eq!(places.len(), 1);
         assert_eq!(place_key(&places[0]), "48.857,2.352");
+        // Les autres villes d'un widget sont suivies aussi.
+        let two = serde_json::json!({ "place": paris["place"], "others": [{ "name": "Lyon", "lat": 45.76, "lon": 4.84 }] });
+        l.set_widget_settings(&ids[0], two).unwrap();
+        let names: Vec<String> = wanted_places(&l).into_iter().map(|p| p.name).collect();
+        assert_eq!(names, ["Paris", "Lyon"]);
+    }
+
+    #[test]
+    fn a_widget_follows_up_to_three_places() {
+        let place = |name: &str, lat: f64| Place { name: name.into(), detail: String::new(), lat, lon: 2.0 };
+        let all = [place("Paris", 48.0), place("Lyon", 45.0), place("Lille", 50.0), place("Brest", 48.4)];
+        // Réglages d'avant (une seule ville), ou vides.
+        let old = serde_json::json!({ "place": all[0] });
+        assert_eq!(places_of(&old), all[..1]);
+        assert!(places_of(&Value::Null).is_empty());
+        // Aller-retour : la première est la principale ; pas plus de trois, pas de doublon.
+        let s = places_settings(&all);
+        assert_eq!(s["place"]["name"], "Paris");
+        assert_eq!(places_of(&s), all[..3]);
+        let twice = serde_json::json!({ "place": all[0], "others": [all[0], { "name": "illisible" }, all[1]] });
+        assert_eq!(places_of(&twice), all[..2]);
+        // Plus aucune ville : la principale est effacée (fusionnée dans les réglages).
+        let none = places_settings(&[]);
+        assert!(none["place"].is_null() && places_of(&none).is_empty());
     }
 }

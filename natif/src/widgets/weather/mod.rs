@@ -17,7 +17,9 @@ use crate::util::{lock, spawn_named, start_thread};
 use crate::web::get;
 use crate::widgets::Backend;
 use horizon_core::layout::BarLayout;
-use horizon_core::weather::{Forecast, Freshness, Place, forecast_url, geocode_url, parse_forecast, parse_places, place_key, wanted_places};
+use horizon_core::weather::{
+    Forecast, Freshness, Place, forecast_url, geocode_url, parse_forecast, parse_places, place_key, places_of, wanted_places,
+};
 use serde::Serialize;
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use std::collections::HashMap;
@@ -213,17 +215,19 @@ fn item(place: bool, view: Option<&WeatherView>) -> WeatherItem {
     it
 }
 
-/// Lieu enregistré dans les réglages d'un exemplaire (`settings.place`).
+/// Ville principale d'un exemplaire, celle que montre la barre (`settings.place`).
 fn place_of(settings: &serde_json::Value) -> Option<Place> {
-    serde_json::from_value(settings.get("place")?.clone()).ok()
+    places_of(settings).into_iter().next()
 }
 
-/// Lieu montré par le panneau de l'exemplaire `id` : le sien, sinon celui du premier widget
-/// Météo réglé (une tuile ajoutée sans ville resterait sinon sur « Chargement… »).
-fn panel_place(l: &horizon_core::layout::Layout, id: &str) -> Option<Place> {
-    l.widget(id)
-        .and_then(|w| place_of(&w.settings))
-        .or_else(|| l.widgets_of(horizon_core::layout::WidgetKind::WEATHER).find_map(|w| place_of(&w.settings)))
+/// Villes montrées par le panneau de l'exemplaire `id` : les siennes, sinon celles du premier
+/// widget Météo réglé (une tuile ajoutée sans ville resterait sinon sur « Chargement… »).
+fn panel_places(l: &horizon_core::layout::Layout, id: &str) -> Vec<Place> {
+    let own = l.widget(id).map(|w| places_of(&w.settings)).unwrap_or_default();
+    if !own.is_empty() {
+        return own;
+    }
+    l.widgets_of(horizon_core::layout::WidgetKind::WEATHER).map(|w| places_of(&w.settings)).find(|p| !p.is_empty()).unwrap_or_default()
 }
 
 /// Un exemplaire : la clé de son lieu et la version de la vue montrée.
@@ -314,14 +318,18 @@ mod tests {
             portrait: false,
         };
         let mut l = Layout::default_for(&[m]);
+        let names = |l: &Layout, id: &str| panel_places(l, id).into_iter().map(|p| p.name).collect::<Vec<_>>();
         let tile = l.add_widget("a", Zone::Tiles, WidgetKind::WEATHER).unwrap();
-        assert!(panel_place(&l, &tile).is_none(), "aucun widget Météo réglé");
+        assert!(panel_places(&l, &tile).is_empty(), "aucun widget Météo réglé");
         let set = l.add_widget("a", Zone::Right, WidgetKind::WEATHER).unwrap();
-        let paris = serde_json::json!({ "place": { "name": "Paris", "detail": "France", "lat": 48.85, "lon": 2.35 } });
+        let paris = serde_json::json!({
+            "place": { "name": "Paris", "detail": "France", "lat": 48.85, "lon": 2.35 },
+            "others": [{ "name": "Brest", "detail": "France", "lat": 48.39, "lon": -4.49 }],
+        });
         l.set_widget_settings(&set, paris).unwrap();
-        assert_eq!(panel_place(&l, &tile).map(|p| p.name), Some("Paris".into()), "lieu repris");
+        assert_eq!(names(&l, &tile), ["Paris", "Brest"], "villes reprises");
         let lyon = serde_json::json!({ "place": { "name": "Lyon", "detail": "France", "lat": 45.76, "lon": 4.84 } });
         l.set_widget_settings(&tile, lyon).unwrap();
-        assert_eq!(panel_place(&l, &tile).map(|p| p.name), Some("Lyon".into()), "le sien d'abord");
+        assert_eq!(names(&l, &tile), ["Lyon"], "les siennes d'abord");
     }
 }

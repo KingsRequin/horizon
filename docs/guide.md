@@ -45,7 +45,8 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   image ou icône de l'appli sans flèche), notifications (et îlot dynamique), processeur / GPU /
   mémoire (courbes ou jauges, détail au survol), micro, horloge, sessions Claude Code,
   quota Claude, suggestions selon l'usage (applis utilisées, historique de Vivaldi), batterie du
-  casque, météo (Open-Meteo, ville dans les réglages), agenda (adresses iCal secrètes, lien de
+  casque, météo (Open-Meteo ; une à trois villes dans les réglages : la première dans la barre, toutes
+  résumées dans le panneau, un clic montre le détail de l'une), agenda (adresses iCal secrètes, lien de
   visio), serveurs (`~/.ssh/config`), fenêtres ouvertes par écran (clic : ramener ici ; clic
   droit : envoyer vers un autre écran), et
   [Essaim](https://github.com/KingsRequin/essaim) (curseur animé qui suit la musique : pause et

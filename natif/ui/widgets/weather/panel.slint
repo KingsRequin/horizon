@@ -1,6 +1,7 @@
 // Panneau Météo (app/src/widgets/weather/Panel.svelte) : conditions actuelles, prochaines
 // heures, prochains jours (prévision partagée avec les widgets). Un panneau par exemplaire
-// (« weather:<id> ») : son lieu est celui des réglages de l'exemplaire. Textes faits par
+// (« weather:<id> ») : ses villes sont celles des réglages de l'exemplaire ; à partir de deux,
+// une rangée les résume et un clic choisit celle dont le détail est montré. Textes faits par
 // src/widgets/weather/panel.rs.
 
 import { Theme, StyleTokens } from "../../theme.slint";
@@ -8,6 +9,7 @@ import { Icon } from "../../components.slint";
 import { Tip } from "../../tooltip.slint";
 import { PanelBase } from "../../panel/base.slint";
 import { PanelHead } from "../../panel/head.slint";
+import { ListRow } from "../../panel/row.slint";
 import { Divider } from "../../panel/divider.slint";
 import { EmptyState } from "../../panel/empty.slint";
 import { ErrorLine } from "../../panel/error.slint";
@@ -33,8 +35,23 @@ export struct WeatherPanelDay {
     label: string,
 }
 
+// Une ville de l'exemplaire : nom, « Paris, Île-de-France, France » (infobulle), ciel et « 9° »
+// (« … » en attendant la prévision, « – » si elle n'a pas pu être lue : pas d'icône alors).
+export struct WeatherPanelCity {
+    name: string,
+    tip: string,
+    has-icon: bool,
+    icon: image,
+    temp: string,
+}
+
 export global WeatherPanelData {
-    // Une prévision est là (sinon l'erreur, ou « Chargement… »).
+    // Villes de l'exemplaire (la rangée n'est montrée qu'à partir de deux) et rang de celle dont
+    // le détail suit.
+    in-out property <[WeatherPanelCity]> cities;
+    in-out property <int> selected;
+    callback select(int);
+    // Une prévision est là pour la ville choisie (sinon l'erreur, ou « Chargement… »).
     in-out property <bool> has-forecast;
     in-out property <string> place;
     in-out property <image> icon;
@@ -65,9 +82,58 @@ export component WeatherPanel inherits PanelBase {
     width: 296px;
     spacing: 12px;
 
-    if WeatherPanelData.has-forecast: PanelHead {
+    property <int> count: WeatherPanelData.cities.length;
+    property <length> city-gap: 6px;
+
+    if WeatherPanelData.has-forecast || root.count > 1: PanelHead {
         t: root.t;
         title: "Météo";
+    }
+    // Plusieurs villes : chacune résumée, un clic montre son détail dessous.
+    if root.count > 1: HorizontalLayout {
+        spacing: root.city-gap;
+        for c[i] in WeatherPanelData.cities: ListRow {
+            t: root.t;
+            width: (root.width - root.city-gap * (root.count - 1)) / root.count;
+            on: i == WeatherPanelData.selected;
+            tip: c.tip;
+            padding-x: 6px;
+            radius: Theme.r-md;
+            clicked => {
+                WeatherPanelData.select(i);
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text {
+                    text: c.name;
+                    color: i == WeatherPanelData.selected ? root.t.text : root.t.text-dim;
+                    font-weight: 600;
+                    font-size: Theme.fs-meta;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                }
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 4px;
+                    if c.has-icon: VerticalLayout {
+                        alignment: center;
+                        Icon {
+                            source: c.icon;
+                            size: 14px;
+                            color: root.t.text;
+                        }
+                    }
+                    Text {
+                        text: c.temp;
+                        color: root.t.text;
+                        font-weight: 600;
+                        font-size: root.t.fs-body;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
     }
     if WeatherPanelData.has-forecast: HorizontalLayout {
         spacing: 12px;

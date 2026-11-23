@@ -55,8 +55,8 @@ chaque grosse caisse, aux couleurs de la pochette (le style graphique montre un 
 appli. La barre s'illumine avec les basses, aux couleurs de la pochette.</td>
 <td valign="top"><b>Système</b> : processeur, carte graphique et mémoire en courbes ou en jauges,
 et les applis qui en consomment le plus.</td>
-<td valign="top"><b>Météo</b> : maintenant, heure par heure et les jours suivants (Open-Meteo,
-sans compte).</td>
+<td valign="top"><b>Météo</b> : maintenant, heure par heure et les jours suivants, pour une à trois
+villes (Open-Meteo, sans compte).</td>
 </tr>
 </table>
 
