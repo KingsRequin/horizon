@@ -4,8 +4,8 @@ use crate::win32::{class_name, frame_bounds, is_cloaked};
 use horizon_core::geometry::WinInfo;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CURSOR_SHOWING, CURSORINFO, EnumWindows, GWL_EXSTYLE, GetCursorInfo, GetCursorPos, GetWindowLongPtrW, IsIconic,
-    IsWindowVisible, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+    CURSOR_SHOWING, CURSORINFO, EnumWindows, GWL_EXSTYLE, GetCursorInfo, GetCursorPos, GetWindowLongPtrW, GetWindowTextW,
+    IsIconic, IsWindowVisible, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
 };
 use windows::core::BOOL;
 
@@ -14,7 +14,14 @@ const SHELL_CLASSES: [&str; 4] = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_
 
 struct Ctx<'a> {
     own: &'a [isize],
-    out: Vec<WinInfo>,
+    out: Vec<(WinInfo, HWND)>,
+}
+
+/// Une fenêtre de l'ordre Z avec de quoi la reconnaître (sonde `examples/fullscreen_probe`).
+pub struct Described {
+    pub info: WinInfo,
+    pub class: String,
+    pub title: String,
 }
 
 unsafe extern "system" fn callback(h: HWND, data: LPARAM) -> BOOL {
@@ -39,16 +46,33 @@ unsafe extern "system" fn callback(h: HWND, data: LPARAM) -> BOOL {
     let ignorable = overlay
         || ctx.own.contains(&(h.0 as isize))
         || SHELL_CLASSES.contains(&class_name(h).as_str());
-    ctx.out.push(WinInfo { rect, ignorable });
+    ctx.out.push((WinInfo { rect, ignorable }, h));
     true.into()
 }
 
-/// Fenêtres visibles, dessus d'abord ; `own` = fenêtres d'Horizon (ignorées).
-pub fn windows_z_order(own: &[isize]) -> Vec<WinInfo> {
+fn enumerate(own: &[isize]) -> Vec<(WinInfo, HWND)> {
     let mut ctx = Ctx { own, out: Vec::new() };
     // SAFETY : énumération synchrone, le pointeur sur `ctx` reste valide pendant l'appel.
     let _ = unsafe { EnumWindows(Some(callback), LPARAM(&mut ctx as *mut _ as isize)) };
     ctx.out
+}
+
+/// Fenêtres visibles, dessus d'abord ; `own` = fenêtres d'Horizon (ignorées).
+pub fn windows_z_order(own: &[isize]) -> Vec<WinInfo> {
+    enumerate(own).into_iter().map(|(info, _)| info).collect()
+}
+
+/// Les mêmes fenêtres, avec leur classe et leur titre.
+pub fn describe_z_order(own: &[isize]) -> Vec<Described> {
+    enumerate(own)
+        .into_iter()
+        .map(|(info, h)| {
+            let mut buf = [0u16; 160];
+            // SAFETY : tampon de la taille annoncée.
+            let n = unsafe { GetWindowTextW(h, &mut buf) }.max(0) as usize;
+            Described { info, class: class_name(h), title: String::from_utf16_lossy(&buf[..n]) }
+        })
+        .collect()
 }
 
 /// Position du curseur en pixels physiques.

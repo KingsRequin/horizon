@@ -45,16 +45,21 @@ pub struct WinInfo {
     pub ignorable: bool,
 }
 
-/// Vrai si la fenêtre couvre tout l'écran. Une fenêtre simplement maximisée s'arrête sous la
-/// place réservée à la barre ; une vidéo plein écran d'un navigateur maximisé reste dite
-/// « maximisée » par Windows mais couvre tout : seule la surface compte.
+/// Écart toléré entre le bord d'une fenêtre et celui de l'écran qu'elle couvre (pixels) : un
+/// navigateur Chromium réduit d'un pixel sa fenêtre plein écran dès qu'elle n'a plus le premier
+/// plan (clic sur un autre écran), et la vidéo reste pourtant affichée en entier.
+const FULLSCREEN_SLACK: i32 = 1;
+
+/// Vrai si la fenêtre couvre tout l'écran (à `FULLSCREEN_SLACK` près). Une fenêtre simplement
+/// maximisée s'arrête sous la place réservée à la barre ; une vidéo plein écran d'un navigateur
+/// maximisé reste dite « maximisée » par Windows mais couvre tout : seule la surface compte.
 pub(crate) fn is_fullscreen_on(w: &WinInfo, m: &MonitorInfo) -> bool {
     let (r, s) = (w.rect, m.rect);
     !w.ignorable
-        && r.x <= s.x
-        && r.y <= s.y
-        && r.x + r.w >= s.x + s.w
-        && r.y + r.h >= s.y + s.h
+        && r.x <= s.x + FULLSCREEN_SLACK
+        && r.y <= s.y + FULLSCREEN_SLACK
+        && r.x + r.w >= s.x + s.w - FULLSCREEN_SLACK
+        && r.y + r.h >= s.y + s.h - FULLSCREEN_SLACK
 }
 
 fn intersects(a: Rect, b: Rect) -> bool {
@@ -156,6 +161,17 @@ mod tests {
         assert!(is_fullscreen_on(&win(0, 0, 1920, 1080), &m));
         // Un peu plus grand (bordures invisibles) : toujours plein écran.
         assert!(is_fullscreen_on(&win(-8, -8, 1936, 1096), &m));
+    }
+
+    #[test]
+    fn background_browser_video_stays_fullscreen() {
+        let m = monitor(0, 0, 1920, 1080, 1.0);
+        // Vidéo plein écran de Vivaldi ou Chrome après un clic sur un autre écran : le
+        // navigateur lui retire un pixel en bas.
+        assert!(is_fullscreen_on(&win(0, 0, 1920, 1079), &m));
+        // Plus court de deux pixels, ou sous une barre même fine : ce n'est plus du plein écran.
+        assert!(!is_fullscreen_on(&win(0, 0, 1920, 1078), &m));
+        assert!(!is_fullscreen_on(&win(0, 2, 1920, 1078), &m));
     }
 
     #[test]
