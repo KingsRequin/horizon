@@ -85,13 +85,20 @@ raccourcis, les applis du menu Démarrer, les sorties audio, le minuteur, les pr
 | 🔔 **Notifications** | Notifications de Windows avec îlot dynamique, Ne pas déranger, appli coupée |
 | 📊 **Système** | Processeur, carte graphique, mémoire, en courbes ou en jauges |
 | 🎙️ **Micro et audio** | Périphériques par défaut, favoris, volume par appli |
-| 🤖 **Claude Code** | Sessions (travaille, attend, demande d'autorisation), consommation, terminal ramené au premier plan ; quota de l'abonnement |
 | 🎧 **Batterie du casque** | Plus de 30 casques sans fil lus directement (Logitech, SteelSeries, HyperX, Razer, Corsair, Astro, Audeze, JBL) |
 | 🌤️ **Météo**, 📅 **Agenda** | Open-Meteo ; toute adresse iCal (Google, Outlook…) |
-| 🖥️ **Serveurs** | Hôtes de `~/.ssh/config`, état et latence, SSH en un clic |
 | 🪟 **Fenêtres** | Fenêtres ouvertes par écran ; en ramener une sur l'écran courant (clic) ou l'envoyer vers un autre (clic droit) |
 | ✨ **Suggestions** | Applis et sites que tu utilises à cette heure-ci |
-| 🌀 **[Essaim](https://github.com/KingsRequin/essaim)** | Pause et réglages du curseur animé qui suit la musique |
+| 🤖 **Claude Code** | *Module intégré, à activer.* Sessions (travaille, attend, demande d'autorisation), consommation, terminal ramené au premier plan |
+| 🖥️ **Serveurs** | *Plugin.* Hôtes de `~/.ssh/config`, état et latence, SSH en un clic |
+| 🌀 **[Essaim](https://github.com/KingsRequin/essaim)** | *Plugin.* Pause et choix du preset du curseur animé qui suit la musique |
+| 📈 **Quota Claude** | *Plugin.* Quota de l'abonnement Claude : session de 5 h, semaine, limites par modèle |
+
+Une barre neuve ne contient que l'essentiel : lecture en cours, raccourcis, notifications,
+système, horloge. Le reste s'ajoute : les autres widgets par le <kbd>+</kbd> du mode édition ;
+les modules intégrés (à activer) et les plugins de la
+[bibliothèque](https://github.com/KingsRequin/horizon-plugins) (installés d'un clic) dans
+*Réglages d'Horizon › Plugins*.
 
 **Et aussi :** minuteur et pomodoro, affichage du volume et du média à la place de celui de
 Windows, couleur d'accent tirée du fond d'écran, mode jeu, profils de disposition par appli,
@@ -142,6 +149,10 @@ Si Claude Code est installé, l'installateur propose (case cochée) d'ajouter le
 dans `%USERPROFILE%\.claude\settings.json` (une copie de sauvegarde est gardée). Ils ne font que
 signaler les événements à Horizon et ne répondent jamais aux demandes d'autorisation.
 Décoche la case pour s'en passer ; la désinstallation les retire.
+
+Le suivi des sessions est un module intégré : avec les hooks, il est activé (son widget s'ajoute
+par le <kbd>+</kbd> du mode édition) ; sans eux, sur une installation neuve, rien ne tourne. Il
+s'active et se désactive dans *Réglages d'Horizon › Plugins*.
 </details>
 
 <details>
@@ -153,9 +164,10 @@ dans le menu du clic droit sur une barre → *Réglages d'Horizon*.
 
 ## Feuille de route
 
-- **Plugins** : des widgets dans leur propre dossier (interface Slint + JavaScript), chargés
-  sans redémarrer, avec un [guide pour les écrire avec une IA](docs/PLUGINS.md) (préversion) ;
-  à venir : une bibliothèque sur GitHub.
+- **Plugins** (préversion, l'API peut encore changer) : des widgets dans leur propre dossier
+  (interface Slint + JavaScript), chargés sans redémarrer. Ils s'installent d'un clic depuis la
+  [bibliothèque](https://github.com/KingsRequin/horizon-plugins) (*Réglages d'Horizon ›
+  Plugins*) ou s'écrivent avec une IA grâce au [guide](docs/PLUGINS.md).
 - **Traductions.**
 
 ## Fait avec Claude Code

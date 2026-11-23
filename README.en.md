@@ -89,13 +89,20 @@ shortcuts, Start menu apps, audio devices, timer, profiles and more.
 | 🔔 **Notifications** | Windows notifications with a dynamic island, Do not disturb, mute per app |
 | 📊 **System** | CPU, GPU, memory as graphs or gauges |
 | 🎙️ **Microphone & audio** | Default devices, favorites, per-app volume |
-| 🤖 **Claude Code** | Sessions (working, waiting, permission requests), token usage, bring the terminal back; subscription quota |
 | 🎧 **Headset battery** | 30+ wireless headsets read directly over HID (Logitech, SteelSeries, HyperX, Razer, Corsair, Astro, Audeze, JBL) |
 | 🌤️ **Weather**, 📅 **Calendar** | Open-Meteo; any iCal address (Google, Outlook…) |
-| 🖥️ **Servers** | Hosts from `~/.ssh/config`, online status and latency, SSH in one click |
 | 🪟 **Windows** | Open windows per screen; bring one to the current screen (click) or send it to another one (right-click) |
 | ✨ **Suggestions** | Apps and sites you use at this time of day |
-| 🌀 **[Essaim](https://github.com/KingsRequin/essaim)** | Pause and tune the music-reactive cursor |
+| 🤖 **Claude Code** | *Built-in module, off until enabled.* Sessions (working, waiting, permission requests), token usage, bring the terminal back |
+| 🖥️ **Servers** | *Plugin.* Hosts from `~/.ssh/config`, online status and latency, SSH in one click |
+| 🌀 **[Essaim](https://github.com/KingsRequin/essaim)** | *Plugin.* Pause the music-reactive cursor and pick its preset |
+| 📈 **Claude quota** | *Plugin.* Claude subscription quota: 5-hour session, week, per-model limits |
+
+A new bar only holds the essentials: now playing, shortcuts, notifications, system, clock.
+Everything else is added by you: the other widgets with <kbd>+</kbd> in edit mode; built-in
+modules (to enable) and plugins from the
+[library](https://github.com/KingsRequin/horizon-plugins) (one-click install) in
+*Réglages d'Horizon › Plugins*.
 
 **And also:** timer and pomodoro, volume and media on-screen display in place of Windows',
 accent color from the wallpaper, game mode, layout profiles per app, status page that tells you
@@ -141,6 +148,10 @@ unsigned one, which Windows accepts in developer mode only. Details in
 If Claude Code is installed, the installer offers (ticked by default) to add Horizon's hooks to
 `%USERPROFILE%\.claude\settings.json` (a backup is kept). They only report events to Horizon;
 they never answer permission requests. Untick the box to skip them; uninstalling removes them.
+
+Session tracking is a built-in module: with the hooks it is enabled (add its widget with
+<kbd>+</kbd> in edit mode); without them, on a fresh install, nothing runs. Turn it on or off
+in *Réglages d'Horizon › Plugins*.
 </details>
 
 <details>
@@ -152,9 +163,11 @@ menu of a bar → *Réglages d'Horizon*.
 
 ## Roadmap
 
-- **Plugins** — widgets in their own folder (Slint interface + JavaScript), loaded without
-  restarting, with a [guide to write them with an AI assistant](docs/PLUGINS.md) (preview, in
-  French — AI assistants read it fine); coming next: a library on GitHub.
+- **Plugins** (preview, the API may still change) — widgets in their own folder (Slint
+  interface + JavaScript), loaded without restarting. Install them in one click from the
+  [library](https://github.com/KingsRequin/horizon-plugins) (*Réglages d'Horizon › Plugins*),
+  or write your own with an AI assistant and the [guide](docs/PLUGINS.md) (in French — AI
+  assistants read it fine).
 - **Translations.**
 
 ## Built with Claude Code

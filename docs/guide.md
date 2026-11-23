@@ -38,19 +38,25 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   sessions Claude) sont limités : ils montrent ce qui tient et une pastille « +N », dont le
   survol ouvre un panneau avec tous les éléments. Aucun widget n'est masqué tant que ça suffit ;
   en tout dernier recours, des widgets secondaires le sont (suggestions, météo, éclairage…).
-  Barre large (écran du haut) : serveurs avec leur nom, lieu de l'événement, prochaine remise à
-  zéro du quota, ancienneté de la notification, message des sessions Claude.
+  Barre large (écran du haut) : lieu de l'événement, ancienneté de la notification, message des
+  sessions Claude.
 - Widgets : lecture en cours (pochette, commandes, molette ±10 s avec bulle « +20 s · 2:43 »),
   raccourcis à icône libre (logo,
   image ou icône de l'appli sans flèche), notifications (et îlot dynamique), processeur / GPU /
-  mémoire (courbes ou jauges, détail au survol), micro, horloge, sessions Claude Code,
-  quota Claude, suggestions selon l'usage (applis utilisées, historique de Vivaldi), batterie du
+  mémoire (courbes ou jauges, détail au survol), micro, horloge, sessions Claude Code (module
+  intégré, à activer), suggestions selon l'usage (applis utilisées, historique de Vivaldi), batterie du
   casque, météo (Open-Meteo ; une à trois villes dans les réglages : la première dans la barre, toutes
   résumées dans le panneau, un clic montre le détail de l'une), agenda (adresses iCal secrètes, lien de
-  visio), serveurs (`~/.ssh/config`), fenêtres ouvertes par écran (clic : ramener ici ; clic
-  droit : envoyer vers un autre écran), et
-  [Essaim](https://github.com/KingsRequin/essaim) (curseur animé qui suit la musique : pause et
-  réglages en direct ; le widget n'apparaît que quand Essaim tourne).
+  visio), fenêtres ouvertes par écran (clic : ramener ici ; clic droit : envoyer vers un autre
+  écran). Serveurs, [Essaim](https://github.com/KingsRequin/essaim) et Quota Claude sont des
+  plugins de la bibliothèque (voir « Plugins »).
+- **Barre de départ** : une installation neuve ne reçoit que l'essentiel (gauche | centre |
+  droite). Écran principal : lecture en cours | raccourcis | notifications, système, horloge ;
+  écran du haut : horloge (avec la date) | lecture en cours | notifications, système ; écran
+  vertical : raccourcis | notifications, système, horloge ; autre écran : raccourcis | lecture en
+  cours | système, horloge. Tout le reste s'ajoute : les widgets d'Horizon par le « + » du mode
+  édition, les modules intégrés et les plugins par Réglages d'Horizon › Plugins. Une mise à jour
+  ne pose jamais de widget sur une barre existante.
 - **Raccourcis** : pastille sous l'icône quand l'appli a une fenêtre ouverte (relevé léger des
   fenêtres toutes les 2 s et à chaque changement de premier plan ; `.lnk`, exe et
   `shell:AppsFolder`, pas les URL ni les `.url`). Clic = l'appli ouverte revient au premier
@@ -58,8 +64,8 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
 - **Ne pas déranger** (bouton du panneau des notifications, ou clic droit sur une barre → « Ne
   pas déranger » ; gardé dans `%APPDATA%\Horizon\dnd.json`) : l'îlot ne montre plus les
   notifications (elles restent dans le panneau) ; lune à la place de la cloche. « Réglages… » du
-  widget Notifications : « Claude attend » et alertes d'état (batterie faible, serveur hors
-  ligne) restent affichés (par défaut oui).
+  widget Notifications : « Claude attend » et alertes d'état (batterie faible) restent affichés
+  (par défaut oui). Les alertes des plugins sont masquées.
 - **Notifications** : clic sur une notification du panneau = son appli (elle devient lue) ; au
   survol, « Écarter » (retirée aussi du centre de notifications de Windows) et « Couper »
   l'appli (plus d'îlot ni de compte dans Horizon ; liste « Coupées » en bas du panneau,
@@ -72,26 +78,18 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   Minuteur) ; compte à rebours à côté de l'horloge, pause, « +5 min », arrêt. Fin ou changement de phase : alerte dans l'îlot
   (même en NPD). Option « Ne pas déranger pendant la séance » (pas pendant les pauses du
   pomodoro). L'état est tenu par Rust (partagé par les barres).
-- **Serveurs (homelab)** : hôtes lus dans `~/.ssh/config` (blocs `Host` sans joker ; seuls
-  `HostName`, `Port` et `User` sont lus, jamais les clés), testés toutes les 60 s (et à la sortie
-  de veille, à l'ouverture du panneau) par une connexion TCP (port de ssh, 22 par défaut) ou une
-  requête HTTP(S). Pastille verte, orange au-delà de 300 ms, rouge hors ligne, et nombre d'hôtes
-  hors ligne. Panneau (barre cliquable) : latence, dernier changement, « Terminal SSH » (Windows
-  Terminal, sinon `ssh` dans une console) et interface web. Chute et retour annoncés dans l'îlot
-  (hors ligne après deux échecs de suite). Réglages du widget : renommer, masquer, test et port,
-  adresse web, serveurs ajoutés à la main. Ajouté une fois à la fin de la zone gauche de l'écran
-  du haut (« Survol seul » : panneau au survol ; terminal SSH depuis une barre cliquable ou la
-  palette).
 - **Palette de commandes** : Ctrl+Alt+P (`[palette]` `hotkey` dans `settings.toml`, par
   exemple `"Win+Shift+P"` ; vide = désactivée ; relu au démarrage, raccourci déjà pris signalé
   dans le journal). Fenêtre au centre de l'écran de la souris : raccourcis des barres,
   suggestions, applis du menu Démarrer, profils, sorties audio et micros, micro, sortie audio
   suivante, sessions Claude (Entrée = terminal, Tab = oublier), « Ne pas déranger », minuteur
   (préréglages, pomodoro, pause, +5 min, arrêt), lecture / pause / suivant / précédent,
-  recharger les barres, mode édition, réglages, quitter, terminal SSH des serveurs. Recherche
+  recharger les barres, mode édition, réglages, quitter, entrées des plugins (le plugin Serveurs
+  y met « SSH : nom » et « Web : nom »). Recherche
   floue (lettres dans l'ordre, débuts de mot, usage : `palette.json`). ↑↓, Entrée, Tab (action
-  secondaire : interface web d'un serveur, emplacement d'une appli), Échap ou clic ailleurs ferme.
-- **Sessions Claude Code** (hooks, voir Installation) : au survol du widget, panneau des
+  secondaire : emplacement d'une appli, oublier une session), Échap ou clic ailleurs ferme.
+- **Sessions Claude Code** (module intégré, à activer : voir « Plugins » ; hooks, voir
+  Installation) : au survol du widget, panneau des
   sessions (projet, état travaille / attend / terminé et depuis quand, message d'attente ou
   début de la dernière réponse, branche git, fichiers modifiés, commits non poussés ; git relu à
   chaque fin de réponse et à l'ouverture du panneau). Clic sur une session (panneau ou pastille)
@@ -161,7 +159,7 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
 - Batterie faible du casque : annoncée une fois dans l'îlot dynamique quand le niveau passe
   sous le seuil (15 % par défaut, « Réglages… » du widget, ou aucune alerte) ; réarmée après une
   remontée de 5 points ou une charge.
-- Sortie de veille : météo, agenda, quota et casque sont relus une fois le réseau revenu. La
+- Sortie de veille : météo, agenda et casque sont relus une fois le réseau revenu. La
   météo d'une ville n'est chargée qu'une fois pour toutes les barres et le panneau.
 - **Mises à jour** (`[features] auto_update`, Réglages d'Horizon › Général) : une version
   installée depuis les Releases cherche la dernière version sur GitHub une minute après le
@@ -197,15 +195,48 @@ recharge à chaque modification d'un de ses fichiers. Deux exemples :
 [`examples/plugins/`](../examples/plugins) (un compteur avec script, panneau et réglage ; un
 chronomètre en Slint seul).
 
-- **Ajouter un plugin** : copier son dossier dans `plugins`, puis l'ajouter à une barre en mode
-  édition (*Ajouter un widget*). Page « Plugins » : une tuile par plugin (état, coût,
-  action).
+- **Ajouter un plugin** : page « Plugins » (Réglages d'Horizon › Plugins), rubrique
+  « Bibliothèque » : les plugins publiés sur GitHub
+  ([KingsRequin/horizon-plugins](https://github.com/KingsRequin/horizon-plugins)), avec ce que
+  chacun demande ; *Installer* le télécharge (taille et empreinte SHA-256 vérifiées), puis il
+  s'ajoute à une barre en mode édition (*Ajouter un widget*). Un plugin installé de là se met à
+  jour seul (liste relue 90 s après le démarrage puis toutes les 6 h) et se retire depuis sa
+  tuile. À la main : copier son dossier dans `plugins`. Rubrique « Installés » : une tuile par
+  plugin (état, coût, action).
+- **Dans la bibliothèque** :
+  *Serveurs (homelab)* : hôtes de `~/.ssh/config` et machines ajoutées à la main, testés toutes
+  les 60 s (port TCP ou requête HTTP(S)), hors ligne après deux échecs de suite ; chute et retour
+  annoncés dans l'îlot (alerte de plugin : masquée pendant « Ne pas déranger ») ; terminal SSH
+  et interface web depuis le panneau ou la palette ; réglages en liste (une ligne avec l'alias
+  ssh d'un hôte le renomme, le règle ou le masque ; une ligne avec une adresse ajoute une
+  machine).
+  *Essaim (curseur)* : pause d'un clic, choix du preset (Essaim 0.13 ou plus récent), ouverture
+  des réglages d'Essaim.
+  *Quota Claude* : session de 5 h, semaine, limites par modèle, lus à l'API d'Anthropic avec la
+  connexion de Claude Code (`%USERPROFILE%\.claude\.credentials.json` ; `CLAUDE_CONFIG_DIR`
+  n'est pas suivi).
+- **Anciens widgets d'Horizon** : Serveurs, Essaim et Quota Claude étaient intégrés. À la mise à
+  jour, leur plugin prend la place du widget sur les barres (même place, mêmes réglages) :
+  Horizon le télécharge au démarrage et accepte d'office ce qu'il demande, puisque la fonction
+  tournait déjà avec ces droits. Hors ligne, il réessaie (après 1 min, 5 min, puis toutes les
+  30 min) et à chaque lancement.
+- **Modules intégrés** (même page) : des fonctions qui restent dans Horizon, parce qu'elles
+  demandent plus que ce qu'un plugin peut faire, mais ne tournent que si elles sont activées
+  (*Activer* / *Désactiver*). Aujourd'hui : Sessions Claude Code. Désactivé : pas de widget
+  (barres, menu « + », réglages), hooks ignorés et récepteur non démarré au lancement, lignes
+  « Hooks Claude Code » et « Autorisations Claude » absentes de la page « État », réglages
+  « Claude attend » et « Captures d'écran vers Claude » absents de la page « Alertes ».
+  `[features] claude_sessions` dans `settings.toml` ; non réglé, le module n'est activé que si
+  son widget est déjà sur une barre ou si les hooks d'Horizon sont dans les réglages de Claude
+  Code : rien ne change pour une installation existante, et une installation neuve ne lance rien
+  tant que l'installateur n'a pas posé les hooks ou que le module n'est pas activé.
 - **Écrire un plugin** : page « Plugins » › *Nouveau plugin* crée un modèle (posé sur la barre
   principale, dossier ouvert) avec le guide [PLUGINS.md](PLUGINS.md), écrit pour être donné à
   une IA. `horizon.exe --check-plugin <dossier>` vérifie un plugin sans le charger (erreurs
   avec fichier et ligne).
 - **Accord** : un plugin qui veut se connecter à une application du PC, lire un fichier, joindre
-  un site ou recevoir des événements d'Horizon le déclare ; rien n'est chargé tant que ces
+  un site, tester si des machines répondent, ouvrir un terminal SSH ou recevoir des événements
+  d'Horizon le déclare ; rien n'est chargé tant que ces
   demandes n'ont pas été acceptées (page « Plugins » › *Autoriser*, avec la liste en clair). Une
   mise à jour du plugin qui demande plus redemande l'accord.
 - **Bac à sable** : le script n'a que l'objet `horizon` (ni fichiers, ni réseau, ni programmes
@@ -217,8 +248,9 @@ chronomètre en Slint seul).
   compte (pas les ralentissements du PC). Un plugin absent de toutes les barres ne coûte rien.
 - **Réglages** : ceux que le plugin déclare apparaissent dans *Réglages…* de son widget ; un
   secret (jeton, mot de passe) est gardé dans le Gestionnaire d'identifiants de Windows.
-- **Préversion** : l'API (`"api": 0`) peut encore changer ; elle sera figée à l'ouverture de la
-  bibliothèque de plugins.
+- **Préversion** : l'API peut encore changer. `"api"` est le niveau dont le plugin a besoin
+  (`0` ou `1`) ; une version d'Horizon plus ancienne ne propose pas un plugin d'un niveau
+  qu'elle ne connaît pas.
 
 ## Installation
 
@@ -253,4 +285,6 @@ connaît la batterie. Sonde : `cargo run -p horizon-sys --example headset_probe`
 - `tmp\` : copies temporaires de l'historique et des icônes de Vivaldi (lues sans le verrouiller) ;
 - `horizon.log` : journal.
 
-Ports locaux : récepteur des hooks `127.0.0.1:28660` ; client d'Essaim `ws://127.0.0.1:28670`.
+Ports locaux : récepteur des hooks `127.0.0.1:28660` (module Sessions Claude Code activé). Le
+client d'Essaim n'est plus dans Horizon : c'est le plugin Essaim qui se connecte à
+`ws://127.0.0.1:28670`.

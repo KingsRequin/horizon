@@ -62,8 +62,9 @@ natif/
     host/               ce qui imite Tauri (AppHandle, Manager, Emitter, événements)
     state.rs, util.rs, bars.rs, autohide.rs, resume.rs, presence.rs, foreground.rs,
     game.rs, comfort.rs, tray.rs     modules repris de app/src-tauri/src (voir plus bas)
-    prisme.rs, relay.rs, wsclient.rs, web.rs, brands.rs, mixer.rs   services partagés
-    alerts.rs, phone.rs, status.rs   îlot dynamique, appels du téléphone, état des intégrations
+    relay.rs, wsclient.rs, web.rs, brands.rs, mixer.rs   services partagés
+    alerts.rs, status.rs   îlot dynamique, état des intégrations
+    modules.rs          modules intégrés (Sessions Claude Code) : activés ou non
     accent.rs, osd.rs   accent (pochette, fond d'écran, Prisme, Windows) et affichage du volume
     options.rs          « Réglages d'Horizon » : état, enregistrement, options des barres,
                         raccourci ; règles pures testées ;
@@ -78,6 +79,7 @@ natif/
     journal.rs          journal
     ui/                 liaison des fenêtres Slint (bar.rs, popup.rs, essai.rs) et briques
     widgets/            catalogue (manifestes, BACKENDS) et un module par widget
+    plugins/            hôte des plugins, bibliothèque (voir « Plugins »)
 ```
 
 ## Plateforme (`src/platform`)
@@ -205,17 +207,17 @@ déranger », recharger, démarrage avec Windows, journal, quitter) ; `state.rs`
 - **Réglages d'un widget** (`ui/widget-settings/`, `src/ui/widget_settings/`, repris de
   SettingsApp.svelte et des `Settings.svelte`) : en-tête (nom du widget, « Les modifications sont
   enregistrées automatiquement. »), puis la page du genre : Agenda (adresses iCal, nom, couleur
-  gardée, « Tester » et lecture à l'ouverture, `calendar::calendar_test`), Serveurs (hôtes de
-  ssh et ajoutés, test, port vérifié, `servers_test`, sondage 800 ms après), Raccourcis (liste
+  gardée, « Tester » et lecture à l'ouverture, `calendar::calendar_test`), Raccourcis (liste
   glissable, cible avec « Parcourir… », icône logo / image / appli, recherche de logos
   `brands::search`, couleur par le sélecteur de Windows), Suggestions (exclusions, retrait
   différé), Météo (recherche `weather::weather_search` 350 ms après la frappe), Micro et Krisp
-  (une case) ; Batteries, Casque, Sessions Claude, Notifications : `GlobalLink`. Chaque
+  (une case) ; Casque, Sessions Claude, Notifications : `GlobalLink` ; plugins : page générée
+  depuis les réglages de leur manifeste (`plugin.slint`, `plugin.rs`). Chaque
   modification fusionne ses champs dans les réglages (`save`), enregistrés 300 ms après la
   dernière par `edit::edit_set_widget_settings` (une étape d'annulation par ouverture) ; les barres suivent aussitôt (`EV_LAYOUT`, liaisons refaites ;
   Agenda : une liste d'adresses nouvelle est lue tout de suite, `calendar::request`). Ouverte
   par « Réglages… » (menu d'un widget en édition), « Réglages de « X »… » (menu de la barre) et
-  `Panels.settings(id)` (widget pas encore réglé cliqué : Météo, Raccourcis, Serveurs, Agenda).
+  `Panels.settings(id)` (widget pas encore réglé cliqué : Météo, Raccourcis, Agenda).
 - **Profils** (`ui/profiles/page.slint`, `src/ui/profiles.rs`, repris de ProfilesEditor.svelte) :
   renommer, activer, supprimer (différé, annulable, au moins un profil), applis associées
   (retrait annulable, ajout parmi les applis récentes du journal : « sera retirée de « X » »),
@@ -250,7 +252,8 @@ déranger », recharger, démarrage avec Windows, journal, quitter) ; `state.rs`
   de Slint (puces d'applis des profils).
 - **« Réglages d'Horizon »** (`ui/options/`, global `OptionsData`, `src/ui/options.rs`,
   `src/options.rs`) : recherche (`horizon_core::options_search`, un clic mène à la section), sections Barres,
-  Apparence, Son et média, Alertes, Minuteur, Palette, Plugins (tuiles, `src/ui/plugin_tiles.rs`),
+  Apparence, Son et média, Alertes, Minuteur, Palette, Plugins (tuiles des plugins installés, des
+  modules intégrés et de la bibliothèque, `src/ui/plugin_tiles.rs`),
   Général, État (`options_search::SECTIONS`, anciens noms « fonctions » et « nuit » repris). Une option se désigne par son chemin dans
   `settings.toml` (« features.osd ») : `options::apply_edit` (règles et bornes des sections,
   testées), affichée tout de suite, enregistrée 400 ms après la dernière modification
@@ -297,7 +300,7 @@ déranger », recharger, démarrage avec Windows, journal, quitter) ; `state.rs`
   reliés de nouveau avec `host::scoped` / `unlisten_scope`. Un widget de cette liste dont la
   liaison garde une liste de fenêtres doit remplacer l'entrée de la même fenêtre (agenda,
   horloge, lecture en cours).
-- **Interface** `src/ui/edit.rs` : entrée (menu, îlot « Nouveautés », icône de notification),
+- **Interface** `src/ui/edit.rs` : entrée (menu, icône de notification, palette),
   sortie (Échap, « Terminé », menu, perte du premier plan sauf pendant un menu), Ctrl+Z,
   Ctrl+Y / Ctrl+Maj+Z, aide sous la barre (`ui::popup::show_help`, `ui/edit-help.slint`),
   menus du clic droit (`platform::on_context`, survol des emplacements) et du « + »,
@@ -355,12 +358,13 @@ Une seule brique par rôle ; tout widget passe par elles.
 - **Îlot dynamique** : service `src/alerts.rs` (`alerts::show(app, AlertKind, Alert)`, filtré
   par « Ne pas déranger » ; `Alert::icon` / `Alert::app`, `with_action`, `with_image` ;
   `LowBattery` pour les seuils de `[alerts]`), affichage `src/ui/island.rs` (durée 3,2 s ou
-  `hold_ms`, fondu de sortie, appel du téléphone qui dure, clic = action) et `ui/flash.slint`
+  `hold_ms`, fondu de sortie, activité d'un plugin qui dure, clic = action) et `ui/flash.slint`
   (global `FlashData`, le même dans toutes les barres ; `FlashCard` + `FlashGlow` dans l'îlot de
   Lecture en cours en style îlots, `FlashLine` dans le widget Notifications en style graphique
   ou sur une barre sans Lecture en cours : `FlashData.media-host`). Émetteurs : notifications,
-  Claude attend, captures, batteries, casque, serveurs, minuteur, fenêtre non déplacée,
-  nouveautés.
+  Claude attend, captures, casque, minuteur, fenêtre non déplacée, mise à jour, plugins
+  (`horizon.alert`, `AlertKind::Plugin` : masquée pendant « Ne pas déranger »). Essai, instance
+  en cours : `horizon.exe --alerte-essai notification|claude|batterie|minuteur|fenetre|capture`.
 - **Témoins de la barre principale** `ui/bar-status.slint` + `src/ui/bar_status.rs` : profil
   actif autre que le premier, « ! » des intégrations en échec (`src/status.rs`) ; largeur
   comptée dans la zone gauche (`#status`).
@@ -372,12 +376,13 @@ Une seule brique par rôle ; tout widget passe par elles.
   `src/ui/images.rs` (images chargées à la demande : icônes d'exe, favicons ; cache),
   `src/ui/icons.rs` (icônes choisies à l'exécution), `src/web.rs` (HTTP borné, lien ouvert
   dans le navigateur), `src/brands.rs` (logos Simple Icons), `src/wsclient.rs` +
-  `src/relay.rs` (relais Discord), `src/prisme.rs` (lien avec Prisme).
+  `src/relay.rs` (relais Discord).
 - Catalogue `src/widgets/mod.rs` : `Backend { id, name, manage, start, bind, exit, panel }` de chaque
   widget porté dans `BACKENDS` (ordre alphabétique, vérifié par un test) ; `manage_all` avant
-  les barres, `start_all` après le cœur et avant le premier plan (widgets personnels sautés
-  dans l'édition partagée), `bind_all` à la création de chaque barre (avant ses
-  emplacements), `exit_all` à l'arrêt ; `instances`, `data_index`, `clicks_on`.
+  les barres, `start_all` après le cœur et avant le premier plan (le widget d'un module intégré
+  désactivé est sauté ; `start_one` le démarre s'il est activé ensuite), `bind_all` à la création
+  de chaque barre (avant ses emplacements), `exit_all` à l'arrêt ; `instances`, `data_index`,
+  `clicks_on`.
 
 ## Panneaux (fenêtre surgissante)
 
@@ -405,9 +410,8 @@ Une seule fenêtre layered pour tous les panneaux (`ui/popup.slint`, `PanelWindo
   rayon `island-radius + 3px` ; fondu d'entrée (opacité, 4 px), jamais d'animation continue ;
   panneau fermé = déchargé (`kind` vide : ses éléments et minuteurs Slint disparaissent) ;
 - ce que lisent les autres fils : `popup::PopupState` (`is_open("system")`,
-  `is_open_kind("servers")`, `is_shown("servers")` : montré en surgissant ou en tuile),
-  `popup::screen(app)` (écran du dernier panneau) ; `autohide` compte la fenêtre parmi les
-  nôtres.
+  `is_open_kind("weather")`), `popup::screen(app)` (écran du dernier panneau) ; `autohide`
+  compte la fenêtre parmi les nôtres.
 
 ### Fenêtres qui montrent les panneaux (`src/ui/panel_hosts.rs`)
 
@@ -423,7 +427,7 @@ crochets du `widgets::Panel` de chaque widget :
   quelque part / ne l'est plus nulle part (une barre cachée en plein écran ne compte pas) ;
 - `shown(app, host, genre)` / `hidden(app, host, genre)` : une fenêtre commence / cesse de le
   montrer, avec son exemplaire (« weather:w1 » ; une tuile a toujours le sien) — pour ce qui
-  dépend de la fenêtre (Météo, Agenda, Serveurs : l'exemplaire ; Fenêtres : l'écran de la barre,
+  dépend de la fenêtre (Météo, Agenda : l'exemplaire ; Fenêtres : l'écran de la barre,
   `panel_hosts::screen`).
 
 Écrire dans le panneau : `panel_hosts::each(genre, |h| …)` (la surgissante, toujours tenue à
@@ -485,9 +489,10 @@ panneau). Rust : `ui::model::sync`, `ui::time`, `ui::format`, `ui::icons::image`
 Une brique qui servirait à plusieurs panneaux et manque : la créer dans `ui/panel/` (un
 fichier), l'ajouter à ce tableau, et le signaler aux autres lots. Vues en vrai avec le panneau
 Lecture en cours : `PanelBase`, `PanelButton` (souris, Tab, anneau), `Divider`, `VolumeSlider`
-(affichage seulement : aucun réglage du volume pendant les essais). Vues avec les panneaux
-Audio, Éclairage, Essaim et Serveurs : `PanelHead`, `ListRow` (survol), `PanelScroll` (molette
-dans la gouttière et sur les lignes, barre), `Slider` et `CheckBox` (affichage). Compilées mais
+(affichage seulement : aucun réglage du volume pendant les essais). Vues avec le panneau Audio
+(et ceux d'Éclairage, d'Essaim et de Serveurs, devenus des plugins depuis) : `PanelHead`,
+`ListRow` (survol), `PanelScroll` (molette dans la gouttière et sur les lignes, barre), `Slider`
+et `CheckBox` (affichage). Compilées mais
 pas encore essayées : `EmptyState`, `ErrorLine`, `LinkButton`, glissement du `Slider`, molette
 d'un `VolumeSlider` dans un `PanelScroll` (vérifiée par le code : le curseur accepte l'événement,
 la liste ne défile pas).
@@ -508,7 +513,7 @@ widget). Modèle complet : Lecture en cours (`ui/widgets/media/panel.slint`,
 
 1. **Interface** `ui/widgets/<id>/panel.slint`, d'après `app/src/widgets/<id>/Panel.svelte` :
    `export component <Id>Panel inherits PanelBase { width: <largeur du .panel>; spacing: <gap>;
-   … }` (`<Id>` : identifiant en CamelCase, `claude_quota` → `ClaudeQuotaPanel`, vérifié par
+   … }` (`<Id>` : identifiant en CamelCase, `claude_sessions` → `ClaudeSessionsPanel`, vérifié par
    `ui/build.rs`). Il reçoit `t` (style de la barre), `instance` (« w1 » pour « weather:w1 ») et
    `pinned`. Ses données dans un global **du même fichier**, `<Id>PanelData` (structures
    `<Id>Panel…`) : tout `export global|struct|enum` du fichier est réexporté vers Rust, les noms
@@ -533,11 +538,11 @@ widget). Modèle complet : Lecture en cours (`ui/widgets/media/panel.slint`,
      minuteurs du panneau (`every(…)` de `now.svelte.ts` → `slint::Timer`) : rien ne tourne
      panneau fermé.
    - `shown(app, host, kind)` / `hidden(app, host, kind)` : ce qui dépend de la fenêtre ;
-     `kind` complet (« servers:w3 ») : poser les données de cet exemplaire dans cette fenêtre.
+     `kind` complet (« weather:w3 ») : poser les données de cet exemplaire dans cette fenêtre.
    - Un panneau montré en tuile ne ferme pas la fenêtre surgissante après une action
      (`host.inline()`).
 3. **Ce que lit un autre fil** : `app.state::<crate::popup::PopupState>().is_open("system")`
-   (mesures rapides panneau ouvert), `is_open_kind("servers")`, `is_shown("servers")`.
+   (mesures rapides panneau ouvert), `is_open_kind("weather")`.
 4. **Vérifier** : `scripts\verifier.ps1` (clippy et tests ;
    `every_panel_is_bound_by_its_backend` vérifie `panel.slint` ↔
    `Backend::panel`), puis en vrai (voir « Lancer ») : survol (aperçu), clic (épinglé, Tab,
@@ -559,7 +564,7 @@ Pièges propres aux panneaux :
 - Un texte qui passe à la ligne (`wrap`) posé dans une liste (`for`) ou une vue qui défile
   (`PanelScroll`) est mesuré sur une seule ligne tant que sa largeur vient de la mise en page :
   le panneau est trop court et son en-tête et son pied sont tassés. Lui donner une largeur fixe
-  (celle du panneau moins les marges ; panneaux Quota Claude et Sessions Claude).
+  (celle du panneau moins les marges ; panneau Sessions Claude).
 - Un `Text` de deux lignes au plus (`line-clamp: 2`) : `wrap: word-wrap; overflow: elide;
   max-lines: 2;` (une `max-height` laisse dessiner une troisième ligne).
 - Un `TouchArea` posé au-dessus d'une zone (frère placé après elle) lui prend le survol et le
@@ -590,39 +595,17 @@ Pièges propres aux panneaux :
 - Mesurer après `VecModel::set_vec` donne des largeurs périmées : passer par `measured`
   (largeur naturelle annoncée par l'interface).
 
-## Fenêtre Prisme (`src/prisme_window/`, `ui/prisme/`)
-
-Interface complète du moteur RGB (pages Lumière, Disposition, Effets, Automatique, Réglages),
-reprise de `app/src/apps/prisme/` et de `prisme_window.rs`. Ouverture : `prisme_window::open(app)`
-(panneau Éclairage « Ouvrir Prisme », `--prisme` au lancement ou d'un second lancement). Fenêtre
-ordinaire 1180 × 760 (minimum 900 × 600), centrée sur l'écran de la souris à son échelle, une
-seule à la fois, détruite à la fermeture.
-
-- Connexion propre à la fenêtre (`link.rs`, `ws://127.0.0.1:28650`, reconnexion 1,5 s), requêtes
-  (`calls.rs`), brouillon de la config enregistré seul après 180 ms, annulation groupée (Ctrl+Z,
-  `config.rs`). **Lecture seule** : `set_config_json`, `set_config`, `set_brightness` (et toute
-  commande inconnue) ne partent pas, ils sont journalisés ; la modification reste dans la fenêtre
-  (pied « Lecture seule : modification gardée ici »). `set_override`, `identify`, `discover`
-  partent (ils n'écrivent rien) : ne pas les cliquer pendant un essai.
-- Design propre (jetons de `apps/prisme/app.css` : `ui/prisme/theme.slint`, `PrismeTheme.live` =
-  teinte moyenne des LED) et contrôles propres (`ui/prisme/controls.slint` : `PButton`, `PField`,
-  `PSelect`, `PRange`, `PCheck`, `PColor`, `PSummary`, `PScroll`, `PRow`). Liste déroulante = menu
-  Windows sous l'élément (`ui::menu::show_at`) ; couleur = sélecteur de couleurs de Windows
-  (`ChooseColorW`, comme le navigateur).
-- Toiles (plan en direct, éditeur du plan) peintes par tiny-skia (`render.rs` : halos additifs,
-  formes anticrénelées) au rythme des images du moteur (≤ 15/s) ; textes posés par Slint
-  (`PrismeCanvas.labels`). Géométrie et modifications du plan : `plan.rs` (testé).
-- Écarts : police Inter au lieu de Segoe UI Variable, pas de halo flou de la pastille « actif »
-  (disque translucide), zone de texte du fichier brut non redimensionnable.
-
 ## Ajouter (ou porter) un widget natif
 
 Identifiant `<id>` : minuscules, chiffres et `_`, le même que dans `layout.json` et que le dossier
-de la version Tauri.
+de la version Tauri. Un nouveau widget n'est posé sur aucune barre : il s'ajoute par le menu
+« + » du mode édition. La barre de départ ne contient que l'essentiel (lecture en cours,
+raccourcis, notifications, système, horloge : `horizon_core::layout::defaults`) et plus aucune
+migration n'ajoute de widget aux barres existantes (`layout/migrations.rs`).
 
 1. **Manifeste** : `ui/widgets/<id>/widget.json` (même contenu que
-   `app/src/widgets/<id>/widget.json` : `label`, `icon`, `squeeze`, `clickableOnHover`,
-   `personal`…). `build.rs` le trouve seul et vérifie l'icône ; le widget apparaît aussitôt dans
+   `app/src/widgets/<id>/widget.json` : `label`, `icon`, `squeeze`, `clickableOnHover`).
+   `build.rs` le trouve seul et vérifie l'icône ; le widget apparaît aussitôt dans
    les barres comme emplacement nommé (`SlotView`). Un widget qui grandit avec son nombre
    d'éléments (raccourcis, sessions Claude) déclare `"grows": <largeur minimale en px>` : barre
    trop chargée, il reçoit `slot.limit`, montre ce qui tient puis `MoreChip` (« +N », panneau au
@@ -655,6 +638,32 @@ de la version Tauri.
 6. **Vérifier** : `scripts\verifier.ps1`, puis l'exe en vrai (voir « Lancer ») et des captures BitBlt des quatre écrans
    comparées à la version Tauri.
 
+## Modules intégrés (`src/modules.rs`)
+
+Une fonction qui demande plus que ce qu'un plugin peut faire reste dans l'exe, mais ne tourne
+que si elle est activée : page Plugins des réglages, rubrique « Modules intégrés » (tuiles de
+`ui::plugin_tiles::module_tiles`, actions `module_enable:<id>` / `module_disable:<id>` de
+`status::status_action`). Un module (`MODULES`) porte l'identifiant de son widget et de son
+`Backend` ; aujourd'hui : `claude_sessions`.
+
+- `modules::resolve(app)` au démarrage, avant les barres et les services : choix de
+  l'utilisateur (`[features] claude_sessions` de settings.toml), sinon activé seulement s'il
+  sert déjà (son widget est sur une barre, tous profils, ou les hooks d'Horizon sont dans le
+  `settings.json` de Claude Code). Une installation existante ne change donc pas ; une neuve ne
+  lance rien.
+- `modules::enabled(id)` : faux seulement pour un module désactivé. `widgets::manifest` ne
+  connaît alors plus son widget (ni barres, ni menu « + », ni réglages, ni panneau) et
+  `start_all` saute son service. À tester aussi là où le module se montre ailleurs : lignes de
+  la page État (`status.rs`), réglages de la page Alertes (`OptionsData.claude-sessions`), hooks
+  reçus (`claude_sessions::on_hook`).
+- `modules::set(app, id, on)` (fil de l'interface) : choix enregistré, service démarré aussitôt
+  (`widgets::start_one`) ou mis au repos (`claude_sessions::clear` : sessions oubliées, hooks
+  ignorés ; ses fils ne sont plus lancés au démarrage suivant), barres et page État mises à
+  jour.
+- Ajouter un module : une entrée dans `MODULES`, son réglage `Option<bool>` dans
+  `horizon_core::settings::features` (lu par `chosen`, écrit par `set`), ce qui prouve qu'il
+  sert déjà dans `in_use`.
+
 ## Plugins (`src/plugins/`)
 
 Hôte des plugins : `registry.rs` (dossier surveillé toutes les 500 ms, changement pris après
@@ -664,6 +673,22 @@ imports vérifiés par l'analyseur de Slint, rendu hors écran), `view.rs` (exem
 barres et les panneaux, global `PluginFrames` de `ui/plugin-view.slint`, 20 images/s au plus),
 `js/` (QuickJS : un runtime par plugin, API `horizon`, entrées/sorties sous permissions),
 `script.rs` (scripts chargés selon la disposition), `events.rs` (événements d'Horizon),
-`convert.rs` (JSON ↔ valeurs Slint). Logique pure : `horizon_core::plugin` (manifeste,
-permissions, réglages, budget). Essai réel sans toucher à sa configuration : `APPDATA` et
-`HORIZON_PLUGINS_DIR` vers un dossier à part, après `horizon.exe --quit`.
+`convert.rs` (JSON ↔ valeurs Slint), `library.rs` (bibliothèque `KingsRequin/horizon-plugins` :
+index, installation, mise à jour, retrait). Logique pure : `horizon_core::plugin` (manifeste,
+permissions, réglages, budget, index et paquets de la bibliothèque). Essai réel sans toucher à
+sa configuration : `APPDATA` et `HORIZON_PLUGINS_DIR` vers un dossier à part, après
+`horizon.exe --quit`.
+
+- **Propriétés standard** (`view.rs`, `apply_std`) : `compact`, `hovered`, `limit`,
+  `bar-height` et `instance` sont posées sur l'exemplaire d'un widget si son composant les
+  déclare. La barre les annonce par `PluginFrames.context` (`PluginSurface` de
+  `ui/plugin-view.slint` : barre resserrée, souris dessus, `slot.limit`) ; l'exemplaire n'est
+  redessiné que si l'une d'elles a changé.
+- **Plugins attendus** (`Layout::pending_plugins`, `library.rs`) : une migration qui met un
+  plugin à la place d'un widget intégré (`plugins-essaim-serveurs-quota` : Essaim, Serveurs,
+  Quota Claude ; même exemplaire, mêmes réglages) le note dans `pending_plugins`
+  (`Layout::migrate`). Au démarrage, `start_pending` le prend dans la bibliothèque et accepte
+  d'office les permissions de son entrée de l'index (`Plugins::adopt` : la fonction tournait
+  déjà avec ces droits). Hors ligne : nouvel essai après 1 min, 5 min, puis toutes les 30 min,
+  et à chaque lancement. Un plugin déjà installé à la main, ou dont le widget a été retiré, sort
+  de la liste sans rien installer.

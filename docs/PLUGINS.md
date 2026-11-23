@@ -36,7 +36,7 @@ Un dossier `%APPDATA%\Horizon\plugins\<id>\` (le nom du dossier est l'`id` du pl
 
 - Horizon voit le dossier en moins d'une seconde, sans redémarrer, et recharge le plugin à
   chaque modification de `plugin.json`, `main.js`, d'un `.slint` ou de `assets/`.
-- On l'ajoute à une barre en mode édition (*Ajouter un widget*, comme les autres widgets). Le bouton *Nouveau plugin* de la page *État* crée un modèle et le pose
+- On l'ajoute à une barre en mode édition (*Ajouter un widget*, comme les autres widgets). Le bouton *Nouveau plugin* de la page *Plugins* crée un modèle et le pose
   sur la barre principale.
 - Vérification hors d'Horizon : `horizon.exe --check-plugin <dossier>` (manifeste, Slint,
   syntaxe du script ; code de sortie 0 si tout va bien, sinon une erreur par ligne avec le
@@ -312,7 +312,7 @@ chargement (sauf `alert` et `timer`).
 | `accent` | `{ color }` : couleur de la pochette en cours (sinon du fond d'écran), `#rrggbb` ou `null` |
 | `media` | `{ title, artist, playing }` |
 | `dnd` | `{ active, light }` : « Ne pas déranger » (et son option « lumière ») |
-| `alert` | `{ kind, title, shown, light }` : une alerte d'Horizon (`claude`, `battery`, `server`, `timer`, `notification`, `feedback`, `update`) ; `shown` : montrée dans l'îlot ; `light` : signal lumineux voulu (réglage « Claude attend › Signal lumineux ») |
+| `alert` | `{ kind, title, shown, light }` : une alerte d'Horizon (`claude`, `battery`, `timer`, `notification`, `feedback`, `update`) ; `shown` : montrée dans l'îlot ; `light` : signal lumineux voulu (réglage « Claude attend › Signal lumineux ») |
 | `timer` | `{ state: "done", title }` : fin du minuteur ou changement de phase |
 | `presence` | `{ away }` : session verrouillée ou écran éteint |
 | `foreground` | `{ exe }` : application au premier plan |
@@ -330,7 +330,7 @@ chargement (sauf `alert` et `timer`).
   répondent (`horizon.net.probe`) ; `ssh` : ouvrir un terminal SSH (`horizon.ssh.open`) ;
   `open` : ouvrir n'importe quel lien web (`horizon.open`).
 
-L'utilisateur voit ces demandes en clair et doit les accepter (page *État* › *Autoriser*)
+L'utilisateur voit ces demandes en clair et doit les accepter (page *Plugins* › *Autoriser*)
 avant que le plugin se charge ; une nouvelle version qui en demande plus redemande l'accord.
 Un plugin sans permission se charge sans accord. **Déclarer le strict nécessaire.**
 
@@ -338,7 +338,7 @@ Un plugin sans permission se charge sans accord. **Déclarer le strict nécessai
 
 | Limite | Effet |
 |---|---|
-| plus de 2 % d'un cœur en moyenne sur une minute, ou plus de 50 % sur 5 s | plugin désactivé jusqu'au prochain lancement d'Horizon (alerte, *Réactiver* sur la page État) |
+| plus de 2 % d'un cœur en moyenne sur une minute, ou plus de 50 % sur 5 s | plugin désactivé jusqu'au prochain lancement d'Horizon (alerte, *Réactiver* sur la page Plugins) |
 | 3 plantages de script en une minute (exception non rattrapée, appel de plus de 50 ms, mémoire) | désactivé |
 | création ou rendu de l'interface de plus de 250 ms | compté comme un plantage |
 | plus de 1 000 messages vers l'interface en attente | compté comme un plantage |

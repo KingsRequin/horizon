@@ -2,8 +2,8 @@
 //! reçue (`horizon://alert`) est montrée quelques secondes (3,2 s, ou sa durée propre), puis
 //! s'efface en fondu avant le retour du contenu habituel ; une activité durable d'un plugin (un
 //! appel du téléphone, par exemple) reste dans l'îlot tant qu'elle dure (une alerte passe devant,
-//! puis l'activité revient) ; clic sur une alerte qui a une action (terminal de la session, mode édition,
-//! capture collée). Global `FlashData` de `ui/flash.slint`, le même pour toutes les barres ; le
+//! puis l'activité revient) ; clic sur une alerte qui a une action (terminal de la session,
+//! capture collée, mise à jour installée). Global `FlashData` de `ui/flash.slint`, le même pour toutes les barres ; le
 //! widget qui le montre est choisi par la barre (`media-host`). Fil de l'interface.
 
 use super::{BarWindow, FlashData, icons};

@@ -1,6 +1,7 @@
-//! « Nouveau plugin » (page État) : un dossier modèle (`natif/plugin-template/`, avec une copie
-//! de `docs/PLUGINS.md`) créé dans le dossier des plugins, posé sur la barre principale et
-//! ouvert dans l'explorateur : il ne reste qu'à le modifier (ou à le donner à une IA).
+//! « Nouveau plugin » (page Plugins des réglages) : un dossier modèle (`natif/plugin-template/`,
+//! avec une copie de `docs/PLUGINS.md`) créé dans le dossier des plugins, posé sur la barre
+//! principale et ouvert dans l'explorateur : il ne reste qu'à le modifier (ou à le donner à une
+//! IA).
 
 use crate::host::{AppHandle, Manager};
 use horizon_core::layout::{BarRole, WidgetKind, Zone};

@@ -1,5 +1,5 @@
 //! Mode édition d'une barre, côté interface (`app/src/lib/editMode.svelte.ts` et la partie
-//! « glisser » d'App.svelte) : entrée et sortie (menu, « Nouveautés » de l'îlot, Échap,
+//! « glisser » d'App.svelte) : entrée et sortie (menu, icône de notification, Échap,
 //! « Terminé », perte du premier plan), Ctrl+Z / Ctrl+Y, bande d'aide (`ui::popup::show_help`),
 //! menus du clic droit et du « + », glisser-déposer des widgets avec le repère de dépôt, d'une
 //! zone à l'autre, entre la bande et les tuiles d'une barre haute (seul un widget qui a un

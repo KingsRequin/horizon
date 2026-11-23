@@ -5,7 +5,8 @@
 //! Un fil relève le dossier toutes les 500 ms (date de modification la plus récente de chaque
 //! sous-dossier) ; un changement est pris après 300 ms de calme (`registry`). Un plugin vu pour
 //! la première fois, ou qui demande de nouvelles permissions, attend l'accord de l'utilisateur
-//! (page État) ; rien n'est chargé avant.
+//! (page Plugins des réglages) ; rien n'est chargé avant. Exception : le plugin mis par une
+//! migration à la place d'un widget intégré est installé et accepté d'office (`library`).
 
 pub mod check;
 mod convert;

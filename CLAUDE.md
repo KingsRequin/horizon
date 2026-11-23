@@ -47,12 +47,13 @@ natif/                      l'appli (paquet horizon-natif, exe horizon.exe)
                             que le code que Slint génère ne soit recompilé que si un .slint change
     widgets/<id>/           UN DOSSIER PAR WIDGET (widget.json, widget.slint, panel.slint)
     widget-settings/        pages de réglages des widgets
-    prisme/                 interface du moteur RGB Prisme (WebSocket 28650)
+    plugin-api/             bibliothèque Slint `@horizon` offerte aux plugins
   src/
     platform/               plateforme Slint maison (fenêtres Win32 layered, saisie, IME)
     host/                   AppHandle, Manager, Emitter, événements (API à la Tauri)
-    *.rs                    cœur : barres, panneau, mode édition, profils, palette, Prisme,
-                            minuteur, NPD, mixeur, relais Discord, réglages, page État…
+    *.rs                    cœur : barres, panneau, mode édition, profils, palette, modules
+                            intégrés, minuteur, NPD, mixeur, relais Discord, réglages, page État…
+    plugins/                hôte des plugins (dossiers chargés à chaud, scripts, bibliothèque)
     ui/                     liaison des fenêtres Slint
     widgets/<id>/           UN MODULE PAR WIDGET qui a un service propre (BACKENDS)
 crates/
@@ -68,7 +69,7 @@ scripts/                    installation, désinstallation, paquet d'une Release
 ```
 
 Règle de partage : ce qui ne sert qu'à un widget va dans son dossier (interface) et son module
-(Rust) ; ce qui sert à plusieurs (Prisme, minuteur, mixeur, NPD, relais Discord) reste au cœur.
+(Rust) ; ce qui sert à plusieurs (minuteur, mixeur, NPD, relais Discord) reste au cœur.
 La logique testable sans Windows va dans `horizon-core`, l'accès au système dans `horizon-sys` ;
 le module du widget ne fait que relier les deux à l'interface.
 
@@ -77,16 +78,30 @@ le module du widget ne fait que relier les deux à l'interface.
 Suivre `natif/README.md`, « Ajouter (ou porter) un widget natif » : manifeste
 `ui/widgets/<id>/widget.json`, `widget.slint` (global `<Id>Data`), branchement dans
 `ui/widget-view.slint`, service `src/widgets/<id>.rs` (`Backend`, inscrit dans `BACKENDS`),
-liaison `bind`, panneau et page de réglages au besoin. Pour qu'il apparaisse sur les barres
-existantes sans passer par le menu « + », ajouter une migration dans
-`crates/horizon-core/src/layout/migrations.rs` (et une constante `WidgetKind::<ID>` si la logique
-pure doit le nommer).
+liaison `bind`, panneau et page de réglages au besoin. Il s'ajoute par le menu « + » : Horizon ne
+pose aucun widget d'office, ni sur une barre neuve (`layout/defaults.rs` : le socle seulement), ni
+sur une barre existante (plus de migration d'ajout). Une constante `WidgetKind::<ID>` seulement si
+la logique pure doit le nommer.
+
+Avant d'écrire un widget natif, se demander s'il peut être un plugin (`docs/PLUGINS.md`, dépôt
+`KingsRequin/horizon-plugins`) : c'est la règle pour tout ce qui ne sert pas à tout le monde. Ce
+qui demande plus que l'API des plugins et ne sert pas à tous est un module intégré
+(`natif/src/modules.rs`, comme Sessions Claude Code) : dans l'exe, éteint tant qu'il n'est pas
+activé dans la page Plugins.
 
 ## Pièges connus
 
-- Une seule édition. Ce qui ne sert qu'à une appli de l'auteur (Prisme, SharkApp) est un plugin
-  de la bibliothèque (`KingsRequin/horizon-plugins`), pas du code d'Horizon : `docs/PLUGINS.md`.
-  Le relais BetterDiscord (KrispBridge, port 28642) reste un repli de Discord vocal et donne Krisp.
+- Une seule édition. Ce qui ne sert qu'à une appli de l'auteur ou à un usage particulier (Prisme,
+  SharkApp, Essaim, Serveurs, Quota Claude) est un plugin de la bibliothèque
+  (`KingsRequin/horizon-plugins`), pas du code d'Horizon : `docs/PLUGINS.md`. Le relais
+  BetterDiscord (KrispBridge, port 28642) reste un repli de Discord vocal et donne Krisp.
+- Un widget intégré qui devient un plugin : migration qui change son genre en `plugin:<id>` à la
+  même place (`layout/migrations.rs`) ; le plugin est alors noté dans `Layout::pending_plugins`
+  et installé au démarrage (`natif/src/plugins/library.rs`). Le plugin doit être dans la
+  bibliothèque AVANT la Release d'Horizon ; la vérification du dépôt des plugins, elle, ne passe
+  qu'après (elle prend le dernier `horizon.exe` publié) : la relancer ensuite.
+- API des plugins : tout ajout monte `API_MAX` (`crates/horizon-core/src/plugin/mod.rs`) et se
+  documente « niveau N » dans `docs/PLUGINS.md` ; un plugin qui s'en sert déclare ce niveau.
 - Mise à jour automatique (`natif/src/update.rs`, logique pure dans
   `crates/horizon-core/src/update.rs`) : seulement dans une compilation de `scripts/package.ps1`
   (`HORIZON_RELEASE`). Une Release doit joindre `horizon.exe`, `horizon-hook.exe` et
