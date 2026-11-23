@@ -63,6 +63,18 @@ url = "2.5"
 # Scripts des plugins : QuickJS (petit, limites de temps et de mémoire intégrées).
 rquickjs = { version = "0.14", default-features = false, features = ["std"] }
 
+# Module « Téléphone » : serveur TLS de la liaison avec l'appli Horizon Mobile. rustls, ring
+# et webpki sont déjà tirés par ureq (mêmes versions) ; rcgen fabrique le certificat du PC.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-webpki = { version = "0.103", default-features = false, features = ["std", "ring"] }
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
+ring = "0.17"
+base64 = "0.23"
+
+[dev-dependencies]
+# Joue l'appli face au serveur du module « Téléphone ».
+faux-telephone = { path = "../crates/faux-telephone" }
+
 [build-dependencies]
 embed-resource = "3"
 serde_json.workspace = true

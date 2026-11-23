@@ -1,0 +1,19 @@
+[package]
+name = "faux-telephone"
+description = "Joue l'appli Horizon Mobile face au module « Téléphone » d'Horizon : tests et contrôle en vrai"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+anyhow.workspace = true
+serde_json.workspace = true
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-webpki = { version = "0.103", default-features = false, features = ["std", "ring"] }
+tungstenite = "0.30"
+ring = "0.17"
+base64 = "0.23"
+url = "2.5"

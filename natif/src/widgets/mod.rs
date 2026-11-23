@@ -15,6 +15,7 @@ pub mod headset;
 pub mod media;
 pub mod mic_krisp;
 pub mod notifications;
+pub mod phone;
 pub mod shortcuts;
 pub mod suggestions;
 pub mod system;
