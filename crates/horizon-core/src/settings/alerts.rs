@@ -27,6 +27,9 @@ pub struct AlertSettings {
     pub dnd_light: Option<bool>,
     /// Seuil de batterie faible du casque, en % (0 = pas d'alerte).
     pub headset_low: Option<u8>,
+    /// Seuil de batterie faible des appareils du téléphone (module « Téléphone »), en % :
+    /// absent = 15 %, 0 = pas d'alerte.
+    pub phone_low: Option<u8>,
 }
 
 /// Seuil réglé : 0 = alerte coupée.
@@ -60,6 +63,11 @@ impl AlertSettings {
         }
     }
 
+    /// Seuil de batterie faible des appareils du téléphone ; `None` = pas d'alerte.
+    pub fn phone_threshold(&self) -> Option<u8> {
+        threshold(self.phone_low.unwrap_or(low_battery::DEFAULT_THRESHOLD))
+    }
+
     /// Toutes les valeurs, celles d'avant comprises (pour la fenêtre de réglages).
     pub fn resolved(&self, layout: &Layout) -> AlertSettings {
         let (dnd, claude) = (self.dnd(layout), self.claude(layout));
@@ -71,12 +79,14 @@ impl AlertSettings {
             dnd_discord: Some(dnd.discord),
             dnd_light: Some(dnd.light),
             headset_low: Some(self.headset_threshold(layout).unwrap_or(0)),
+            phone_low: Some(self.phone_threshold().unwrap_or(0)),
         }
     }
 
     /// Seuils ramenés à 100 % au plus.
     pub(super) fn bounded(mut self) -> AlertSettings {
         self.headset_low = self.headset_low.map(|v| v.min(100));
+        self.phone_low = self.phone_low.map(|v| v.min(100));
         self
     }
 }
@@ -130,5 +140,13 @@ mod tests {
         assert_eq!(r.headset_low, Some(30));
         assert_eq!(r.dnd_light, Some(false));
         assert_eq!(r.claude_island, Some(true));
+    }
+
+    #[test]
+    fn the_phone_threshold_defaults_to_fifteen_and_zero_turns_it_off() {
+        assert_eq!(AlertSettings::default().phone_threshold(), Some(15));
+        assert_eq!(AlertSettings { phone_low: Some(0), ..AlertSettings::default() }.phone_threshold(), None);
+        assert_eq!(AlertSettings { phone_low: Some(250), ..AlertSettings::default() }.phone_threshold(), Some(100));
+        assert_eq!(crate::settings::features::FeatureSettings::default().phone, None, "module éteint tant qu'il n'est pas choisi");
     }
 }

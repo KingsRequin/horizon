@@ -36,6 +36,10 @@ pub struct FeatureSettings {
     /// `None` : jamais choisi — activé seulement s'il sert déjà (son widget est sur une barre, ou
     /// les hooks d'Horizon sont dans Claude Code).
     pub claude_sessions: Option<bool>,
+    /// Module intégré « Téléphone » (liaison avec l'appli Horizon Mobile). `None` : jamais
+    /// choisi — activé seulement s'il sert déjà (son widget est sur une barre, ou un téléphone
+    /// est appairé).
+    pub phone: Option<bool>,
 }
 
 impl Default for FeatureSettings {
@@ -52,6 +56,7 @@ impl Default for FeatureSettings {
             bar_pulse: true,
             auto_update: true,
             claude_sessions: None,
+            phone: None,
         }
     }
 }
