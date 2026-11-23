@@ -72,7 +72,6 @@ export component AlertsSection inherits VerticalLayout {
 
     SettingsHeading {
         text: "Pendant « Ne pas déranger », l’îlot montre quand même";
-        first: !OptionsData.claude-sessions;
     }
     if OptionsData.claude-sessions: Flag {
         key: "alerts.dnd_claude";
