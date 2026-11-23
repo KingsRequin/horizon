@@ -57,6 +57,10 @@ struct View {
     image: Image,
     /// Taille de l'emplacement (px logiques), posée par la fenêtre.
     placed: (f32, f32),
+    /// Sa barre, posée par la fenêtre : resserrée, souris dessus, largeur maximale (0 : aucune).
+    context: (bool, bool, f32),
+    /// Propriétés standard déjà posées sur l'exemplaire (reposées seulement si elles changent).
+    std: Option<StdProps>,
     /// Taille voulue par le composant (px logiques).
     preferred: (f32, f32),
     /// Le widget garde ses clics (propriété `own-clicks` vraie) : pas de panneau épinglé au clic.
@@ -134,11 +138,25 @@ pub fn bind(app: &AppHandle, label: &str, f: &PluginFrames<'_>) {
     {
         let key = key.clone();
         f.on_placed(move |k, w, h| {
+            let k = key(&k);
             STATE.with_borrow_mut(|s| {
-                if let Some(v) = s.views.get_mut(&key(&k)) {
+                if let Some(v) = s.views.get_mut(&k) {
                     v.placed = (w, h);
                 }
             });
+            apply_std(&k);
+        });
+    }
+    {
+        let key = key.clone();
+        f.on_context(move |k, compact, hovered, limit| {
+            let k = key(&k);
+            STATE.with_borrow_mut(|s| {
+                if let Some(v) = s.views.get_mut(&k) {
+                    v.context = (compact, hovered, limit);
+                }
+            });
+            apply_std(&k);
         });
     }
     {
@@ -161,6 +179,31 @@ pub fn bind(app: &AppHandle, label: &str, f: &PluginFrames<'_>) {
             surface.borrow().key(&text, pressed);
         }
     });
+}
+
+/// Pose sur l'exemplaire `k` les propriétés standard que son composant déclare (`compact`,
+/// `bar-height`, `limit`, `hovered`, `instance`), si elles ont changé depuis la dernière fois.
+fn apply_std(k: &(String, String)) {
+    let job = STATE.with_borrow_mut(|s| {
+        let v = s.views.get_mut(k)?;
+        let surface = v.surface.clone()?;
+        let std = StdProps {
+            compact: v.context.0,
+            hovered: v.context.1,
+            limit: v.context.2,
+            bar_height: v.placed.1,
+            instance: k.1.trim_end_matches(PANEL_SUFFIX).to_owned(),
+        };
+        (v.std.as_ref() != Some(&std)).then(|| {
+            v.std = Some(std.clone());
+            (surface, std)
+        })
+    });
+    if let Some((surface, std)) = job {
+        let surface = surface.borrow();
+        surface.set_std(&std);
+        surface.touch();
+    }
 }
 
 /// Exemplaire rendu de `k` (à utiliser sans tenir `STATE`).
@@ -202,13 +245,13 @@ pub fn set_script_error(plugin: &str, error: Option<String>) {
     }
 }
 
-/// L'interface compilée du plugin (widget ou panneau) a la propriété `prop`.
-pub fn has_property(plugin: &str, prop: &str) -> bool {
+/// L'interface compilée du plugin (widget ou panneau) a la propriété `prop` ; `None` tant que
+/// l'interface n'est pas compilée (script chargé avant qu'une fenêtre montre le plugin).
+pub fn has_property(plugin: &str, prop: &str) -> Option<bool> {
     let want = prop.replace('_', "-");
     STATE.with_borrow(|s| {
-        s.uis.get(plugin).and_then(|u| u.compiled.clone()).is_some_and(|c| {
-            [&c.widget, &c.panel].into_iter().flatten().any(|d| d.properties().any(|(n, _)| n.replace('_', "-") == want))
-        })
+        let c = s.uis.get(plugin)?.compiled.clone()?;
+        Some([&c.widget, &c.panel].into_iter().flatten().any(|d| d.properties().any(|(n, _)| n.replace('_', "-") == want)))
     })
 }
 
@@ -269,6 +312,8 @@ fn new_view(plugin: &str, panel: bool, scale: f32) -> View {
         surface: None,
         image: Image::default(),
         placed: (0.0, 0.0),
+        context: (false, false, 0.0),
+        std: None,
         preferred: (0.0, 0.0),
         own_clicks: false,
         scale,
@@ -360,8 +405,6 @@ fn refresh(label: &str) {
         let mut own_clicks = false;
         let mut preferred = (0.0, 0.0);
         if let Some(surface) = &surface {
-            let id = k.1.trim_end_matches(PANEL_SUFFIX).to_owned();
-            surface.set_std(&StdProps { instance: id, ..StdProps::default() });
             own_clicks = matches!(surface.instance().get_property("own-clicks"), Ok(Value::Bool(true)));
             preferred = bounded((surface.preferred_width(), surface.preferred_height()), panel);
         }
@@ -373,10 +416,12 @@ fn refresh(label: &str) {
                 v.generation = generation;
                 v.rendered = false;
                 v.surface = surface.map(|x| Rc::new(RefCell::new(x)));
+                v.std = None;
                 v.own_clicks = own_clicks;
                 v.preferred = preferred;
             }
         });
+        apply_std(&k);
     }
     super::script::reconcile(&app);
     bump(label);

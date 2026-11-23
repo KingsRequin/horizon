@@ -20,6 +20,9 @@ export global PluginFrames {
     pure callback pin-on-click(string, int) -> bool;
     // Taille de l'emplacement : l'exemplaire est rendu à cette taille.
     callback placed(string, length, length);
+    // Ce que l'exemplaire peut lire de sa barre (`compact`, `hovered`, `limit` de son composant) :
+    // barre resserrée, souris dessus, largeur maximale d'un widget extensible (0 : aucune).
+    callback context(string, bool, bool, length);
     // Souris : 0 déplacement, 1 appui, 2 relâchement, 3 molette (crans), 4 sortie.
     callback pointer(string, int, length, length, float);
     // Clavier (panneaux) : texte de la touche, appui.
@@ -29,14 +32,26 @@ export global PluginFrames {
 // Image d'un exemplaire, avec la souris transmise ; `panel` : genre du panneau à épingler au clic.
 component PluginSurface inherits Rectangle {
     in property <string> key;
+    in property <bool> compact;
+    in property <length> limit;
+    function context() {
+        PluginFrames.context(root.key, root.compact, touch.has-hover, root.limit);
+    }
     init => {
         PluginFrames.placed(root.key, root.width, root.height);
+        root.context();
     }
     changed width => {
         PluginFrames.placed(root.key, root.width, root.height);
     }
     changed height => {
         PluginFrames.placed(root.key, root.width, root.height);
+    }
+    changed compact => {
+        root.context();
+    }
+    changed limit => {
+        root.context();
     }
     in property <bool> active: true;
     in property <string> pin;
@@ -59,6 +74,7 @@ component PluginSurface inherits Rectangle {
             if !self.has-hover {
                 PluginFrames.pointer(root.key, 4, 0, 0, 0);
             }
+            root.context();
         }
         pointer-event(e) => {
             if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
@@ -86,6 +102,7 @@ export component PluginWidget inherits Rectangle {
     in property <Slot> slot;
     in property <bool> interactive;
     in property <bool> clickable;
+    in property <bool> compact;
     property <string> key: root.slot.id;
     property <int> tick: PluginFrames.tick;
     property <string> err: PluginFrames.error(root.key, root.tick);
@@ -104,6 +121,8 @@ export component PluginWidget inherits Rectangle {
             width: parent.width;
             height: parent.height;
             key: root.key;
+            compact: root.compact;
+            limit: root.slot.limit;
             active: root.clickable;
             pin: root.panel && PluginFrames.pin-on-click(root.key, root.tick) ? "plugin:" + root.key : "";
             anchor-x: area.absolute-position.x;

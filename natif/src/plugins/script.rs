@@ -53,6 +53,9 @@ const MAX_PER_PLUGIN: usize = 1000;
 const MAX_CRASH_TEXT: usize = 1000;
 /// Taille maximale de `main.js` (lu sur le fil de l'interface).
 const MAX_MAIN: u64 = 1024 * 1024;
+/// Valeurs gardées au plus tant que l'interface du plugin n'est pas compilée (on ne peut pas
+/// encore vérifier que la propriété existe ; triées à la création du premier exemplaire).
+const MAX_UNCHECKED_VALUES: usize = 64;
 
 /// Seau à jetons : `capacity` d'un coup, puis `per_sec` par seconde.
 struct Bucket {
@@ -364,9 +367,16 @@ fn listen_on(surface: &Surface, plugin: &str, key: &str, name: &str) {
 
 /// Une surface vient d'être créée : valeurs et rappels du script rejoués.
 pub fn surface_created(plugin: &str, key: &str, surface: &Surface) {
-    let Some((dir, values, callbacks)) =
-        LOADED.with_borrow(|l| l.get(plugin).map(|x| (x.dir.clone(), x.values.clone(), x.callbacks.clone())))
-    else {
+    // Valeurs posées avant que l'interface soit compilée : celles qui ne visent aucune propriété
+    // partent maintenant qu'on peut le savoir.
+    let unknown: Vec<String> = LOADED.with_borrow(|l| l.get(plugin).map(|x| x.values.iter().map(|v| v.1.clone()).collect()).unwrap_or_default());
+    let unknown: Vec<String> = unknown.into_iter().filter(|p| super::view::has_property(plugin, p) == Some(false)).collect();
+    let Some((dir, values, callbacks)) = LOADED.with_borrow_mut(|l| {
+        l.get_mut(plugin).map(|x| {
+            x.values.retain(|v| !unknown.contains(&v.1));
+            (x.dir.clone(), x.values.clone(), x.callbacks.clone())
+        })
+    }) else {
         return;
     };
     let me = instance_of(key);
@@ -384,13 +394,19 @@ fn from_js(app: &AppHandle, m: FromJs) {
     match m {
         FromJs::UiSet { id, instance, prop, value } => {
             // Gardée (pour les exemplaires créés ensuite) seulement si la propriété existe et
-            // que l'exemplaire visé existe : sinon le cache grandirait sans fin.
-            if !super::view::has_property(&id, &prop) {
+            // que l'exemplaire visé existe : sinon le cache grandirait sans fin. Interface pas
+            // encore compilée (script chargé avant les barres) : gardée quand même, en nombre
+            // borné, sinon l'exemplaire naîtrait vide jusqu'à la prochaine pose du script.
+            let known = super::view::has_property(&id, &prop);
+            if known == Some(false) {
                 return;
             }
             let Some(dir) = LOADED.with_borrow_mut(|l| {
                 let x = l.get_mut(&id)?;
                 if instance.as_ref().is_some_and(|i| !x.instances.iter().any(|k| &k.id == i)) {
+                    return None;
+                }
+                if known.is_none() && x.values.len() >= MAX_UNCHECKED_VALUES && !x.values.iter().any(|v| v.0 == instance && v.1 == prop) {
                     return None;
                 }
                 if unchanged(&x.values, instance.as_deref(), &prop, &value) {
