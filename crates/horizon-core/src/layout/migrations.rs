@@ -13,16 +13,28 @@ pub(crate) const MIGRATION_TOP_HOVER: &str = "top-hover";
 /// Marque de la migration qui remplace Éclairage et Batteries (intégrés d'avant) par les
 /// plugins Prisme et SharkApp, à la même place.
 pub(crate) const MIGRATION_PLUGINS: &str = "plugins-prisme-sharkapp";
+/// Marque de la migration qui remplace Essaim, Serveurs et Quota Claude (intégrés d'avant) par
+/// leurs plugins, à la même place.
+pub(crate) const MIGRATION_PLUGINS_2: &str = "plugins-essaim-serveurs-quota";
 type Migration = (&'static str, fn(&mut BarLayout));
 
 /// Migrations, dans l'ordre : marque gardée dans `Layout::migrations` et changement appliqué à
 /// chaque barre. Une disposition neuve les a toutes, déjà marquées, sans qu'elles lui soient
 /// appliquées ; une disposition ancienne reçoit celles qu'elle n'a pas encore
 /// (`Layout::migrate`). Une nouvelle migration s'ajoute ici seulement.
-pub(super) const MIGRATIONS: [Migration; 3] = [
+pub(super) const MIGRATIONS: [Migration; 4] = [
     (MIGRATION_CAMEL_CASE, BarLayout::camel_case_settings),
     (MIGRATION_TOP_HOVER, BarLayout::top_hover),
     (MIGRATION_PLUGINS, BarLayout::migrate_to_plugins),
+    (MIGRATION_PLUGINS_2, BarLayout::migrate_to_plugins_2),
+];
+
+/// Widgets intégrés devenus des plugins de la bibliothèque (ancien genre, plugin). Leurs
+/// réglages sont gardés tels quels : seul Serveurs en a (`hosts`, que son plugin relit).
+const NOW_PLUGINS: [(WidgetKind, WidgetKind); 3] = [
+    (WidgetKind::ESSAIM, WidgetKind::ESSAIM_PLUGIN),
+    (WidgetKind::SERVERS, WidgetKind::SERVEURS_PLUGIN),
+    (WidgetKind::CLAUDE_QUOTA, WidgetKind::CLAUDE_QUOTA_PLUGIN),
 ];
 
 /// Clés de réglages renommées pour suivre la convention camelCase de tous les autres
@@ -53,6 +65,16 @@ impl BarLayout {
         }
     }
 
+    /// Essaim, Serveurs et Quota Claude → leurs plugins (même identifiant, même place, mêmes
+    /// réglages).
+    fn migrate_to_plugins_2(&mut self) {
+        for w in self.widgets_mut() {
+            if let Some((_, plugin)) = NOW_PLUGINS.iter().find(|(old, _)| *old == w.kind) {
+                w.kind = *plugin;
+            }
+        }
+    }
+
     /// Réglages : anciennes clés renommées (une valeur déjà sous le nouveau nom l'emporte).
     fn camel_case_settings(&mut self) {
         for w in self.widgets_mut() {
@@ -67,13 +89,27 @@ impl BarLayout {
 }
 
 impl Layout {
-    /// Met à niveau une disposition enregistrée par une version précédente.
+    /// Met à niveau une disposition enregistrée par une version précédente. Un plugin qu'une
+    /// migration met à la place d'un widget intégré est noté dans `pending_plugins` : il reste à
+    /// l'installer.
     pub fn migrate(&mut self) {
+        let plugins = |l: &Layout| -> Vec<String> {
+            let mut ids: Vec<String> = l.all_widgets().filter_map(|w| crate::plugin::id_of_kind(w.kind.as_str())).map(str::to_owned).collect();
+            ids.sort();
+            ids.dedup();
+            ids
+        };
+        let before = plugins(self);
         for (mark, change) in MIGRATIONS {
             if !self.migrations.iter().any(|m| m == mark) {
                 self.bars.iter_mut().for_each(change);
                 self.profiles.iter_mut().flat_map(|p| p.bars.iter_mut()).for_each(change);
                 self.migrations.push(mark.into());
+            }
+        }
+        for id in plugins(self) {
+            if !before.contains(&id) && !self.pending_plugins.contains(&id) {
+                self.pending_plugins.push(id);
             }
         }
         self.ensure_profiles();

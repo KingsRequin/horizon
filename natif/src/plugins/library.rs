@@ -7,6 +7,7 @@
 
 use super::{Plugins, PluginState};
 use crate::host::{AppHandle, Emitter, Manager};
+use crate::state::AppState;
 use crate::util::lock;
 use horizon_core::plugin::library::{self, Entry};
 use std::path::{Path, PathBuf};
@@ -186,14 +187,69 @@ fn refresh_now(app: &AppHandle) {
 /// Installe (ou met à jour) le plugin `id` de la bibliothèque : bloquant (hors du fil de
 /// l'interface). S'il demande des permissions, il attend ensuite l'accord.
 pub fn install(app: &AppHandle, id: &str) -> Result<(), String> {
-    let version = install_files(id)?;
+    let entry = install_files(id)?;
     app.state::<Plugins>().set_from_library(app, id);
-    log::info!("plugin {id} {version} installé depuis la bibliothèque");
+    log::info!("plugin {id} {} installé depuis la bibliothèque", entry.version);
     Ok(())
 }
 
-/// Télécharge, vérifie et met en place les fichiers du plugin `id` ; sa version.
-fn install_files(id: &str) -> Result<String, String> {
+/// Délais entre deux essais d'installation des plugins attendus (le dernier se répète).
+const PENDING_DELAYS: [Duration; 4] = [Duration::from_secs(3), Duration::from_secs(60), Duration::from_secs(300), Duration::from_secs(1800)];
+
+/// Plugins attendus par la disposition (`Layout::pending_plugins` : une migration les a mis à la
+/// place d'un widget intégré) : pris dans la bibliothèque et autorisés d'office — la fonction
+/// tournait déjà, intégrée à Horizon, avec ces droits — pour que le widget reste à sa place sans
+/// rien demander. Hors ligne : nouvel essai plus tard, puis à chaque lancement.
+fn start_pending(app: &AppHandle) -> anyhow::Result<()> {
+    if app.state::<AppState>().read(|l| l.pending_plugins.is_empty()) {
+        return Ok(());
+    }
+    let a = app.clone();
+    crate::util::start_thread("plugins-attendus", move || {
+        for attempt in 0.. {
+            std::thread::sleep(PENDING_DELAYS[attempt.min(PENDING_DELAYS.len() - 1)]);
+            if install_pending(&a) {
+                return;
+            }
+        }
+    })
+}
+
+/// Un essai pour chaque plugin attendu ; vrai quand plus rien n'est attendu. Un plugin que la
+/// disposition ne demande plus (widget retiré), ou déjà installé (à la main : son accord reste
+/// à donner comme d'habitude), sort de la liste sans rien installer.
+fn install_pending(app: &AppHandle) -> bool {
+    let state = app.state::<AppState>();
+    let plugins = app.state::<Plugins>();
+    let installed: Vec<String> = plugins.list().into_iter().map(|p| p.id).collect();
+    let mut done = Vec::new();
+    for id in state.read(|l| l.pending_plugins.clone()) {
+        if installed.contains(&id) || !state.read(|l| l.wants_plugin(&id)) {
+            done.push(id);
+            continue;
+        }
+        match install_files(&id) {
+            Ok(entry) => {
+                plugins.adopt(app, &id, entry.permissions);
+                log::info!("plugin {id} {} installé à la place du widget intégré", entry.version);
+                done.push(id);
+            }
+            Err(e) => log::warn!("plugin {id} attendu par la disposition : {e}"),
+        }
+    }
+    if !done.is_empty()
+        && let Err(e) = state.update(|l| {
+            l.pending_plugins.retain(|p| !done.contains(p));
+            Ok(())
+        })
+    {
+        log::warn!("plugins attendus : {e:#}");
+    }
+    state.read(|l| l.pending_plugins.is_empty())
+}
+
+/// Télécharge, vérifie et met en place les fichiers du plugin `id` ; son entrée de l'index.
+fn install_files(id: &str) -> Result<Entry, String> {
     let entry = match entries().into_iter().find(|e| e.id == id) {
         Some(e) => e,
         None => fetch()?.into_iter().find(|e| e.id == id).ok_or("plugin absent de la bibliothèque")?,
@@ -204,19 +260,19 @@ fn install_files(id: &str) -> Result<String, String> {
     }
     let files = library::parse_bundle(&bytes, id).map_err(|e| format!("paquet refusé : {e}"))?;
     put_in_place(&super::plugins_dir(), id, &files).map_err(|e| format!("installation : {e:#}"))?;
-    Ok(entry.version)
+    Ok(entry)
 }
 
 /// Ligne de commande `--install-plugin <id>` : installe depuis la bibliothèque (Horizon, s'il
 /// tourne, le voit aussitôt ; l'accord des permissions se donne ensuite dans Horizon).
 pub fn cli(id: &str) -> i32 {
     match install_files(id) {
-        Ok(version) => {
+        Ok(entry) => {
             let path = super::store::path();
             let mut s = super::store::load(&path);
             s.entry(id.to_owned()).or_default().library = true;
             let _ = super::store::save(&path, &s);
-            println!("{id} {version} installé dans {}", super::plugins_dir().join(id).display());
+            println!("{id} {} installé dans {}", entry.version, super::plugins_dir().join(id).display());
             0
         }
         Err(e) => {
@@ -275,8 +331,10 @@ pub fn remove(app: &AppHandle, id: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Lecture de l'index au démarrage puis toutes les 6 h.
+/// Lecture de l'index au démarrage puis toutes les 6 h ; installation des plugins que la
+/// disposition attend depuis une migration.
 pub fn start(app: &AppHandle) -> anyhow::Result<()> {
+    start_pending(app)?;
     let a = app.clone();
     crate::util::start_thread("plugins-bibliotheque", move || {
         std::thread::sleep(FIRST);

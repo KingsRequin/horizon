@@ -57,7 +57,6 @@ pub fn alert_name(kind: horizon_core::dnd::AlertKind) -> &'static str {
         AlertKind::Notification => "notification",
         AlertKind::Claude => "claude",
         AlertKind::Battery => "battery",
-        AlertKind::Server => "server",
         AlertKind::Timer => "timer",
         AlertKind::Feedback => "feedback",
         AlertKind::Update => "update",

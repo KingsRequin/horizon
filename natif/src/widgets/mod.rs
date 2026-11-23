@@ -8,16 +8,13 @@
 //! [`Backend::panel`].
 
 pub mod calendar;
-pub mod claude_quota;
 pub mod claude_sessions;
 pub mod clock;
 pub mod discord_voice;
-pub mod essaim;
 pub mod headset;
 pub mod media;
 pub mod mic_krisp;
 pub mod notifications;
-pub mod servers;
 pub mod shortcuts;
 pub mod suggestions;
 pub mod system;
@@ -157,16 +154,13 @@ pub fn panel_hook(kind: &str, f: impl FnOnce(&Panel) -> Option<()>) {
 /// Widgets portés (ordre alphabétique).
 pub const BACKENDS: &[&Backend] = &[
     &calendar::BACKEND,
-    &claude_quota::BACKEND,
     &claude_sessions::BACKEND,
     &clock::BACKEND,
     &discord_voice::BACKEND,
-    &essaim::BACKEND,
     &headset::BACKEND,
     &media::BACKEND,
     &mic_krisp::BACKEND,
     &notifications::BACKEND,
-    &servers::BACKEND,
     &shortcuts::BACKEND,
     &suggestions::BACKEND,
     &system::BACKEND,
@@ -236,7 +230,6 @@ const SETTINGS: &[&str] = &[
     "headset",
     "mic_krisp",
     "notifications",
-    "servers",
     "shortcuts",
     "suggestions",
     "weather",
@@ -338,7 +331,7 @@ mod tests {
 
     #[test]
     fn catalogue_matches_the_widget_folders() {
-        assert_eq!(MANIFESTS.len(), 16);
+        assert_eq!(MANIFESTS.len(), 13);
         let clock = manifest("clock").unwrap();
         assert_eq!((clock.label, clock.icon, clock.squeeze), ("Horloge", "clock", None));
         assert_eq!(SQUEEZE_ORDER.first(), Some(&"suggestions"), "masqué le premier");

@@ -1,6 +1,6 @@
 //! Disposition des barres : quel widget, dans quelle zone, sur quel écran.
 //!
-//! `defaults` : disposition de départ ; `migrations` : ajouts aux dispositions anciennes ;
+//! `defaults` : disposition de départ ; `migrations` : mise à niveau des dispositions anciennes ;
 //! `profiles` : profils de disposition ; `monitors` : écrans branchés ; `undo` : annulation.
 
 mod defaults;
@@ -87,12 +87,17 @@ impl WidgetKind {
     pub const CALENDAR: WidgetKind = WidgetKind("calendar");
     pub const BATTERIES: WidgetKind = WidgetKind("batteries");
     pub const DISCORD_VOICE: WidgetKind = WidgetKind("discord_voice");
-    pub const SERVERS: WidgetKind = WidgetKind("servers");
     pub const WINDOWS: WidgetKind = WidgetKind("windows");
+    /// Serveurs, Essaim et Quota Claude d'avant les plugins (migrés vers `SERVEURS_PLUGIN`,
+    /// `ESSAIM_PLUGIN`, `CLAUDE_QUOTA_PLUGIN`).
+    pub const SERVERS: WidgetKind = WidgetKind("servers");
     pub const ESSAIM: WidgetKind = WidgetKind("essaim");
-    /// Plugins de la bibliothèque qui remplacent Éclairage et Batteries.
+    /// Plugins de la bibliothèque qui remplacent des widgets intégrés d'avant.
     pub const PRISME_PLUGIN: WidgetKind = WidgetKind("plugin:prisme");
     pub const SHARKAPP_PLUGIN: WidgetKind = WidgetKind("plugin:sharkapp");
+    pub const ESSAIM_PLUGIN: WidgetKind = WidgetKind("plugin:essaim");
+    pub const SERVEURS_PLUGIN: WidgetKind = WidgetKind("plugin:serveurs");
+    pub const CLAUDE_QUOTA_PLUGIN: WidgetKind = WidgetKind("plugin:claude-quota");
 
     /// Genre d'identifiant `id` (texte gardé une fois pour toute la durée du programme).
     pub fn new(id: &str) -> WidgetKind {
@@ -287,6 +292,11 @@ pub struct Layout {
     /// quitte le premier plan ; `None` = le profil actif est celui choisi par l'utilisateur.
     #[serde(default)]
     pub auto_from: Option<String>,
+    /// Plugins qu'une migration vient de mettre à la place d'un widget intégré, pas encore
+    /// installés : Horizon les prend dans la bibliothèque (`natif/src/plugins/library.rs`), puis
+    /// les retire d'ici.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_plugins: Vec<String>,
 }
 
 /// Identifiant unique d'instance de widget.
@@ -395,6 +405,16 @@ impl Layout {
     /// Widget du profil actif, par identifiant.
     pub fn widget(&self, id: &str) -> Option<&WidgetInstance> {
         self.widgets().find(|w| w.id == id)
+    }
+
+    /// Tous les widgets, profils inactifs compris.
+    pub fn all_widgets(&self) -> impl Iterator<Item = &WidgetInstance> {
+        self.bars.iter().chain(self.profiles.iter().flat_map(|p| p.bars.iter())).flat_map(BarLayout::widgets)
+    }
+
+    /// Un widget du plugin `id` est sur une barre (tous profils).
+    pub fn wants_plugin(&self, id: &str) -> bool {
+        self.all_widgets().any(|w| crate::plugin::id_of_kind(w.kind.as_str()) == Some(id))
     }
 
     /// Tous les widgets, profils inactifs compris, modifiables.

@@ -7,13 +7,12 @@
 //! attend part au changement de page et à la fermeture. Les barres suivent aussitôt
 //! (`EV_LAYOUT`, liaisons des widgets refaites).
 //!
-//! Une page par genre : `calendar`, `servers`, `shortcuts`, `suggestions`, `weather` ; Micro et
-//! Krisp (une case) ici ; Batteries, Casque, Sessions Claude et Notifications renvoient aux
-//! « Réglages d'Horizon » (`GlobalLink`).
+//! Une page par genre : `calendar`, `shortcuts`, `suggestions`, `weather`, et celle des plugins,
+//! générée depuis leur manifeste (`plugin`) ; Micro et Krisp (une case) ici ; Casque, Sessions
+//! Claude et Notifications renvoient aux « Réglages d'Horizon » (`GlobalLink`).
 
 mod calendar;
 pub mod plugin;
-mod servers;
 mod shortcuts;
 mod suggestions;
 mod weather;
@@ -151,7 +150,6 @@ pub fn bind(app: &AppHandle, window: &SettingsWindow) {
     g.on_open_options(move |section| crate::settings_window::open(&a, SettingsPage::Options(section.to_string())));
     calendar::bind(window);
     plugin::bind(window);
-    servers::bind(window);
     shortcuts::bind(window);
     suggestions::bind(window);
     weather::bind(window);
@@ -175,7 +173,6 @@ pub fn show(app: &AppHandle, window: &SettingsWindow, id: &str) {
     g.set_discord_mute(settings.get("discordMute") == Some(&Value::Bool(true)));
     match kind.as_str() {
         "calendar" => calendar::show(window, &settings),
-        "servers" => servers::show(app, window, &settings),
         "shortcuts" => shortcuts::show(window, &settings),
         "suggestions" => suggestions::show(app, window),
         "weather" => weather::show(window, &settings),
@@ -192,7 +189,6 @@ pub fn show(app: &AppHandle, window: &SettingsWindow, id: &str) {
 pub fn leave() {
     flush();
     calendar::leave();
-    servers::leave();
     shortcuts::leave();
     weather::leave();
     with(|s| {

@@ -1,8 +1,8 @@
 //! Sortie de veille : avis de Windows (`PowerRegisterSuspendResumeNotification`) ou, à défaut,
 //! saut de l'horloge murale. Après un court délai laissé au réseau (réessayé avec un délai
 //! croissant), tout ce qui vit de relectures périodiques est relancé :
-//!  * les fils Rust qui dorment avec `resume::sleep` se réveillent (quota, batteries,
-//!    météo) et les clients WebSocket se reconnectent ;
+//!  * les fils Rust qui dorment avec `resume::sleep` se réveillent (météo, agenda, Discord)
+//!    et les clients WebSocket se reconnectent ;
 //!  * les caches en ligne repèrent le changement d'`epoch` ;
 //!  * les fenêtres reçoivent `horizon://resume` (agenda).
 //!

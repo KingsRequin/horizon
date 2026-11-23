@@ -19,7 +19,7 @@ pub struct AlertSettings {
     pub claude_light: Option<bool>,
     /// Pendant « Ne pas déranger », l'îlot montre quand même « Claude attend ».
     pub dnd_claude: Option<bool>,
-    /// … et les alertes d'état (batterie faible, serveur hors ligne).
+    /// … et les alertes d'état (batterie faible).
     pub dnd_battery: Option<bool>,
     /// « Ne pas déranger » passe Discord en « Ne pas déranger ».
     pub dnd_discord: Option<bool>,

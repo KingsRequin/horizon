@@ -38,7 +38,7 @@ horizon-hook = { path = "../crates/horizon-hook" }
 # mêmes versions que la version Tauri.
 tungstenite = "0.30"
 tiny_http = "0.12"
-# Widgets en ligne (Météo, Agenda, Quota Claude, Serveurs) et heure locale : mêmes versions que
+# Widgets en ligne (Météo, Agenda), requêtes des plugins et heure locale : mêmes versions que
 # la version Tauri.
 ureq = "3"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }

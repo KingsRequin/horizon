@@ -1,5 +1,5 @@
-//! Catalogue de la palette : entrées (raccourcis, suggestions, actions, profils, scènes,
-//! sorties audio, serveurs, applis du menu Démarrer) et ce que fait chacune.
+//! Catalogue de la palette : entrées (raccourcis, suggestions, actions, profils, entrées des
+//! plugins, sorties audio, applis du menu Démarrer) et ce que fait chacune.
 //!
 //! Repris de `app/src-tauri/src/palette/catalogue.rs` ; différences : les icônes sont rendues par
 //! `ui::palette`, et pendant un essai (`--palette-essai`) les actions sont seulement journalisées.
@@ -30,8 +30,6 @@ pub(super) enum Action {
     Profiles,
     Edit,
     Quit,
-    Ssh(String),
-    Url(String),
     Dnd,
     TimerStart(u32),
     Pomodoro,
@@ -210,21 +208,6 @@ pub(super) fn catalogue(app: &AppHandle) -> Vec<Entry> {
                 .keywords("micro entrée enregistrement")
                 .action("Choisir", Action::Output(d.id)),
         );
-    }
-
-    // Hôtes du homelab.
-    for h in crate::widgets::servers::known_hosts(app) {
-        let mut e = Entry::new(format!("host:{}", h.id), format!("SSH : {}", h.label), h.address.clone(), glyph("hardDrives"))
-            .keywords(format!("ssh serveur homelab terminal {}", h.id));
-        if let Some(t) = h.ssh {
-            e = e.action("Terminal SSH", Action::Ssh(t));
-        }
-        if let Some(u) = h.url {
-            e = e.action("Interface web", Action::Url(u));
-        }
-        if !e.actions.is_empty() {
-            out.push(e);
-        }
     }
 
     window_entries(app, &mut out);
@@ -425,8 +408,6 @@ pub(super) fn run_action(app: &AppHandle, a: Action) -> Result<(), String> {
             app.exit(0);
             Ok(())
         }
-        Action::Ssh(t) => crate::widgets::servers::open_ssh(&t),
-        Action::Url(u) => crate::web::url_open(&u),
         Action::Dnd => {
             crate::dnd::toggle(app);
             Ok(())

@@ -1,5 +1,5 @@
 //! Page « État » des réglages : l'état réel de chaque intégration (hooks Claude, relais
-//! Discord, notifications Windows, quota, raccourci de la
+//! Discord, notifications Windows, raccourci de la
 //! palette, fichiers de réglages, fils système relancés, démarrages ratés, mises à jour), les derniers
 //! avertissements du journal et quelques actions. Un fil relit ces états (sans le journal)
 //! toutes les 15 s : tant qu'une intégration est en échec, un témoin s'affiche sur l'icône de
@@ -13,7 +13,6 @@ use crate::events::EV_HEALTH;
 use crate::host::{AppHandle, Manager};
 use crate::state::AppState;
 use crate::util::{Published, Waker, lock, start_thread};
-use horizon_core::layout::WidgetKind;
 use horizon_core::settings::{Settings, SettingsFile};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -170,16 +169,6 @@ fn checks(app: &AppHandle) -> Vec<Check> {
         (None, (_, true)) => Check::new("notifications", "Notifications Windows", Level::Error, "lecture impossible, nouvel essai automatique"),
         _ => Check::new("notifications", "Notifications Windows", Level::Ok, "lues"),
     });
-
-    // Quota Claude : une erreur ne compte comme panne que si le widget est affiché.
-    let (error, fetched) = crate::widgets::claude_quota::health(app);
-    let shown = app.state::<AppState>().read(|l| l.first_of(WidgetKind::CLAUDE_QUOTA).is_some());
-    out.push(match error {
-        Some(e) => Check::new("quota", "Quota Claude", if shown { Level::Error } else { Level::Off }, e),
-        None if fetched.is_some() => Check::new("quota", "Quota Claude", Level::Ok, "lu"),
-        None => Check::new("quota", "Quota Claude", Level::Off, "pas encore lu"),
-    }
-    .at("dernière lecture", fetched));
 
     // Raccourci de la palette.
     let (hotkey, error) = crate::palette::hotkey_status(app);
@@ -407,8 +396,8 @@ mod tests {
     #[test]
     fn only_errors_light_the_witness() {
         let c = |label: &str, level| Check::new(label, label, level, "");
-        let list = [c("Prisme", Level::Off), c("Quota Claude", Level::Error), c("settings.toml", Level::Ok), c("Lecture", Level::Error)];
-        assert_eq!(failing(&list), ["Quota Claude", "Lecture"]);
+        let list = [c("Prisme", Level::Off), c("Discord vocal", Level::Error), c("settings.toml", Level::Ok), c("Lecture", Level::Error)];
+        assert_eq!(failing(&list), ["Discord vocal", "Lecture"]);
         assert_eq!(capitalized("lecture en cours"), "Lecture en cours");
     }
 

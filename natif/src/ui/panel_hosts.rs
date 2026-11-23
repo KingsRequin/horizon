@@ -146,10 +146,6 @@ fn change(app: &AppHandle, f: impl FnOnce(&mut Vec<Entry>)) {
     HOSTS.with_borrow_mut(f);
     let new = all_pairs();
     let c = changes(&old, &new);
-    if !c.opened.is_empty() || !c.closed.is_empty() {
-        use crate::host::Manager;
-        app.state::<crate::popup::PopupState>().set_shown(bases(&new));
-    }
     for (label, kind) in &c.hidden {
         if let Some(h) = host(label) {
             crate::widgets::panel_hook(kind, |p| p.hidden.map(|f| f(app, &h, kind)));

@@ -45,9 +45,6 @@ pub const HELP_KIND: &str = "edithelp";
 pub struct PopupState {
     kind: Mutex<Option<String>>,
     placement: Mutex<Option<Placement>>,
-    /// Genres des panneaux montrés quelque part : fenêtre surgissante ou tuile d'une barre
-    /// haute affichée (`ui::panel_hosts`).
-    shown: Mutex<Vec<String>>,
 }
 
 impl PopupState {
@@ -56,19 +53,9 @@ impl PopupState {
         lock(&self.kind).as_deref() == Some(kind)
     }
 
-    /// Un panneau de ce genre est ouvert, quel que soit son widget (« servers:w3 »).
+    /// Un panneau de ce genre est ouvert, quel que soit son widget (« weather:w3 »).
     pub fn is_open_kind(&self, base: &str) -> bool {
         lock(&self.kind).as_deref().is_some_and(|k| base_of(k) == base)
-    }
-
-    /// Le panneau de ce genre est montré, dans la fenêtre surgissante ou en tuile (une tuile
-    /// Serveurs veut ses latences comme le panneau ouvert).
-    pub fn is_shown(&self, base: &str) -> bool {
-        lock(&self.shown).iter().any(|b| b == base)
-    }
-
-    pub(crate) fn set_shown(&self, bases: Vec<String>) {
-        *lock(&self.shown) = bases;
     }
 
     pub(crate) fn set(&self, kind: Option<&str>, placement: Option<&Placement>) {
@@ -194,10 +181,10 @@ mod tests {
         assert_eq!((base_of("media"), instance_of("media")), ("media", ""));
         assert_eq!(instance_of("edithelp:a:b"), "a:b", "tout ce qui suit le premier « : »");
         let s = PopupState::default();
-        s.set(Some("servers:w3"), None);
-        assert!(s.is_open("servers:w3") && s.is_open_kind("servers") && !s.is_open_kind("server"));
+        s.set(Some("weather:w3"), None);
+        assert!(s.is_open("weather:w3") && s.is_open_kind("weather") && !s.is_open_kind("weathe"));
         s.set(None, None);
-        assert!(!s.is_open_kind("servers"));
+        assert!(!s.is_open_kind("weather"));
     }
 
     #[test]

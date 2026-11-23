@@ -63,7 +63,7 @@ pub const ENTRIES: &[SearchEntry] = &[
     e("alertes", "Quand Claude attend ou a terminé", "Signal lumineux (plugin Prisme)", "lumière rgb éclairage"),
     e("alertes", "Captures d’écran vers Claude", "Proposer chaque nouvelle capture à la session Claude qui attend", "capture image screenshot"),
     e("alertes", "Pendant « Ne pas déranger »", "« Claude attend »", "dnd silence"),
-    e("alertes", "Pendant « Ne pas déranger »", "Les alertes d’état", "dnd batterie serveur"),
+    e("alertes", "Pendant « Ne pas déranger »", "Les alertes d’état", "dnd batterie"),
     e("alertes", "« Ne pas déranger » change aussi", "Discord en « Ne pas déranger »", "statut"),
     e("alertes", "« Ne pas déranger » change aussi", "Plugin Prisme : scène « focus »", "lumière éclairage"),
     e("alertes", "Batterie faible", "Casque", "seuil pourcentage"),

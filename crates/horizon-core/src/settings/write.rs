@@ -76,7 +76,7 @@ impl Settings {
         );
         line(&mut o, "claude_island", al.claude_island, "true");
         line(&mut o, "claude_light", al.claude_light, "true");
-        o.push_str("# Pendant « Ne pas déranger », l'îlot montre quand même « Claude attend » et les alertes\n# d'état (batterie faible, serveur hors ligne).\n");
+        o.push_str("# Pendant « Ne pas déranger », l'îlot montre quand même « Claude attend » et les alertes\n# d'état (batterie faible).\n");
         line(&mut o, "dnd_claude", al.dnd_claude, "true");
         line(&mut o, "dnd_battery", al.dnd_battery, "true");
         o.push_str("# « Ne pas déranger » passe Discord en « Ne pas déranger » et tient la scène « focus » de Prisme.\n");

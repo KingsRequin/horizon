@@ -13,8 +13,6 @@ pub enum AlertKind {
     Claude,
     /// Batterie faible (casque, téléphone, montre).
     Battery,
-    /// Serveur du homelab hors ligne ou revenu : alerte d'état, comme la batterie.
-    Server,
     /// Fin d'un minuteur ou changement de phase du pomodoro : demandé par l'utilisateur.
     Timer,
     /// Retour d'une action que l'utilisateur vient de faire (palette de commandes…).
@@ -31,7 +29,7 @@ pub enum AlertKind {
 pub struct DndOptions {
     /// « Claude attend » reste affiché pendant le NPD.
     pub claude: bool,
-    /// Les alertes d'état (batterie faible, serveur hors ligne) restent affichées.
+    /// Les alertes d'état (batterie faible) restent affichées.
     pub battery: bool,
     /// Discord passe en « Ne pas déranger » (statut d'avant rétabli ensuite).
     pub discord: bool,
@@ -67,7 +65,7 @@ pub fn allows(kind: AlertKind, active: bool, opts: &DndOptions) -> bool {
         || match kind {
             AlertKind::Notification | AlertKind::Update | AlertKind::Plugin => false,
             AlertKind::Claude => opts.claude,
-            AlertKind::Battery | AlertKind::Server => opts.battery,
+            AlertKind::Battery => opts.battery,
             AlertKind::Timer | AlertKind::Feedback => true,
         }
 }
@@ -142,7 +140,6 @@ mod tests {
             AlertKind::Notification,
             AlertKind::Claude,
             AlertKind::Battery,
-            AlertKind::Server,
             AlertKind::Timer,
             AlertKind::Feedback,
         ] {
@@ -160,8 +157,6 @@ mod tests {
         let strict = DndOptions { claude: false, battery: false, ..d };
         assert!(!allows(AlertKind::Claude, true, &strict));
         assert!(!allows(AlertKind::Battery, true, &strict));
-        assert!(!allows(AlertKind::Server, true, &strict));
-        assert!(allows(AlertKind::Server, true, &d));
         assert!(allows(AlertKind::Timer, true, &strict));
         assert!(allows(AlertKind::Feedback, true, &strict));
     }

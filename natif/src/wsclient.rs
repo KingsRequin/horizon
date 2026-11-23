@@ -1,9 +1,9 @@
 //! Client WebSocket local qui se reconnecte seul (délai croissant plafonné à 30 s), pour les
-//! services maison (Prisme, Essaim, relais Krisp). Un service absent, ou qui ferme la connexion
+//! services maison (relais Krisp). Un service absent, ou qui ferme la connexion
 //! aussitôt ouverte, ne produit ni erreur visible ni boucle serrée. À la sortie de veille, la
 //! connexion (peut-être morte sans le savoir) est refaite et l'attente écourtée. Un ping part
-//! après `KEEPALIVE` sans envoi : un service qui ferme les clients muets (Essaim, au bout de
-//! 60 s) garde ainsi Horizon, qui ne fait souvent qu'écouter.
+//! après `KEEPALIVE` sans envoi : un service qui ferme les clients muets garde ainsi Horizon,
+//! qui ne fait souvent qu'écouter.
 //!
 //! Repris de `app/src-tauri/src/wsclient.rs`.
 
@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket};
 
-/// Silence d'envoi au-delà duquel un ping part (bien sous les 60 s d'Essaim).
+/// Silence d'envoi au-delà duquel un ping part.
 const KEEPALIVE: Duration = Duration::from_secs(20);
 
 /// Ce que le client signale à son propriétaire.

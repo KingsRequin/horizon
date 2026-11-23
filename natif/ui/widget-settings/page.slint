@@ -13,7 +13,6 @@ import { GlobalLink } from "../settings/global-link.slint";
 import { WeatherSettings } from "weather.slint";
 import { SuggestionsSettings } from "suggestions.slint";
 import { CalendarSettings } from "calendar.slint";
-import { ServersSettings } from "servers.slint";
 import { ShortcutsSettings } from "shortcuts.slint";
 
 export global WidgetSettingsData {
@@ -118,9 +117,8 @@ export component WidgetSettingsPage inherits Rectangle {
         if root.kind == "weather": WeatherSettings { }
         if root.kind == "suggestions": SuggestionsSettings { }
         if root.kind == "calendar": CalendarSettings { }
-        if root.kind == "servers": ServersSettings { }
         if root.kind == "shortcuts": ShortcutsSettings { }
-        if root.kind != "" && !(root.kind == "headset" || root.kind == "claude_sessions" || root.kind == "notifications" || root.kind == "mic_krisp" || root.kind == "weather" || root.kind == "suggestions" || root.kind == "calendar" || root.kind == "servers" || root.kind == "shortcuts"): SettingsNote {
+        if root.kind != "" && !(root.kind == "headset" || root.kind == "claude_sessions" || root.kind == "notifications" || root.kind == "mic_krisp" || root.kind == "weather" || root.kind == "suggestions" || root.kind == "calendar" || root.kind == "shortcuts"): SettingsNote {
             text: "Ce widget n’a pas de réglages.";
             font-size: Theme.fs-meta;
         }

@@ -18,16 +18,13 @@ import { Theme, StyleTokens } from "theme.slint";
 import { Slot, SlotView } from "components.slint";
 import { DashedBox } from "dashed.slint";
 import { CalendarWidget } from "widgets/calendar/widget.slint";
-import { ClaudeQuotaWidget } from "widgets/claude_quota/widget.slint";
 import { ClaudeSessionsWidget } from "widgets/claude_sessions/widget.slint";
 import { ClockWidget } from "widgets/clock/widget.slint";
 import { DiscordVoiceWidget } from "widgets/discord_voice/widget.slint";
-import { EssaimWidget } from "widgets/essaim/widget.slint";
 import { HeadsetWidget } from "widgets/headset/widget.slint";
 import { MediaWidget } from "widgets/media/widget.slint";
 import { MicKrispWidget } from "widgets/mic_krisp/widget.slint";
 import { NotificationsWidget } from "widgets/notifications/widget.slint";
-import { ServersWidget } from "widgets/servers/widget.slint";
 import { ShortcutsWidget } from "widgets/shortcuts/widget.slint";
 import { SuggestionsWidget } from "widgets/suggestions/widget.slint";
 import { SystemWidget } from "widgets/system/widget.slint";
@@ -67,10 +64,10 @@ export component WidgetView inherits Rectangle {
     property <length> placeholder-w: placeholder-text.preferred-width + 16px;
 
     property <string> kind: root.slot.kind;
-    property <bool> ported: kind == "calendar" || kind == "claude_quota" ||
+    property <bool> ported: kind == "calendar" ||
         kind == "claude_sessions" || kind == "clock" || kind == "discord_voice" ||
-        kind == "essaim" || kind == "headset" || kind == "media" ||
-        kind == "mic_krisp" || kind == "notifications" || kind == "servers" ||
+        kind == "headset" || kind == "media" ||
+        kind == "mic_krisp" || kind == "notifications" ||
         kind == "shortcuts" || kind == "suggestions" || kind == "system" || kind == "weather" ||
         kind == "windows" || root.slot.plugin;
     out property <length> natural: row.preferred-width;
@@ -117,15 +114,6 @@ export component WidgetView inherits Rectangle {
             compact: root.compact;
             wide: root.wide;
         }
-        if kind == "claude_quota": ClaudeQuotaWidget {
-            t: root.t;
-            slot: root.slot;
-            dim: root.dim;
-            interactive: root.live;
-            clickable: root.live-click;
-            compact: root.compact;
-            wide: root.wide;
-        }
         if kind == "claude_sessions": ClaudeSessionsWidget {
             t: root.t;
             slot: root.slot;
@@ -145,15 +133,6 @@ export component WidgetView inherits Rectangle {
             wide: root.wide;
         }
         if kind == "discord_voice": DiscordVoiceWidget {
-            t: root.t;
-            slot: root.slot;
-            dim: root.dim;
-            interactive: root.live;
-            clickable: root.live-click;
-            compact: root.compact;
-            wide: root.wide;
-        }
-        if kind == "essaim": EssaimWidget {
             t: root.t;
             slot: root.slot;
             dim: root.dim;
@@ -190,15 +169,6 @@ export component WidgetView inherits Rectangle {
             wide: root.wide;
         }
         if kind == "notifications": NotificationsWidget {
-            t: root.t;
-            slot: root.slot;
-            dim: root.dim;
-            interactive: root.live;
-            clickable: root.live-click;
-            compact: root.compact;
-            wide: root.wide;
-        }
-        if kind == "servers": ServersWidget {
             t: root.t;
             slot: root.slot;
             dim: root.dim;

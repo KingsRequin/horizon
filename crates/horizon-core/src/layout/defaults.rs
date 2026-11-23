@@ -86,6 +86,7 @@ impl Layout {
             profiles: vec![Profile::default_profile()],
             active_profile: DEFAULT_PROFILE.into(),
             auto_from: None,
+            pending_plugins: Vec::new(),
         }
     }
 }

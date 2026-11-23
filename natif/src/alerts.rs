@@ -1,5 +1,6 @@
 //! Îlot dynamique : un seul canal pour tout ce qui s'y montre quelques secondes — notification
-//! Windows qui arrive, « Claude attend », batterie faible du casque, serveur hors ligne ou revenu, fin du minuteur, retour d'une action.
+//! Windows qui arrive, « Claude attend », batterie faible du casque, fin du minuteur, retour
+//! d'une action, alerte d'un plugin.
 //! « Ne pas déranger » filtre ici, et seulement ici (`allowed`). L'affichage (durée, fondu,
 //! activités des plugins, clic) est dans `ui::island`.
 //!
@@ -18,11 +19,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
-    /// Information (serveur revenu, notification, retour d'une action).
+    /// Information (notification, retour d'une action, alerte d'un plugin).
     Info,
     /// À regarder bientôt (minuteur terminé, Claude attend).
     Attention,
-    /// Problème (batterie faible, serveur hors ligne).
+    /// Problème (batterie faible).
     Alert,
 }
 
@@ -187,10 +188,6 @@ pub fn essai(app: &AppHandle, what: &str) {
                 .with_action(Action::Session { id: "essai".into() }),
         )),
         "batterie" => Some((AlertKind::Battery, low_battery("headset", "Casque", 12))),
-        "serveur" => Some((
-            AlertKind::Server,
-            Alert::icon("hardDrives", Severity::Alert, "website est hors ligne".into(), "Injoignable deux fois de suite".into()),
-        )),
         "minuteur" => Some((AlertKind::Timer, Alert::icon("timer", Severity::Attention, "Minuteur terminé".into(), "25 min écoulées".into()))),
         "fenetre" => Some((
             AlertKind::Feedback,

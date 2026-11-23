@@ -86,7 +86,7 @@ fn panels(dir: &Path) -> Vec<String> {
     ids
 }
 
-/// « claude_quota » → « ClaudeQuota ».
+/// « claude_sessions » → « ClaudeSessions ».
 fn camel(id: &str) -> String {
     id.split('_')
         .map(|w| {

@@ -1,6 +1,6 @@
 //! Absence de l'utilisateur (session verrouillée, écran éteint) : les fils d'affichage
 //! s'arrêtent d'eux-mêmes (`horizon_sys::presence::wait_while_away` : mesures système,
-//! masquage, micro, notifications, serveurs). Ici, le journal et le réveil de ceux qui dorment
+//! masquage, micro, notifications). Ici, le journal et le réveil de ceux qui dorment
 //! sur autre chose (son en cours).
 //!
 //! Repris de `app/src-tauri/src/presence.rs`.

@@ -523,6 +523,41 @@ fn lighting_and_batteries_become_plugins_in_place() {
     assert_eq!(main.right[j].id, ids.1);
 }
 
+#[test]
+fn essaim_servers_and_quota_become_plugins_to_install() {
+    use super::migrations::MIGRATION_PLUGINS_2;
+    // Disposition d'avant : les trois widgets intégrés, Serveurs réglé, Essaim aussi dans un
+    // profil inactif.
+    let mut l = Layout::default_for(&real_monitors());
+    let essaim = l.add_widget("main", Zone::Right, WidgetKind::ESSAIM).unwrap();
+    let servers = l.add_widget("top", Zone::Left, WidgetKind::SERVERS).unwrap();
+    let hosts = json!({ "hosts": [{ "id": "nas", "address": null, "label": "NAS", "port": 5000 }] });
+    l.set_widget_settings(&servers, hosts.clone()).unwrap();
+    let jeu = l.add_profile("Jeu", true).unwrap();
+    l.add_widget("top", Zone::Right, WidgetKind::CLAUDE_QUOTA).unwrap();
+    l.switch_profile(DEFAULT_PROFILE, false).unwrap();
+    l.migrations.retain(|m| m != MIGRATION_PLUGINS_2);
+    l.migrate();
+    let w = l.widget(&essaim).unwrap();
+    assert_eq!((w.kind, &w.settings), (WidgetKind::ESSAIM_PLUGIN, &Value::Null), "même exemplaire, même place");
+    let w = l.widget(&servers).unwrap();
+    assert_eq!((w.kind, &w.settings), (WidgetKind::SERVEURS_PLUGIN, &hosts), "réglages gardés");
+    // Quota Claude n'est que dans le profil « Jeu » : attendu quand même.
+    assert_eq!(l.pending_plugins, ["claude-quota", "essaim", "serveurs"]);
+    assert!(l.wants_plugin("claude-quota") && !l.wants_plugin("prisme"));
+    l.switch_profile(&jeu, false).unwrap();
+    assert!(l.first_of(WidgetKind::CLAUDE_QUOTA_PLUGIN).is_some() && l.first_of(WidgetKind::CLAUDE_QUOTA).is_none());
+    // Relue depuis le fichier puis migrée de nouveau : rien ne s'ajoute.
+    let mut again: Layout = serde_json::from_str(&serde_json::to_string(&l).unwrap()).unwrap();
+    again.migrate();
+    assert_eq!(again, l);
+    // Une disposition sans ces widgets n'attend aucun plugin, et n'écrit pas la clé.
+    let mut plain = unmigrated();
+    plain.migrate();
+    assert!(plain.pending_plugins.is_empty());
+    assert!(serde_json::to_value(&plain).unwrap().get("pending_plugins").is_none());
+}
+
 // --- Barre haute : hauteur et zone des tuiles ---
 
 #[test]

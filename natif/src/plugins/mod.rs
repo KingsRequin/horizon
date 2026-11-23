@@ -239,6 +239,18 @@ impl Plugins {
         self.edit_store(app, |r| r.store.entry(id.to_owned()).or_default().library = true);
     }
 
+    /// Le plugin `id` vient d'être installé depuis la bibliothèque à la place d'un widget intégré
+    /// (migration) : ce qu'il demande, `permissions` de son entrée de l'index, est accepté
+    /// d'office — la fonction tournait déjà avec ces droits. Un manifeste qui demanderait autre
+    /// chose attendrait l'accord, comme toujours.
+    pub fn adopt(&self, app: &AppHandle, id: &str, permissions: horizon_core::plugin::Permissions) {
+        self.edit_store(app, |r| {
+            let e = r.store.entry(id.to_owned()).or_default();
+            e.library = true;
+            e.accepted = permissions;
+        });
+    }
+
     /// Le plugin `id` a été retiré : son accord et son origine sont oubliés.
     pub fn forget(&self, app: &AppHandle, id: &str) {
         self.reset_counts(id);
