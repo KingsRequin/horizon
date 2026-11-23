@@ -19,8 +19,8 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyMenu,
-    DestroyWindow, GetCursorPos, HICON, HWND_MESSAGE, ICONINFO, MF_CHECKED, MF_SEPARATOR, MF_STRING, PostMessageW,
-    RegisterClassW, RegisterWindowMessageW, SetForegroundWindow, TPM_NONOTIFY, TPM_RETURNCMD,
+    DestroyWindow, GetCursorPos, GetSystemMetrics, HICON, HWND_MESSAGE, ICONINFO, MF_CHECKED, MF_SEPARATOR, MF_STRING,
+    PostMessageW, RegisterClassW, RegisterWindowMessageW, SM_CXSMICON, SetForegroundWindow, TPM_NONOTIFY, TPM_RETURNCMD,
     TPM_RIGHTBUTTON, TrackPopupMenu, WINDOW_EX_STYLE, WM_APP, WM_CONTEXTMENU, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP,
     WNDCLASSW, WS_OVERLAPPED,
 };
@@ -49,8 +49,22 @@ pub fn set_autostart(on: bool) -> Result<(), String> {
     horizon_sys::autostart::set(on).map_err(|e| e.to_string())
 }
 
-/// Icône d'Horizon (RGBA 32 × 32), décodée au démarrage.
-const ICON_PNG: &[u8] = include_bytes!("../icons/horizon-32.png");
+/// Icône d'Horizon (RGBA) aux tailles d'une petite icône, de 100 à 300 % d'échelle : côté en
+/// pixels et PNG. Chaque taille est dessinée calée sur le pixel (`scripts/icones.ps1`), ce
+/// qu'une réduction par Windows d'une seule image ne donnerait pas.
+const ICONS: [(u32, &[u8]); 6] = [
+    (16, include_bytes!("../icons/horizon-16.png")),
+    (20, include_bytes!("../icons/horizon-20.png")),
+    (24, include_bytes!("../icons/horizon-24.png")),
+    (32, include_bytes!("../icons/horizon-32.png")),
+    (40, include_bytes!("../icons/horizon-40.png")),
+    (48, include_bytes!("../icons/horizon-48.png")),
+];
+
+/// PNG de la plus petite icône qui couvre `side` pixels ; la plus grande au-delà.
+fn icon_png(side: u32) -> &'static [u8] {
+    ICONS.iter().find(|(size, _)| *size >= side).unwrap_or(&ICONS[ICONS.len() - 1]).1
+}
 
 struct Tray {
     app: AppHandle,
@@ -84,7 +98,9 @@ fn taskbar_created() -> u32 {
 
 /// Crée l'icône (fil de l'interface).
 pub fn start(app: &AppHandle) -> anyhow::Result<()> {
-    let icon = decode_png(ICON_PNG)?;
+    // SAFETY : lecture d'une mesure du système.
+    let side = unsafe { GetSystemMetrics(SM_CXSMICON) };
+    let icon = decode_png(icon_png(side.max(0) as u32))?;
     let hicon = hicon_from_rgba(icon.0, icon.1, &icon.2)?;
     // SAFETY : classe et fenêtre « message seulement » de ce fil.
     let hwnd = unsafe {
@@ -333,8 +349,20 @@ mod tests {
     }
 
     #[test]
-    fn embedded_icon_decodes() {
-        let (w, h, rgba) = decode_png(ICON_PNG).unwrap();
-        assert_eq!((w, h, rgba.len()), (32, 32, 32 * 32 * 4));
+    fn embedded_icons_decode_at_their_size() {
+        for (size, png) in ICONS {
+            let (w, h, rgba) = decode_png(png).unwrap();
+            assert_eq!((w, h, rgba.len() as u32), (size, size, size * size * 4));
+        }
+    }
+
+    #[test]
+    fn icon_follows_the_small_icon_size() {
+        let side = |want: u32| decode_png(icon_png(want)).unwrap().0;
+        assert_eq!(side(16), 16, "100 %");
+        assert_eq!(side(20), 20, "125 %");
+        assert_eq!(side(18), 20, "entre deux tailles : la suivante, que Windows réduit");
+        assert_eq!(side(64), 48, "au-delà : la plus grande");
+        assert_eq!(side(0), 16);
     }
 }
