@@ -6,3 +6,4 @@ pub mod proto;
 pub mod pairing;
 pub mod registry;
 pub mod battery;
+pub mod firewall;
