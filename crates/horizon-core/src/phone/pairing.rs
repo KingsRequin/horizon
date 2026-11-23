@@ -89,7 +89,7 @@ impl Pairing {
 }
 
 /// Comparaison en temps constant : le temps de réponse ne dit rien du jeton attendu.
-fn same(a: &str, b: &str) -> bool {
+pub(super) fn same(a: &str, b: &str) -> bool {
     let (a, b) = (a.as_bytes(), b.as_bytes());
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
