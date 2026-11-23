@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "Questions fréquentes / FAQ"
+    url: https://github.com/KingsRequin/horizon#questions-fréquentes
+    about: "Avertissement de Windows, notifications, hooks de Claude Code, réglages… à lire avant d'ouvrir une issue. / English: README.en.md."
+  - name: "Guide des fonctions"
+    url: https://github.com/KingsRequin/horizon/blob/master/docs/guide.md
+    about: "Chaque widget et chaque réglage expliqués en détail (en français)."
+  - name: "Écrire un plugin"
+    url: https://github.com/KingsRequin/horizon/blob/master/docs/PLUGINS.md
+    about: "Un widget pour ta propre appli, dans son dossier, sans toucher au code d'Horizon (en français)."

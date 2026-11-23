@@ -1,0 +1,32 @@
+name: "Poser une question / Ask a question"
+description: "Un réglage que tu ne trouves pas, un doute sur le fonctionnement. / A setting you cannot find, a doubt about how it works."
+title: "[Question] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Écris en français ou en anglais. Les [questions fréquentes](https://github.com/KingsRequin/horizon#questions-fréquentes) et le [guide](https://github.com/KingsRequin/horizon/blob/master/docs/guide.md) répondent déjà à beaucoup de choses.
+
+        *Write in French or English. The [FAQ](https://github.com/KingsRequin/horizon/blob/master/README.en.md#faq) and the [guide](https://github.com/KingsRequin/horizon/blob/master/docs/guide.md) (French) already answer a lot.*
+
+  - type: textarea
+    id: question
+    attributes:
+      label: "Ta question / Your question"
+    validations:
+      required: true
+
+  - type: textarea
+    id: essais
+    attributes:
+      label: "Ce que tu as déjà essayé / What you already tried"
+
+  - type: input
+    id: version
+    attributes:
+      label: "Version d'Horizon / Horizon version"
+      description: |
+        Clic droit sur une barre › *Réglages d'Horizon* › *État*, ligne « Mises à jour ».
+        *Right-click a bar › "Réglages d'Horizon" › "État", line "Mises à jour".*
+      placeholder: "0.6.9"

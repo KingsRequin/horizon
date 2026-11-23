@@ -1,0 +1,39 @@
+name: "Proposer une idée / Suggest an idea"
+description: "Un nouveau widget, un réglage, une amélioration. / A new widget, setting or improvement."
+title: "[Idée] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Écris en français ou en anglais. La [feuille de route](https://github.com/KingsRequin/horizon#feuille-de-route) dit ce qui est déjà prévu. Un widget pour une appli précise peut aussi s'écrire en plugin : [docs/PLUGINS.md](https://github.com/KingsRequin/horizon/blob/master/docs/PLUGINS.md).
+
+        *Write in French or English. The [roadmap](https://github.com/KingsRequin/horizon/blob/master/README.en.md#roadmap) lists what is already planned. A widget for one specific app can also be written as a plugin: [docs/PLUGINS.md](https://github.com/KingsRequin/horizon/blob/master/docs/PLUGINS.md) (French).*
+
+  - type: textarea
+    id: besoin
+    attributes:
+      label: "Quel est le besoin ? / What is the need?"
+      description: |
+        Ce que tu voudrais faire et qui est impossible ou pénible aujourd'hui.
+        *What you would like to do that is impossible or tedious today.*
+    validations:
+      required: true
+
+  - type: textarea
+    id: idee
+    attributes:
+      label: "Ton idée / Your idea"
+      description: |
+        Comment tu l'imagines : dans quel widget ou quel panneau, où ça se règle, à quoi ça ressemble.
+        *How you picture it: in which widget or panel, where it is set, what it looks like.*
+    validations:
+      required: true
+
+  - type: textarea
+    id: autres
+    attributes:
+      label: "Autres pistes, exemples / Alternatives, examples"
+      description: |
+        Ce que tu as essayé à la place, ou une appli, une image, une vidéo qui montre ce que tu veux.
+        *What you tried instead, or an app, picture or video showing what you want.*

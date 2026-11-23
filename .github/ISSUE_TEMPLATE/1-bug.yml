@@ -1,0 +1,111 @@
+name: "Signaler un bug / Report a bug"
+description: "Quelque chose ne marche pas comme prévu. / Something does not work as expected."
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Merci de prendre le temps de signaler ce problème. Écris en français ou en anglais.
+        Jette d'abord un œil aux [questions fréquentes](https://github.com/KingsRequin/horizon#questions-fréquentes) : la réponse y est peut-être.
+
+        *Thanks for taking the time to report this. Write in French or English.
+        Have a look at the [FAQ](https://github.com/KingsRequin/horizon/blob/master/README.en.md#faq) first: the answer may be there.*
+
+  - type: input
+    id: version
+    attributes:
+      label: "Version d'Horizon / Horizon version"
+      description: |
+        Clic droit sur une barre › *Réglages d'Horizon* › *État*, ligne « Mises à jour ». Ou la ligne « démarrage d'Horizon X.Y.Z » du journal (`%APPDATA%\Horizon\horizon.log`).
+        *Right-click a bar › "Réglages d'Horizon" › "État", line "Mises à jour". Or the line "démarrage d'Horizon X.Y.Z" in the log (`%APPDATA%\Horizon\horizon.log`).*
+      placeholder: "0.6.9"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: windows
+    attributes:
+      label: "Windows"
+      options:
+        - "Windows 11"
+        - "Windows 10"
+        - "Autre / Other"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: zone
+    attributes:
+      label: "Où est le problème ? / Where is the problem?"
+      description: "Plusieurs choix possibles. / You can pick several."
+      multiple: true
+      options:
+        - "Barres : affichage, écrans, hauteur, tuiles / Bars: display, monitors, height, tiles"
+        - "Plein écran et jeux (barre masquée ou qui revient) / Fullscreen and games (bar hidden or coming back)"
+        - "Un widget ou son panneau (dis lequel) / A widget or its panel (say which)"
+        - "Musique, pochette, couleur d'accent / Music, cover art, accent colour"
+        - "Audio : sorties, micro, casque, Discord / Audio: outputs, mic, headset, Discord"
+        - "Notifications et alertes (îlot, Claude Code) / Notifications and alerts (island, Claude Code)"
+        - "Mode édition, profils, réglages / Edit mode, profiles, settings"
+        - "Palette de commandes / Command palette"
+        - "Plugins"
+        - "Installation ou mise à jour / Install or update"
+        - "Lenteur, consommation / Slowness, resource use"
+        - "Autre / Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: constat
+    attributes:
+      label: "Que se passe-t-il ? / What happens?"
+      description: |
+        Ce que tu vois, le plus précisément possible.
+        *What you see, as precisely as you can.*
+    validations:
+      required: true
+
+  - type: textarea
+    id: etapes
+    attributes:
+      label: "Comment le reproduire ? / How to reproduce it?"
+      description: |
+        Les étapes, une par ligne. Dis aussi si ça arrive à chaque fois ou de temps en temps.
+        *The steps, one per line. Also say whether it happens every time or only sometimes.*
+      placeholder: |
+        1. Ouvrir le panneau Météo
+        2. …
+        3. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: attendu
+    attributes:
+      label: "Qu'attendais-tu à la place ? / What did you expect instead?"
+
+  - type: textarea
+    id: journal
+    attributes:
+      label: "Journal / Log"
+      description: |
+        Colle la fin de `%APPDATA%\Horizon\horizon.log` (bouton *Ouvrir le journal* de *Réglages d'Horizon › État*, ou Win + R puis ce chemin). Il peut contenir le nom de tes applications, de ta ville ou de tes serveurs : retire ce que tu ne veux pas montrer.
+        *Paste the end of `%APPDATA%\Horizon\horizon.log` ("Ouvrir le journal" button in "Réglages d'Horizon › État", or Win + R then this path). It may hold the names of your apps, your city or your servers: remove anything you would rather not share.*
+      render: text
+
+  - type: textarea
+    id: installation
+    attributes:
+      label: "Ton installation / Your setup"
+      description: |
+        Nombre d'écrans, leur disposition et leur mise à l'échelle. Pour un jeu : son nom et son mode d'affichage (plein écran, fenêtré sans bordure). Pour un souci de son ou de musique : le lecteur (Spotify, navigateur…) et le casque.
+        *Number of monitors, how they are arranged and their display scaling. For a game: its name and display mode (fullscreen, borderless window). For a sound or music issue: the player (Spotify, browser…) and the headset.*
+
+  - type: textarea
+    id: captures
+    attributes:
+      label: "Capture d'écran ou vidéo / Screenshot or video"
+      description: |
+        Glisse tes fichiers ici. Une capture de la barre entière aide beaucoup.
+        *Drop your files here. A capture of the whole bar helps a lot.*
