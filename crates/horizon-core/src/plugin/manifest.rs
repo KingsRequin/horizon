@@ -2,7 +2,7 @@
 
 use super::permissions::{self, Permissions};
 use super::settings::{SettingKind, SettingSpec};
-use super::{API_MAX, API_MIN, EVENTS};
+use super::{API_MAX, API_MIN, EVENTS, SYSTEM};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -78,14 +78,10 @@ pub fn parse_manifest(json: &str, builtin: &[&str]) -> Result<PluginManifest, Ma
     if let Some(e) = p.events.iter().find(|e| !EVENTS.contains(&e.as_str())) {
         return Err(err("permissions.events", format!("« {e} » inconnu (connus : {})", EVENTS.join(", "))));
     }
-    let mut settings: Vec<SettingSpec> = Vec::with_capacity(raw.settings.len());
-    for (i, r) in raw.settings.into_iter().enumerate() {
-        let spec = setting(r).map_err(|m| err(&format!("settings[{i}]"), m))?;
-        if settings.iter().any(|s| s.key == spec.key) {
-            return Err(err(&format!("settings[{i}]"), format!("clé « {} » en double", spec.key)));
-        }
-        settings.push(spec);
+    if let Some(e) = p.system.iter().find(|e| !SYSTEM.contains(&e.as_str())) {
+        return Err(err("permissions.system", format!("« {e} » inconnu (connus : {})", SYSTEM.join(", "))));
     }
+    let settings = settings(raw.settings, false).map_err(|(i, m)| err(&format!("settings[{i}]"), m))?;
     Ok(PluginManifest {
         id: raw.id,
         name: raw.name,
@@ -148,6 +144,11 @@ struct RawSetting {
     step: Option<f64>,
     #[serde(default)]
     options: Vec<RawOption>,
+    #[serde(default)]
+    help: Option<String>,
+    /// Champs d'un élément (`list`).
+    #[serde(default)]
+    fields: Vec<RawSetting>,
 }
 
 #[derive(Deserialize)]
@@ -157,16 +158,39 @@ enum RawOption {
     Pair { value: String, label: String },
 }
 
-fn setting(r: RawSetting) -> Result<SettingSpec, String> {
+/// Réglages d'un manifeste, ou champs d'une liste (`nested`) ; erreur : rang et message.
+fn settings(raw: Vec<RawSetting>, nested: bool) -> Result<Vec<SettingSpec>, (usize, String)> {
+    let mut out: Vec<SettingSpec> = Vec::with_capacity(raw.len());
+    for (i, r) in raw.into_iter().enumerate() {
+        let spec = setting(r, nested).map_err(|m| (i, m))?;
+        if out.iter().any(|s| s.key == spec.key) {
+            return Err((i, format!("clé « {} » en double", spec.key)));
+        }
+        out.push(spec);
+    }
+    Ok(out)
+}
+
+fn setting(r: RawSetting, nested: bool) -> Result<SettingSpec, String> {
     if r.key.is_empty() || !r.key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return Err(format!("clé « {} » : lettres, chiffres et « _ » seulement", r.key));
+    }
+    if r.kind != "list" && !r.fields.is_empty() {
+        return Err("« fields » ne sert qu'au type « list »".into());
     }
     let kind = match r.kind.as_str() {
         "bool" => SettingKind::Bool,
         "number" => SettingKind::Number { min: r.min, max: r.max, step: r.step },
         "string" => SettingKind::Text,
         "color" => SettingKind::Color,
+        "secret" | "list" if nested => return Err(format!("type « {} » interdit dans une liste", r.kind)),
         "secret" => SettingKind::Secret,
+        "list" => {
+            if r.fields.is_empty() {
+                return Err("« fields » vide".into());
+            }
+            SettingKind::List(settings(r.fields, true).map_err(|(i, m)| format!("fields[{i}] : {m}"))?)
+        }
         "choice" => {
             let options: Vec<(String, String)> = r
                 .options
@@ -181,7 +205,7 @@ fn setting(r: RawSetting) -> Result<SettingSpec, String> {
             }
             SettingKind::Choice(options)
         }
-        other => return Err(format!("type « {other} » inconnu (bool, number, string, choice, color, secret)")),
+        other => return Err(format!("type « {other} » inconnu (bool, number, string, choice, color, secret, list)")),
     };
     let fallback = match &kind {
         SettingKind::Bool => Value::Bool(false),
@@ -190,8 +214,10 @@ fn setting(r: RawSetting) -> Result<SettingSpec, String> {
         SettingKind::Choice(options) => Value::String(options[0].0.clone()),
         SettingKind::Color => Value::String("#ffffff".into()),
         SettingKind::Secret => Value::Null,
+        SettingKind::List(_) => Value::Array(Vec::new()),
     };
-    let mut spec = SettingSpec { key: r.key, label: r.label, kind, default: fallback };
+    let help = r.help.filter(|h| !h.trim().is_empty());
+    let mut spec = SettingSpec { key: r.key, label: r.label, help, kind, default: fallback };
     if let Some(d) = r.default {
         if spec.kind != SettingKind::Secret && super::settings::coerce(&spec, &d) != d {
             return Err(format!("« default » ne convient pas au type « {} »", r.kind));
@@ -262,9 +288,48 @@ mod tests {
 
     #[test]
     fn rejects_newer_api() {
-        let e = parse_manifest(&with("api", "1"), &[]).unwrap_err();
+        assert_eq!(parse_manifest(&with("api", "1"), &[]).unwrap().api, 1);
+        let e = parse_manifest(&with("api", &(API_MAX + 1).to_string()), &[]).unwrap_err();
         assert_eq!(e.field, "api");
         assert!(e.message.contains("plus récente"), "{}", e.message);
+    }
+
+    #[test]
+    fn system_actions_are_named() {
+        let m = parse_manifest(&with("permissions", r#"{ "system": ["probe", "ssh", "open"], "files": ["%USERPROFILE%/.ssh/config"] }"#), &[]).unwrap();
+        assert!(m.permissions.allows_system("ssh"));
+        assert_eq!(err_field(&with("permissions", r#"{ "system": ["exec"] }"#)), "permissions.system");
+    }
+
+    #[test]
+    fn list_setting_has_fields() {
+        let json = with(
+            "settings",
+            r#"[{ "key": "hotes", "type": "list", "label": "Serveurs", "help": "Un par ligne.", "fields": [
+                { "key": "nom", "type": "string", "label": "Nom" },
+                { "key": "test", "type": "choice", "label": "Test", "options": ["tcp", "http"] },
+                { "key": "port", "type": "number", "label": "Port", "min": 0, "max": 65535 }
+            ] }]"#,
+        );
+        let m = parse_manifest(&json, &[]).unwrap();
+        let s = &m.settings[0];
+        assert_eq!((s.help.as_deref(), &s.default), (Some("Un par ligne."), &serde_json::json!([])));
+        let SettingKind::List(fields) = &s.kind else { panic!("liste attendue") };
+        assert_eq!(fields.iter().map(|f| f.key.as_str()).collect::<Vec<_>>(), ["nom", "test", "port"]);
+        assert_eq!(fields[1].default, serde_json::json!("tcp"));
+
+        let bad = |settings: &str| parse_manifest(&with("settings", settings), &[]).unwrap_err();
+        assert_eq!(bad(r#"[{ "key": "l", "type": "list", "label": "L" }]"#).field, "settings[0]");
+        let nested = bad(r#"[{ "key": "l", "type": "list", "label": "L", "fields": [{ "key": "s", "type": "secret", "label": "S" }] }]"#);
+        assert!(nested.message.contains("fields[0]") && nested.message.contains("interdit"), "{}", nested.message);
+        let twice = bad(r#"[{ "key": "l", "type": "list", "label": "L", "fields": [
+            { "key": "a", "type": "bool", "label": "A" }, { "key": "a", "type": "bool", "label": "A" }] }]"#);
+        assert!(twice.message.contains("en double"), "{}", twice.message);
+        assert_eq!(bad(r#"[{ "key": "b", "type": "bool", "label": "B", "fields": [{ "key": "a", "type": "bool", "label": "A" }] }]"#).field, "settings[0]");
+        // Le défaut d'une liste doit être complet (chaque champ présent).
+        let default_ok = with("settings", r#"[{ "key": "l", "type": "list", "label": "L", "default": [{ "a": true }], "fields": [{ "key": "a", "type": "bool", "label": "A" }] }]"#);
+        assert_eq!(parse_manifest(&default_ok, &[]).unwrap().settings[0].default, serde_json::json!([{ "a": true }]));
+        assert_eq!(bad(r#"[{ "key": "l", "type": "list", "label": "L", "default": [{}], "fields": [{ "key": "a", "type": "bool", "label": "A" }] }]"#).field, "settings[0]");
     }
 
     #[test]

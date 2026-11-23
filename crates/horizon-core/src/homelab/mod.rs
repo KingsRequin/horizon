@@ -96,13 +96,7 @@ pub(crate) fn web_url(url: Option<&str>) -> Option<String> {
     (u.starts_with("https://") || u.starts_with("http://")).then(|| u.to_owned())
 }
 
-/// Nom transmissible tel quel à `ssh` : pas d'option déguisée (`-oProxyCommand=…`), pas
-/// d'espace ni de caractère de contrôle ou de guillemet.
-pub fn safe_ssh_target(s: &str) -> bool {
-    !s.is_empty()
-        && !s.starts_with('-')
-        && s.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '@' | ':' | '[' | ']'))
-}
+pub use crate::plugin::safe_ssh_target;
 
 fn target(id: &str, address: &str, ssh_port: Option<u16>, s: Option<&HostSetting>, manual: bool) -> Target {
     let url = web_url(s.and_then(|s| s.url.as_deref()));

@@ -1,17 +1,27 @@
 // Réglages d'un widget de plugin, générés depuis `settings` de son plugin.json
-// (src/ui/widget_settings/plugin.rs) : une ligne par réglage, selon son genre.
+// (src/ui/widget_settings/plugin.rs) : une ligne par réglage, selon son genre. Une liste donne
+// une suite de lignes : son titre, puis pour chaque élément son en-tête (corbeille) et ses
+// champs, puis « Ajouter ».
 
 import { SettingCheck } from "../settings/check.slint";
 import { SettingRow } from "../settings/row.slint";
 import { CommitField, NumberField, SelectField } from "../settings/field.slint";
-import { SettingsNote } from "../settings/text.slint";
+import { SettingsNote, SettingsSubheading } from "../settings/text.slint";
+import { SettingsButton, RemoveButton } from "../settings/button.slint";
+import { SettingsLayout } from "../settings/layout.slint";
 import { Theme } from "../theme.slint";
 
-// Genre : 0 case à cocher, 1 nombre, 2 texte, 3 choix, 4 couleur, 5 secret.
+// Genre : 0 case à cocher, 1 nombre, 2 texte, 3 choix, 4 couleur, 5 secret, 6 titre d'une liste,
+// 7 en-tête d'un élément de liste, 8 ajout d'un élément.
 export struct PluginSettingRow {
+    // Clé du réglage ; champ d'un élément de liste : « liste/rang/champ » ; élément : « liste/rang ».
     key: string,
     label: string,
+    // Ligne d'aide (`help`).
+    hint: string,
     kind: int,
+    // Champ d'un élément de liste (en retrait).
+    nested: bool,
     checked: bool,
     number: int,
     minimum: int,
@@ -31,6 +41,9 @@ export global PluginSettingsData {
     callback set-secret(string, string);
     // Liste déroulante d'un choix : position du champ dans la fenêtre.
     callback open-choice(string, length, length);
+    // Liste : nouvel élément (clé de la liste), élément retiré (« liste/rang »).
+    callback list-add(string);
+    callback list-remove(string);
 }
 
 export component PluginSettings inherits VerticalLayout {
@@ -42,12 +55,16 @@ export component PluginSettings inherits VerticalLayout {
         if r.kind == 0: SettingCheck {
             checked: r.checked;
             label: r.label;
+            hint: r.hint;
+            nested: r.nested;
             toggled(v) => {
                 PluginSettingsData.set-bool(r.key, v);
             }
         }
         if r.kind == 1: SettingRow {
             label: r.label;
+            hint: r.hint;
+            nested: r.nested;
             NumberField {
                 value: r.number;
                 minimum: r.minimum;
@@ -60,7 +77,8 @@ export component PluginSettings inherits VerticalLayout {
         }
         if r.kind == 2 || r.kind == 4: SettingRow {
             label: r.label;
-            hint: r.kind == 4 ? "Couleur #rrggbb" : "";
+            hint: r.hint;
+            nested: r.nested;
             CommitField {
                 width: 220px;
                 value: r.text;
@@ -71,6 +89,8 @@ export component PluginSettings inherits VerticalLayout {
         }
         if r.kind == 3: SettingRow {
             label: r.label;
+            hint: r.hint;
+            nested: r.nested;
             choice := SelectField {
                 width: 220px;
                 text: r.choice;
@@ -81,13 +101,56 @@ export component PluginSettings inherits VerticalLayout {
         }
         if r.kind == 5: SettingRow {
             label: r.label;
-            hint: r.saved ? "Enregistré dans le Gestionnaire d’identifiants de Windows. Saisir pour remplacer." : "Gardé dans le Gestionnaire d’identifiants de Windows.";
+            hint: r.hint;
             CommitField {
                 width: 220px;
                 value: "";
                 placeholder: r.saved ? "••••••••" : "";
                 committed(v) => {
                     PluginSettingsData.set-secret(r.key, v);
+                }
+            }
+        }
+        if r.kind == 6: VerticalLayout {
+            SettingsSubheading {
+                text: r.label;
+            }
+            if r.hint != "": SettingsNote {
+                text: r.hint;
+                below: 4px;
+            }
+        }
+        if r.kind == 7: HorizontalLayout {
+            padding-top: 6px;
+            spacing: 8px;
+            Text {
+                text: r.label;
+                horizontal-stretch: 1;
+                color: SettingsLayout.t.text;
+                font-size: SettingsLayout.t.fs-body;
+                font-weight: 600;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            VerticalLayout {
+                alignment: center;
+                RemoveButton {
+                    what: r.label;
+                    clicked => {
+                        PluginSettingsData.list-remove(r.key);
+                    }
+                }
+            }
+        }
+        if r.kind == 8: HorizontalLayout {
+            alignment: start;
+            padding-top: 6px;
+            SettingsButton {
+                text: r.label;
+                icon: @image-url("../../icons/phosphor/plus.svg");
+                height: 28px;
+                clicked => {
+                    PluginSettingsData.list-add(r.key);
                 }
             }
         }

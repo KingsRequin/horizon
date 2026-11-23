@@ -16,6 +16,7 @@ pub mod script;
 mod slint_host;
 mod store;
 pub mod template;
+pub mod terminal;
 pub mod js;
 pub mod view;
 

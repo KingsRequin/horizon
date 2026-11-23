@@ -58,6 +58,8 @@ pub enum Io {
     WsText(String),
     /// Réponse HTTP (statut, corps) ou erreur.
     Http(Result<(u16, String), String>),
+    /// Sonde d'une machine : latence (ms) ou erreur.
+    Probe(Result<u32, String>),
 }
 
 /// Depuis le fil des scripts.
@@ -81,8 +83,12 @@ pub enum FromJs {
     Alert { id: String, spec: Json },
     /// `horizon.palette.set` : entrées du plugin dans la palette.
     Palette { id: String, entries: Json },
-    /// `horizon.open` : lien https vérifié.
+    /// `horizon.open` : lien vérifié (déclaré, ou quelconque avec l'action `open`).
     Open { id: String, url: String },
+    /// `horizon.ssh.open` : terminal SSH vers une cible vérifiée.
+    Ssh { id: String, target: String },
+    /// `horizon.settings.open` : page de réglages d'un exemplaire (`None` : le premier).
+    SettingsOpen { id: String, instance: Option<String> },
     /// Le fil s'est arrêté (après `ToJs::Quit`).
     Quit,
 }
@@ -419,8 +425,82 @@ mod tests {
     }
 
     #[test]
+    fn probe_tells_whether_a_machine_answers() {
+        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = server.local_addr().unwrap().port();
+        // Port fermé : celui d'un écouteur qu'on vient de lâcher.
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let (s, rx) = engine();
+        let perms = Permissions { system: vec!["probe".into()], ..Permissions::default() };
+        let main = format!(
+            r#"horizon.net.probe("127.0.0.1:{port}").then((r) => horizon.ui.set("ouvert", [r.ok, typeof r.ms, r.error]));
+               horizon.net.probe("127.0.0.1:{closed}").then((r) => horizon.ui.set("ferme", [r.ok, r.ms, typeof r.error]));
+               let refused = 0;
+               try {{ horizon.net.probe("pas une cible"); }} catch (e) {{ refused++; }}
+               try {{ horizon.net.probe("ftp://127.0.0.1/"); }} catch (e) {{ refused++; }}
+               horizon.ui.set("refused", refused);"#
+        );
+        load_with(&s, "a", &main, vec![], perms);
+        assert_eq!(next(&rx), set("a", "refused", json!(2)));
+        let mut seen = std::collections::HashMap::new();
+        for _ in 0..2 {
+            let FromJs::UiSet { prop, value, .. } = next(&rx) else { panic!("résultat de sonde attendu") };
+            seen.insert(prop, value);
+        }
+        assert_eq!(seen["ouvert"], json!([true, "number", null]));
+        assert_eq!(seen["ferme"], json!([false, null, "string"]));
+        drop(server);
+    }
+
+    #[test]
+    fn system_actions_need_their_permission() {
+        let (s, rx) = engine();
+        load(
+            &s,
+            "a",
+            r#"const errs = [];
+               try { horizon.net.probe("127.0.0.1:22"); } catch (e) { errs.push(e.message); }
+               try { horizon.ssh.open("nas"); } catch (e) { errs.push(e.message); }
+               try { horizon.open("http://192.168.1.20:8080/"); } catch (e) { errs.push(e.message); }
+               horizon.ui.set("errs", errs);"#,
+            vec![],
+        );
+        let FromJs::UiSet { value, .. } = next(&rx) else { panic!() };
+        let errs: Vec<String> = serde_json::from_value(value).unwrap();
+        assert_eq!(errs.len(), 3, "{errs:?}");
+        assert!(errs.iter().all(|e| e.contains("permission manquante")), "{errs:?}");
+    }
+
+    #[test]
+    fn ssh_open_and_settings_open() {
+        let (s, rx) = engine();
+        let perms = Permissions { system: vec!["ssh".into(), "open".into()], ..Permissions::default() };
+        load_with(
+            &s,
+            "a",
+            r#"horizon.ssh.open("moi@nas");
+               horizon.open("http://192.168.1.20:8080");
+               horizon.settings.open("w1");
+               horizon.settings.open();
+               let refused = 0;
+               try { horizon.ssh.open("-oProxyCommand=calc"); } catch (e) { refused++; }
+               try { horizon.ssh.open("nas; calc"); } catch (e) { refused++; }
+               try { horizon.open("file:///C:/Windows/win.ini"); } catch (e) { refused++; }
+               horizon.ui.set("refused", refused);"#,
+            vec![],
+            perms,
+        );
+        assert_eq!(next(&rx), FromJs::Ssh { id: "a".into(), target: "moi@nas".into() });
+        assert_eq!(next(&rx), FromJs::Open { id: "a".into(), url: "http://192.168.1.20:8080/".into() });
+        assert_eq!(next(&rx), FromJs::SettingsOpen { id: "a".into(), instance: Some("w1".into()) });
+        assert_eq!(next(&rx), FromJs::SettingsOpen { id: "a".into(), instance: None });
+        assert_eq!(next(&rx), set("a", "refused", json!(3)));
+    }
+
+    #[test]
     fn headers_allowlist() {
         assert!(io::header_allowed("Authorization") && io::header_allowed("X-Api-Key") && io::header_allowed("accept"));
+        assert!(io::header_allowed("anthropic-beta") && io::header_allowed("Anthropic-Version"));
         for h in ["Host", "Connection", "Transfer-Encoding", "Content-Length", "Proxy-Authorization", "Upgrade", "TE", "X-", "X-a b"] {
             assert!(!io::header_allowed(h), "{h}");
         }

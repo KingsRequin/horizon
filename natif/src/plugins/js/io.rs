@@ -1,11 +1,12 @@
 //! Entrées/sorties des scripts, chacune sur son fil : connexion WebSocket locale (reconnexion
-//! automatique, arrêt quand le script ferme ou disparaît) et requête HTTPS (sans redirection :
-//! l'adresse vérifiée est la seule jointe). Les résultats reviennent au fil des scripts
-//! (`ToJs::Io`).
+//! automatique, arrêt quand le script ferme ou disparaît), requête HTTPS (sans redirection :
+//! l'adresse vérifiée est la seule jointe) et sonde d'une machine (elle répond ou non, rien
+//! n'est lu). Les résultats reviennent au fil des scripts (`ToJs::Io`).
 
 use super::{Io, ToJs};
 use crossbeam_channel::{Receiver, Sender, bounded};
 use horizon_core::backoff::Backoff;
+use horizon_core::plugin::ProbeTarget;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -17,15 +18,60 @@ pub const MAX_MESSAGE: usize = 1024 * 1024;
 pub const MAX_RESPONSE: u64 = 2 * 1024 * 1024;
 /// Délai d'une requête HTTP.
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+/// Délais d'une sonde : connexion TCP (par adresse du nom), réponse HTTP.
+const PROBE_TCP: Duration = Duration::from_millis(1500);
+const PROBE_HTTP: Duration = Duration::from_secs(4);
 /// Messages en attente d'envoi au plus, par connexion.
 pub const OUTBOX: usize = 64;
 
-/// En-tête qu'un script peut poser : quelques-uns usuels et les `X-…` ; jamais ceux qui
-/// changent la destination ou le découpage de la requête (`Host`, `Connection`, `Proxy-*`…).
+/// En-tête qu'un script peut poser : quelques-uns usuels, ceux de l'API d'Anthropic et les
+/// `X-…` ; jamais ceux qui changent la destination ou le découpage de la requête (`Host`,
+/// `Connection`, `Proxy-*`…).
 pub fn header_allowed(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
-    matches!(n.as_str(), "accept" | "accept-language" | "authorization" | "content-type" | "if-none-match" | "if-modified-since")
-        || (n.starts_with("x-") && n.len() > 2 && n.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'))
+    matches!(
+        n.as_str(),
+        "accept" | "accept-language" | "authorization" | "content-type" | "if-none-match" | "if-modified-since" | "anthropic-beta" | "anthropic-version"
+    ) || (n.starts_with("x-") && n.len() > 2 && n.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'))
+}
+
+/// Sonde `target` ; la latence (ms) ou l'erreur revient au fil des scripts.
+pub fn probe(id: &str, handle: u32, target: ProbeTarget, back: Sender<ToJs>) {
+    let id = id.to_owned();
+    crate::util::spawn_named(&format!("plugin-sonde-{id}"), move || {
+        let _ = back.send(ToJs::Io { id, handle, io: Io::Probe(probe_now(&target)) });
+    });
+}
+
+fn probe_now(target: &ProbeTarget) -> Result<u32, String> {
+    use std::net::{TcpStream, ToSocketAddrs};
+    let ms = |s: Instant| u32::try_from(s.elapsed().as_millis()).unwrap_or(u32::MAX);
+    match target {
+        ProbeTarget::Tcp { host, port } => {
+            let addrs = (host.as_str(), *port).to_socket_addrs().map_err(|_| "nom introuvable".to_owned())?;
+            for a in addrs {
+                let t = Instant::now();
+                if TcpStream::connect_timeout(&a, PROBE_TCP).is_ok() {
+                    return Ok(ms(t));
+                }
+            }
+            Err("pas de réponse".into())
+        }
+        ProbeTarget::Http(url) => {
+            // Une machine du réseau local a souvent un certificat auto-signé : on vérifie
+            // seulement qu'elle répond (requête HEAD, rien n'est lu au-delà des en-têtes). Toute
+            // réponse HTTP, même 401 ou 404, veut dire « en ligne ».
+            let agent = ureq::Agent::config_builder()
+                .timeout_global(Some(PROBE_HTTP))
+                .http_status_as_error(false)
+                .max_redirects(0)
+                .tls_config(ureq::tls::TlsConfig::builder().disable_verification(true).build())
+                .build()
+                .new_agent();
+            let start = Instant::now();
+            agent.head(url).header("User-Agent", "Horizon").call().map(|_| ms(start)).map_err(|_| "pas de réponse".to_owned())
+        }
+    }
 }
 
 /// Connexion WebSocket d'un script : envois, arrêt.

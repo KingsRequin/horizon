@@ -81,16 +81,23 @@ impl Bucket {
     }
 }
 
-/// Débits d'un plugin : lignes de journal, alertes, liens ouverts.
+/// Débits d'un plugin : lignes de journal, alertes, ce qu'il ouvre (liens, page de réglages),
+/// terminaux SSH.
 struct Rates {
     log: Bucket,
     alert: Bucket,
     open: Bucket,
+    ssh: Bucket,
 }
 
 impl Rates {
     fn new(now: Instant) -> Rates {
-        Rates { log: Bucket::new(40.0, 20.0, now), alert: Bucket::new(1.0, 0.2, now), open: Bucket::new(1.0, 1.0, now) }
+        Rates {
+            log: Bucket::new(40.0, 20.0, now),
+            alert: Bucket::new(1.0, 0.2, now),
+            open: Bucket::new(1.0, 1.0, now),
+            ssh: Bucket::new(1.0, 1.0, now),
+        }
     }
 }
 
@@ -195,7 +202,9 @@ fn plugin_of_message(m: &FromJs) -> Option<String> {
         | FromJs::Alert { id, .. }
         | FromJs::Palette { id, .. }
         | FromJs::Log { id, .. }
-        | FromJs::Open { id, .. } => Some(id.clone()),
+        | FromJs::Open { id, .. }
+        | FromJs::Ssh { id, .. }
+        | FromJs::SettingsOpen { id, .. } => Some(id.clone()),
         _ => None,
     }
 }
@@ -460,6 +469,29 @@ fn from_js(app: &AppHandle, m: FromJs) {
         FromJs::Open { url, .. } => {
             if let Err(e) = crate::web::url_open(&url) {
                 log::warn!("plugin : lien {url} : {e}");
+            }
+        }
+        FromJs::Ssh { id, .. } if !allowed(&id, |r| &mut r.ssh) => log::debug!("plugin {id} : terminal ignoré (trop fréquent)"),
+        FromJs::Ssh { id, target } => {
+            log::info!("plugin {id} : terminal SSH vers {target}");
+            if let Err(e) = super::terminal::open_ssh(&target) {
+                log::warn!("plugin {id} : terminal SSH vers {target} : {e}");
+            }
+        }
+        FromJs::SettingsOpen { id, .. } if !allowed(&id, |r| &mut r.open) => log::debug!("plugin {id} : réglages ignorés (trop fréquent)"),
+        FromJs::SettingsOpen { id, instance } => {
+            // Seulement un exemplaire de ce plugin, et s'il a des réglages.
+            let own = LOADED.with_borrow(|l| {
+                let list = &l.get(&id)?.instances;
+                match &instance {
+                    Some(i) => list.iter().find(|x| &x.id == i),
+                    None => list.first(),
+                }
+                .map(|x| x.id.clone())
+            });
+            let has_settings = app.state::<Plugins>().manifest(&id).is_some_and(|m| !m.settings.is_empty());
+            if let Some(instance) = own.filter(|_| has_settings) {
+                crate::settings_window::open(app, crate::settings_window::SettingsPage::Widget(instance));
             }
         }
         FromJs::Quit => {}

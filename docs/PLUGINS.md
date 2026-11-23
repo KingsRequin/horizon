@@ -3,8 +3,9 @@
 Ce guide est écrit pour être donné tel quel à une IA (Claude, ChatGPT…) : il contient tout le
 contrat d'un plugin. Les humains peuvent le lire aussi.
 
-> **API en préversion** (`"api": 0`) : elle peut encore changer avant d'être figée en `1` à
-> l'ouverture de la bibliothèque de plugins.
+> **API en préversion** : elle peut encore changer. `"api"` est le niveau dont le plugin a
+> besoin : `0` pour le socle, `1` s'il se sert d'un ajout marqué « niveau 1 » ci-dessous. Une
+> version d'Horizon plus ancienne ne propose pas un plugin d'un niveau qu'elle ne connaît pas.
 
 ## Prompt à coller en tête de conversation
 
@@ -64,7 +65,8 @@ Un dossier `%APPDATA%\Horizon\plugins\<id>\` (le nom du dossier est l'`id` du pl
     "connect": ["ws://127.0.0.1:28650"],
     "http": ["https://api.example.com/v1/"],
     "files": ["%LOCALAPPDATA%/MonAppli/etat.json"],
-    "events": ["dnd", "media"]
+    "events": ["dnd", "media"],
+    "system": ["probe"]
   },
   "settings": [
     { "key": "ville", "type": "string", "label": "Ville", "default": "Paris" },
@@ -72,7 +74,11 @@ Un dossier `%APPDATA%\Horizon\plugins\<id>\` (le nom du dossier est l'`id` du pl
       "options": [{ "value": "c", "label": "°C" }, { "value": "f", "label": "°F" }] },
     { "key": "pas", "type": "number", "label": "Pas", "default": 1, "min": 1, "max": 10 },
     { "key": "details", "type": "bool", "label": "Afficher le détail", "default": true },
-    { "key": "jeton", "type": "secret", "label": "Clé d'accès" }
+    { "key": "jeton", "type": "secret", "label": "Clé d'accès", "help": "Créée sur la page Compte du service." },
+    { "key": "lieux", "type": "list", "label": "Autres lieux", "fields": [
+      { "key": "nom", "type": "string", "label": "Nom" },
+      { "key": "favori", "type": "bool", "label": "Favori" }
+    ] }
   ]
 }
 ```
@@ -81,7 +87,7 @@ Un dossier `%APPDATA%\Horizon\plugins\<id>\` (le nom du dossier est l'`id` du pl
 |---|---|
 | `id` | 1 à 40 caractères parmi `a-z`, `0-9`, `_`, `-` ; égal au nom du dossier ; différent des widgets d'Horizon (`clock`, `media`, `weather`…) |
 | `name`, `version` | obligatoires (texte) |
-| `api` | `0` (seule version acceptée pour l'instant) |
+| `api` | `0`, ou `1` si le plugin se sert d'un ajout du niveau 1 |
 | `author`, `description`, `homepage` | facultatifs |
 | `icon` | nom d'une icône d'Horizon (liste au §5) ; à défaut `squaresFour` |
 | `widget` | présent : le plugin a un widget de barre. `squeeze` : rang de masquage quand la barre manque de place (1 = masqué le premier) ; `grows` : le widget grandit avec son contenu (sa plus petite largeur en px) ; `clickableOnHover` : reste cliquable sur une barre « survol seul » |
@@ -93,7 +99,16 @@ Types de réglage : `bool`, `number` (`min`, `max`, `step` ; la page de réglage
 des entiers), `string`, `choice` (`options` : chaînes ou `{ "value", "label" }`), `color`
 (`#rrggbb`), `secret` (gardé dans le Gestionnaire d'identifiants de Windows, jamais dans un
 fichier). `key` : lettres, chiffres, `_`. `default` doit convenir au type (sinon : défaut du
-type : `false`, `min` ou 0, `""`, première option, `#ffffff`).
+type : `false`, `min` ou 0, `""`, première option, `#ffffff`, `[]`).
+
+Niveau 1 :
+
+- `help` (facultatif, tout type) : une ligne d'aide sous le libellé.
+- `list` : une liste que l'utilisateur allonge et raccourcit (serveurs, villes, comptes…).
+  `fields` déclare les champs de chaque élément, avec les types `bool`, `number`, `string`,
+  `choice` et `color` (ni `secret`, ni `list`). La valeur est un tableau d'objets, 64 au plus,
+  chaque champ toujours présent : `horizon.settings.get("lieux")` → `[{ nom: "Lyon", favori: false }]`.
+  La page montre chaque élément sous le nom de son premier champ `string` rempli.
 
 ## 3. Le widget (`widget.slint`)
 
@@ -166,6 +181,10 @@ export component Panel inherits Window {
 - Le panneau et le widget d'un même exemplaire partagent le script, et le même identifiant
   d'exemplaire.
 - Le clavier va au panneau quand il a le focus (`FocusScope`, `TextInput`).
+- Le panneau n'existe que tant qu'il est montré. Pour rafraîchir des données à son ouverture
+  puis régulièrement, y poser un minuteur qui appelle le script :
+  `callback tic(); Timer { interval: 1s; running: true; triggered => { root.tic(); } }` et
+  `horizon.ui.on("tic", (instance) => { … })`.
 
 ## 5. La bibliothèque `@horizon`
 
@@ -236,6 +255,7 @@ Une valeur posée est rejouée sur les exemplaires créés ensuite (panneau ouve
 | `horizon.on("instances", (liste) => {})` | exemplaires ajoutés ou retirés |
 | `horizon.settings.get(cle, instance?)` | valeur d'un réglage (défaut compris ; sans `instance` : le premier exemplaire) |
 | `horizon.settings.onChange((instance, reglages) => {})` | réglages d'un exemplaire changés |
+| `horizon.settings.open(instance?)` | ouvre la page de réglages de l'exemplaire (sans `instance` : le premier) ; une par seconde — niveau 1 |
 
 ### Minuteurs, journal, fin
 
@@ -255,7 +275,7 @@ Une valeur posée est rejouée sur les exemplaires créés ensuite (panneau ouve
 | `horizon.alert({ title, body, icon })` | alerte passagère (une toutes les 5 s au plus ; masquée pendant « Ne pas déranger ») |
 | `horizon.palette.set([{ id, label, icon }])` | entrées « <nom du plugin> : <label> » dans la palette de commandes (50 au plus) |
 | `horizon.palette.on((id) => {})` | une entrée a été choisie |
-| `horizon.open(url)` | ouvre un lien `https://` dans le navigateur (adresse déclarée dans `permissions.http` ; un par seconde) |
+| `horizon.open(url)` | ouvre un lien `https://` dans le navigateur (adresse déclarée dans `permissions.http` ; un par seconde). Avec l'action `open` (§7, niveau 1) : tout lien `http://` ou `https://` |
 
 ### Applications, web, fichiers (sous permissions)
 
@@ -272,8 +292,15 @@ Une valeur posée est rejouée sur les exemplaires créés ensuite (panneau ouve
 | `horizon.files.watch(chemin, (texte) => {})` | relit le fichier quand il change (toutes les secondes ; 8 au plus) |
 
 En-têtes HTTP permis : `Accept`, `Accept-Language`, `Authorization`, `Content-Type`,
-`If-None-Match`, `If-Modified-Since` et les `X-…`. Un appel non déclaré lève une erreur
-« permission manquante ».
+`If-None-Match`, `If-Modified-Since`, les `X-…`, et au niveau 1 `anthropic-beta` et
+`anthropic-version`. Un appel non déclaré lève une erreur « permission manquante ».
+
+### Machines et terminal (`permissions.system`, niveau 1)
+
+| Appel | Effet |
+|---|---|
+| `const r = await horizon.net.probe(cible)` | la machine répond-elle ? `{ ok, ms, error }` (`ms` : latence si `ok`, `error` : texte sinon ; jamais rejetée). `cible` : `"hôte:port"` (connexion TCP, 1,5 s) ou une adresse `http://` / `https://` (requête `HEAD`, 4 s, certificat non vérifié, toute réponse HTTP vaut `ok`). Rien n'est lu de la machine. Action `probe` ; 16 requêtes en cours au plus, `http` compris |
+| `horizon.ssh.open(cible)` | ouvre un terminal SSH (Windows Terminal, sinon une console) vers `cible` : un alias de `~/.ssh/config`, un hôte ou `utilisateur@hôte` (lettres, chiffres, `. - _ @ : [ ]`). Action `ssh` ; un par seconde |
 
 ### Événements d'Horizon (`permissions.events`)
 
@@ -296,9 +323,12 @@ chargement (sauf `alert` et `timer`).
   chemin plus long est couvert).
 - `http` : préfixes `https://hôte/chemin/` (même hôte, même port, chemin qui commence par
   celui déclaré). Sert aussi à `horizon.open`.
-- `files` : chemins exacts, en lecture seule ; `%LOCALAPPDATA%` et `%APPDATA%` permis en
-  tête ; ni `..`, ni chemin réseau.
+- `files` : chemins exacts, en lecture seule ; `%LOCALAPPDATA%`, `%APPDATA%` et, au niveau 1,
+  `%USERPROFILE%` permis en tête ; ni `..`, ni chemin réseau.
 - `events` : noms du §6.
+- `system` (niveau 1) : actions sur le système, par leur nom. `probe` : tester si des machines
+  répondent (`horizon.net.probe`) ; `ssh` : ouvrir un terminal SSH (`horizon.ssh.open`) ;
+  `open` : ouvrir n'importe quel lien web (`horizon.open`).
 
 L'utilisateur voit ces demandes en clair et doit les accepter (page *État* › *Autoriser*)
 avant que le plugin se charge ; une nouvelle version qui en demande plus redemande l'accord.
@@ -451,7 +481,7 @@ horizon.on("unload", () => appli.send({ cmd: "bye" }));
 ## 12. Avant de rendre le plugin
 
 1. `horizon.exe --check-plugin <dossier>` ne signale rien.
-2. Le dossier porte le nom de l'`id` ; `"api": 0`.
+2. Le dossier porte le nom de l'`id` ; `"api": 0`, ou `1` si un ajout du niveau 1 sert.
 3. Chaque `horizon.ui.set` vise une propriété déclarée `in property` ; chaque `horizon.ui.on`
    un `callback` déclaré.
 4. Les permissions déclarées sont toutes utilisées, et rien n'est joint sans être déclaré.

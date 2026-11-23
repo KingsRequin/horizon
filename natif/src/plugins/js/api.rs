@@ -399,6 +399,17 @@ impl Plugin {
                     Err(e) => reject.restore(ctx)?.call::<_, ()>((rquickjs::String::from_str(ctx.clone(), &e)?,)),
                 });
             }
+            Io::Probe(result) => {
+                // Toujours résolue : une machine qui ne répond pas est un résultat, pas une erreur.
+                let Some((resolve, _)) = self.hooks.borrow_mut().pending.remove(&handle) else { return };
+                self.invoke(out, |ctx| {
+                    let r = Object::new(ctx.clone())?;
+                    r.set("ok", result.is_ok())?;
+                    r.set("ms", result.as_ref().ok().copied())?;
+                    r.set("error", result.as_ref().err().cloned())?;
+                    resolve.restore(ctx)?.call::<_, ()>((r,))
+                });
+            }
         }
     }
 
@@ -528,6 +539,8 @@ fn push(ctx: &Ctx, h: &Rc<RefCell<Hooks>>, m: FromJs) -> rquickjs::Result<()> {
         FromJs::Alert { spec, .. } => spec.to_string().len(),
         FromJs::Palette { entries, .. } => entries.to_string().len(),
         FromJs::Open { url, .. } => url.len(),
+        FromJs::Ssh { target, .. } => target.len(),
+        FromJs::SettingsOpen { instance, .. } => instance.as_ref().map_or(0, String::len),
         _ => 0,
     };
     let mut hk = h.borrow_mut();
@@ -622,6 +635,16 @@ fn install<'js>(ctx: &Ctx<'js>, id: &str, hooks: &Rc<RefCell<Hooks>>) -> rquickj
             }
             hk.settings_change.push(Persistent::save(&ctx, f));
             Ok(())
+        })?,
+    )?;
+    let (h, pid) = (hooks.clone(), id.to_owned());
+    settings.set(
+        "open",
+        Function::new(ctx.clone(), move |ctx: Ctx<'js>, instance: Opt<String>| -> rquickjs::Result<()> {
+            if let Some(i) = &instance.0 {
+                check_name(&ctx, i)?;
+            }
+            push(&ctx, &h, FromJs::SettingsOpen { id: pid.clone(), instance: instance.0 })
         })?,
     )?;
     horizon.set("settings", settings)?;
@@ -795,6 +818,32 @@ fn install_io<'js>(ctx: &Ctx<'js>, horizon: &Object<'js>, id: &str, hooks: &Rc<R
     }
     horizon.set("http", http)?;
 
+    let net = Object::new(ctx.clone())?;
+    let (h, pid) = (hooks.clone(), id.to_owned());
+    net.set(
+        "probe",
+        Function::new(ctx.clone(), move |ctx: Ctx<'js>, target: String| -> rquickjs::Result<Value<'js>> {
+            let mut hk = h.borrow_mut();
+            if !hk.perms.allows_system("probe") {
+                return Err(missing(&ctx, "system probe"));
+            }
+            let Some(target) = horizon_core::plugin::probe_target(&target) else {
+                return Err(rquickjs::Exception::throw_type(&ctx, &format!("net.probe : cible « {target} » refusée (hôte:port ou adresse http(s)://)")));
+            };
+            if hk.pending.len() >= MAX_PENDING {
+                return Err(rquickjs::Exception::throw_range(&ctx, "net.probe : trop de requêtes en cours"));
+            }
+            let (promise, resolve, reject) = ctx.promise()?;
+            hk.next_handle += 1;
+            let handle = hk.next_handle;
+            hk.pending.insert(handle, (Persistent::save(&ctx, resolve), Persistent::save(&ctx, reject)));
+            let back = hk.back.clone().expect("retour des entrées/sorties");
+            io::probe(&pid, handle, target, back);
+            Ok(promise.into_value())
+        })?,
+    )?;
+    horizon.set("net", net)?;
+
     let files = Object::new(ctx.clone())?;
     let h = hooks.clone();
     files.set(
@@ -826,7 +875,7 @@ fn install_io<'js>(ctx: &Ctx<'js>, horizon: &Object<'js>, id: &str, hooks: &Rc<R
     Ok(())
 }
 
-/// `horizon.island`, `horizon.alert`, `horizon.palette`, `horizon.open`.
+/// `horizon.island`, `horizon.alert`, `horizon.palette`, `horizon.open`, `horizon.ssh`.
 fn install_shell<'js>(ctx: &Ctx<'js>, horizon: &Object<'js>, id: &str, hooks: &Rc<RefCell<Hooks>>) -> rquickjs::Result<()> {
     let island = Object::new(ctx.clone())?;
     let (h, pid) = (hooks.clone(), id.to_owned());
@@ -890,11 +939,28 @@ fn install_shell<'js>(ctx: &Ctx<'js>, horizon: &Object<'js>, id: &str, hooks: &R
         "open",
         Function::new(ctx.clone(), move |ctx: Ctx<'js>, url: String| -> rquickjs::Result<()> {
             // Même liste que `http` : le plugin n'ouvre que les sites qu'il a déclarés (et que
-            // l'utilisateur a acceptés).
-            let allowed = h.borrow().perms.allows_http(&url);
-            let Some(url) = allowed else { return Err(missing(&ctx, &format!("http {url} (pour open)"))) };
+            // l'utilisateur a acceptés), ou tout lien web s'il a l'action `open`.
+            let allowed = h.borrow().perms.allows_open(&url);
+            let Some(url) = allowed else { return Err(missing(&ctx, &format!("http {url} (pour open), ou system open"))) };
             push(&ctx, &h, FromJs::Open { id: pid.clone(), url })
         })?,
     )?;
+
+    let ssh = Object::new(ctx.clone())?;
+    let (h, pid) = (hooks.clone(), id.to_owned());
+    ssh.set(
+        "open",
+        Function::new(ctx.clone(), move |ctx: Ctx<'js>, target: String| -> rquickjs::Result<()> {
+            if !h.borrow().perms.allows_system("ssh") {
+                return Err(missing(&ctx, "system ssh"));
+            }
+            // Un nom d'hôte seulement : jamais une option ni une commande.
+            if target.len() > MAX_NAME || !horizon_core::plugin::safe_ssh_target(&target) {
+                return Err(rquickjs::Exception::throw_type(&ctx, "ssh.open : cible refusée (alias, hôte ou utilisateur@hôte)"));
+            }
+            push(&ctx, &h, FromJs::Ssh { id: pid.clone(), target })
+        })?,
+    )?;
+    horizon.set("ssh", ssh)?;
     Ok(())
 }

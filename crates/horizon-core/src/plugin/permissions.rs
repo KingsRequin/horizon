@@ -11,16 +11,21 @@ use url::Url;
 pub struct Permissions {
     /// Connexions locales (`ws://` vers `127.0.0.1`/`localhost`), préfixes d'URL.
     pub connect: Vec<String>,
-    /// Fichiers lisibles (chemins exacts, `%LOCALAPPDATA%` et `%APPDATA%` permis).
+    /// Fichiers lisibles (chemins exacts ; variables de [`FILE_VARS`] permises en tête).
     pub files: Vec<String>,
     /// Adresses web (`https://`), préfixes d'URL.
     pub http: Vec<String>,
     /// Événements d'Horizon reçus (voir [`super::EVENTS`]).
     pub events: Vec<String>,
+    /// Actions sur le système (voir [`super::SYSTEM`]).
+    pub system: Vec<String>,
 }
 
 /// Hôtes permis pour `connect`.
 const LOCAL_HOSTS: [&str; 2] = ["127.0.0.1", "localhost"];
+
+/// Variables d'environnement permises en tête d'un chemin de `files`.
+const FILE_VARS: [&str; 3] = ["LOCALAPPDATA", "APPDATA", "USERPROFILE"];
 
 /// URL analysée (WHATWG : `..`, casse de l'hôte déjà résolus) ; refusée si elle porte un nom
 /// d'utilisateur ou un mot de passe, n'a pas d'hôte, ou si son chemin contient un point ou un
@@ -78,9 +83,13 @@ pub(super) fn valid_file(entry: &str) -> Result<(), String> {
     if p.split('\\').any(|c| c == "..") {
         return Err(format!("« {entry} » : « .. » interdit"));
     }
-    let starts_var = p.starts_with("%LOCALAPPDATA%\\") || p.starts_with("%APPDATA%\\");
+    let starts_var = FILE_VARS.iter().any(|v| p.strip_prefix(&format!("%{v}%")).is_some_and(|rest| rest.starts_with('\\')));
     let absolute = p.len() > 3 && p.as_bytes()[1] == b':' && p.as_bytes()[2] == b'\\';
-    if starts_var || absolute { Ok(()) } else { Err(format!("« {entry} » : chemin absolu, %LOCALAPPDATA%\\… ou %APPDATA%\\… attendu")) }
+    if starts_var || absolute {
+        Ok(())
+    } else {
+        Err(format!("« {entry} » : chemin absolu, %LOCALAPPDATA%\\…, %APPDATA%\\… ou %USERPROFILE%\\… attendu"))
+    }
 }
 
 /// Chemin normalisé pour la comparaison (barres inverses, minuscules), `None` s'il contient
@@ -93,10 +102,10 @@ fn normalize(path: &str) -> Option<String> {
     Some(p.to_lowercase())
 }
 
-/// Variables `%LOCALAPPDATA%` et `%APPDATA%` développées en tête de chemin.
+/// Variable de [`FILE_VARS`] développée en tête de chemin.
 fn expand(entry: &str, env: &dyn Fn(&str) -> Option<String>) -> Option<String> {
     let p = entry.replace('/', "\\");
-    for var in ["LOCALAPPDATA", "APPDATA"] {
+    for var in FILE_VARS {
         if let Some(rest) = p.strip_prefix(&format!("%{var}%")) {
             return Some(format!("{}{rest}", env(var)?.trim_end_matches('\\')));
         }
@@ -132,8 +141,22 @@ impl Permissions {
         self.http.iter().filter_map(|e| parse(e)).any(|e| covers(&e, &u)).then(|| u.to_string())
     }
 
-    /// Le script peut lire ce fichier (variables `%LOCALAPPDATA%` et `%APPDATA%` permises, comme
-    /// dans le manifeste) : le chemin réel à lire, `None` sinon. `env` donne les variables.
+    /// Le script peut ouvrir ce lien dans le navigateur : un `https://` déclaré dans `http`, ou
+    /// tout lien `http://` / `https://` s'il a l'action `open`. L'URL normalisée, `None` sinon.
+    pub fn allows_open(&self, url: &str) -> Option<String> {
+        if self.allows_system("open") {
+            return parse(url).filter(|u| matches!(u.scheme(), "http" | "https")).map(|u| u.to_string());
+        }
+        self.allows_http(url)
+    }
+
+    /// Le plugin a déclaré cette action sur le système.
+    pub fn allows_system(&self, name: &str) -> bool {
+        self.system.iter().any(|e| e == name)
+    }
+
+    /// Le script peut lire ce fichier (variables de [`FILE_VARS`] permises, comme dans le
+    /// manifeste) : le chemin réel à lire, `None` sinon. `env` donne les variables.
     pub fn allows_file(&self, path: &str, env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
         let real = expand(path, env)?;
         let wanted = normalize(&real)?;
@@ -153,12 +176,13 @@ impl Permissions {
             files: new(&self.files, &old.files),
             http: new(&self.http, &old.http),
             events: new(&self.events, &old.events),
+            system: new(&self.system, &old.system),
         }
     }
 
     /// Rien de déclaré.
     pub fn is_empty(&self) -> bool {
-        self.connect.is_empty() && self.files.is_empty() && self.http.is_empty() && self.events.is_empty()
+        self.connect.is_empty() && self.files.is_empty() && self.http.is_empty() && self.events.is_empty() && self.system.is_empty()
     }
 
     /// Phrases pour la fenêtre d'accord, une par permission.
@@ -170,6 +194,7 @@ impl Permissions {
             .chain(self.files.iter().map(|e| format!("Lire le fichier {e}")))
             .chain(self.http.iter().map(|e| format!("Accéder à {e}")))
             .chain(self.events.iter().map(|e| format!("Recevoir : {}", event_label(e))))
+            .chain(self.system.iter().map(|e| super::system::label(e).to_owned()))
             .collect()
     }
 }
@@ -184,11 +209,16 @@ mod tests {
             files: vec!["%LOCALAPPDATA%/KingsHub/phone.json".into()],
             http: vec!["https://api.example.com/v1/".into()],
             events: vec!["dnd".into()],
+            system: vec![],
         }
     }
 
     fn env(var: &str) -> Option<String> {
-        (var == "LOCALAPPDATA").then(|| r"C:\Users\u\AppData\Local".to_owned())
+        match var {
+            "LOCALAPPDATA" => Some(r"C:\Users\u\AppData\Local".to_owned()),
+            "USERPROFILE" => Some(r"C:\Users\u".to_owned()),
+            _ => None,
+        }
     }
 
     #[test]
@@ -267,6 +297,32 @@ mod tests {
     }
 
     #[test]
+    fn file_under_the_user_profile() {
+        assert!(valid_file("%USERPROFILE%/.ssh/config").is_ok());
+        assert!(valid_file("%USERPROFILE%").is_err());
+        assert!(valid_file("%USERPROFILES%/x").is_err());
+        assert!(valid_file("%TEMP%/x").is_err());
+        let p = Permissions { files: vec!["%USERPROFILE%/.ssh/config".into()], ..Default::default() };
+        assert_eq!(p.allows_file("%USERPROFILE%/.ssh/config", &env), Some(PathBuf::from(r"C:\Users\u\.ssh\config")));
+        assert!(p.allows_file(r"C:\Users\u\.ssh\config", &env).is_some());
+        assert!(p.allows_file("%USERPROFILE%/.ssh/id_ed25519", &env).is_none());
+    }
+
+    #[test]
+    fn open_follows_http_unless_declared() {
+        let p = perms();
+        assert!(p.allows_open("https://api.example.com/v1/doc").is_some());
+        assert!(p.allows_open("http://192.168.1.20:8080/").is_none());
+        let open = Permissions { system: vec!["open".into()], ..Default::default() };
+        assert_eq!(open.allows_open("http://192.168.1.20:8080").as_deref(), Some("http://192.168.1.20:8080/"));
+        assert!(open.allows_open("https://nas.local/").is_some());
+        for bad in ["file:///C:/Windows/notepad.exe", "ms-settings:", "https://u:p@nas.local/", "calc.exe"] {
+            assert!(open.allows_open(bad).is_none(), "{bad}");
+        }
+        assert!(open.allows_system("open") && !open.allows_system("ssh"));
+    }
+
+    #[test]
     fn added_since_lists_only_new() {
         let old = perms();
         let mut new = perms();
@@ -281,5 +337,8 @@ mod tests {
         let d = perms().describe();
         assert_eq!(d[0], "Se connecter à une application de ce PC (127.0.0.1:28650)");
         assert_eq!(d[3], "Recevoir : « Ne pas déranger »");
+        let system = Permissions { system: vec!["probe".into(), "ssh".into()], ..Default::default() };
+        assert_eq!(system.describe(), ["Tester si des machines du réseau répondent", "Ouvrir un terminal SSH"]);
+        assert!(!system.is_empty() && !system.added_since(&Permissions::default()).is_empty());
     }
 }

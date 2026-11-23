@@ -7,15 +7,20 @@ pub mod library;
 mod manifest;
 mod permissions;
 mod settings;
+mod system;
 
 pub use manifest::{ManifestError, PluginManifest, WidgetSpec, parse_manifest};
 pub use permissions::Permissions;
-pub use settings::{SettingKind, SettingSpec, coerce, defaults};
+pub use settings::{LIST_MAX, SettingKind, SettingSpec, coerce, defaults, list_blank};
+pub use system::{ProbeTarget, SYSTEM, probe_target, safe_ssh_target};
 
-/// Versions de l'API des plugins acceptées. 0 = préversion (jusqu'à l'ouverture de la
-/// bibliothèque, où elle est figée en 1).
+/// Niveaux de l'API des plugins acceptés. `api` d'un manifeste est le niveau dont le plugin a
+/// besoin : chaque ajout à l'API monte `API_MAX` (une version d'Horizon plus ancienne écarte le
+/// plugin au lieu de le charger à moitié), un changement qui casse les plugins existants monte
+/// `API_MIN`. Niveau 1 : fichiers sous `%USERPROFILE%`, `permissions.system`, réglage `list`,
+/// `help`, `horizon.settings.open`, en-têtes `anthropic-*`.
 pub const API_MIN: u32 = 0;
-pub const API_MAX: u32 = 0;
+pub const API_MAX: u32 = 1;
 
 /// Préfixe du genre d'un widget de plugin dans `layout.json` (`plugin:<id>`).
 pub const KIND_PREFIX: &str = "plugin:";
