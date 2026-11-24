@@ -6,6 +6,8 @@ use std::net::{IpAddr, Ipv4Addr};
 
 /// Durée de vie d'une offre d'appairage.
 pub const OFFER_MS: u64 = 300_000;
+/// Adresses du PC portées par le QR code : l'appli refuse un lien qui en a davantage.
+pub const MAX_HOSTS: usize = 8;
 
 /// Refus d'un jeton d'appairage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,7 +92,7 @@ pub fn is_private(ip: IpAddr) -> bool {
 
 /// Contenu du QR code d'appairage (`docs/PHONE.md`).
 pub fn qr_payload(addrs: &[Ipv4Addr], host: &str, port: u16, fingerprint: &str, token: &str) -> String {
-    let hosts = addrs.iter().map(Ipv4Addr::to_string).collect::<Vec<_>>().join(",");
+    let hosts = addrs.iter().take(MAX_HOSTS).map(Ipv4Addr::to_string).collect::<Vec<_>>().join(",");
     // `byte_serialize` écrit l'espace « + » (formulaires) ; un « + » du nom, lui, sort en %2B.
     let name = url::form_urlencoded::byte_serialize(host.as_bytes()).collect::<String>().replace('+', "%20");
     format!("horizon://pair?v=1&h={hosts}&n={name}&p={port}&fp={fingerprint}&t={token}")
@@ -139,5 +141,14 @@ mod tests {
     fn the_qr_carries_everything_the_phone_needs() {
         let q = qr_payload(&["192.168.1.49".parse().unwrap(), "10.0.0.5".parse().unwrap()], "PC Été", 28680, "AbC-_9", "tok");
         assert_eq!(q, "horizon://pair?v=1&h=192.168.1.49,10.0.0.5&n=PC%20%C3%89t%C3%A9&p=28680&fp=AbC-_9&t=tok");
+    }
+
+    #[test]
+    fn the_qr_never_carries_more_addresses_than_the_phone_accepts() {
+        // Un PC plein de cartes virtuelles : l'appli refuse un lien de plus de huit adresses, et
+        // celles d'une carte avec passerelle arrivent en tête.
+        let many: Vec<Ipv4Addr> = (1..=12).map(|i| Ipv4Addr::new(10, 0, 0, i)).collect();
+        let q = qr_payload(&many, "PC", 28680, "f", "t");
+        assert_eq!(q, "horizon://pair?v=1&h=10.0.0.1,10.0.0.2,10.0.0.3,10.0.0.4,10.0.0.5,10.0.0.6,10.0.0.7,10.0.0.8&n=PC&p=28680&fp=f&t=t");
     }
 }

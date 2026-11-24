@@ -34,11 +34,17 @@ horizon://pair?v=1&h=<ipv4,ipv4…>&n=<nom du PC>&p=<port>&fp=<empreinte>&t=<jet
 | Champ | Sens |
 | --- | --- |
 | `v` | Version du lien. Une autre valeur que `1` : l'appli demande une mise à jour. |
-| `h` | Adresses IPv4 privées du PC, séparées par des virgules, à essayer dans l'ordre. |
-| `n` | Nom du PC, encodé en pourcent. Sert aussi de nom d'hôte : `<n>.local`. |
+| `h` | Adresses IPv4 privées du PC (huit au plus), séparées par des virgules, à essayer dans l'ordre. |
+| `n` | Nom du PC, encodé en pourcent (64 caractères au plus). Sert aussi de nom d'hôte : `<n>.local`. |
 | `p` | Port. |
 | `fp` | Empreinte de la clé publique du PC. |
 | `t` | Jeton d'appairage (16 octets aléatoires) : usage unique, valable 5 minutes. Les essais faux ne le font pas tomber : sinon n'importe quel appareil du réseau pourrait empêcher l'appairage. |
+
+L'appli refuse un lien dont une adresse n'est pas une IPv4 d'un réseau local (10/8, 172.16/12,
+192.168/16, 169.254/16), qui en porte plus de huit, ou dont le nom est vide, trop long ou
+contient un caractère invisible. Un lien ouvert autrement que par son viseur (page web, autre
+appli) n'appaire qu'après un accord qui montre le PC, ses adresses et son port. Pendant
+l'appairage elle n'essaie que ces adresses ; `<n>.local` ne sert qu'aux reconnexions.
 
 Le téléphone se connecte et envoie `pair.request`. Horizon répond `pair.accepted`, avec un
 jeton permanent propre à ce téléphone, ou `pair.rejected`. Horizon ne garde du jeton permanent
