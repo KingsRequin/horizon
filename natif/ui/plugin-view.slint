@@ -6,6 +6,7 @@ import { Theme, StyleTokens } from "theme.slint";
 import { Slot } from "components.slint";
 import { PanelArea, Panels } from "panels.slint";
 import { Tip } from "tooltip.slint";
+import { PulseLayers, PulseState, HorizonLine } from "pulse.slint";
 
 export global PluginFrames {
     // Change quand une image (ou une taille, une erreur) change : force la relecture.
@@ -127,6 +128,28 @@ export component PluginWidget inherits Rectangle {
             pin: root.panel && PluginFrames.pin-on-click(root.key, root.tick) ? "plugin:" + root.key : "";
             anchor-x: area.absolute-position.x;
             anchor-w: area.width;
+        }
+        // Pulsation de la barre sur l'îlot du plugin (style îlots) : le plugin est une image
+        // rendue à part, qui ne voit pas `PulseState` ; son îlot (`Island` de `@horizon`) a la
+        // hauteur et les coins de ceux de la barre, centré dans la bande. Posée par-dessus
+        // l'image (sous elle, le fond de l'îlot la cacherait), sans prendre la souris.
+        if !root.t.graphic && root.err == "": Rectangle {
+            y: (parent.height - root.t.island-h) / 2;
+            width: parent.width;
+            height: root.t.island-h;
+            PulseLayers {
+                x: 1px;
+                y: 1px;
+                width: parent.width - 2px;
+                height: parent.height - 2px;
+                radius: root.t.island-radius - 1px;
+            }
+            if PulseState.style == "horizon": HorizonLine {
+                x: root.t.island-radius;
+                y: parent.height - 3px;
+                width: parent.width - 2 * root.t.island-radius;
+                offset-x: self.absolute-position.x;
+            }
         }
         // Plugin en erreur : pastille rouge, le détail dans l'infobulle.
         if root.err != "": Rectangle {

@@ -195,7 +195,11 @@ déranger », recharger, démarrage avec Windows, journal, quitter) ; `state.rs`
   changement de `beat`) et se termine d'elle-même ; si elle dure plus que l'écart entre deux
   coups, deux exemplaires se relaient selon la parité du coup (`WaveRun`, `Sparks`). Un dégradé
   est peint en rectangle, coins ignorés : la vague est faite de bandes unies rentrées à la
-  courbe des coins. En pause ou dans un silence, les valeurs retombent au rythme des images de
+  courbe des coins, à l'échelle de l'îlot (traîne d'au plus la moitié de sa largeur, même
+  vitesse partout : sur l'îlot d'une seule icône, une vague fixe de 48 px devenait un bloc en
+  escalier qui rampait). Les îlots des plugins (image rendue à part, qui ne voit pas
+  `PulseState`) reçoivent la pulsation de l'hôte, posée par-dessus leur image à la place de
+  l'îlot de `@horizon` (`PluginWidget`, `ui/plugin-view.slint`). En pause ou dans un silence, les valeurs retombent au rythme des images de
   son (`fade_out`), pas d'un coup. Une valeur qui suit
   le son glisse d'une image de son à la suivante par un `animate` de durée `PulseState.sound`,
   jamais d'une durée fixe : relancée à chaque image, une transition ne progresse que pendant

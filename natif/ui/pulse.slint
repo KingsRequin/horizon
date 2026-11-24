@@ -117,8 +117,11 @@ component WaveRun inherits Rectangle {
     in property <length> radius;
     property <int> seq: PulseState.beat;
     property <int> mine;
-    property <length> step: 3px;
-    property <length> tail: 16 * self.step;
+    // À l'échelle de l'îlot : la traîne en prend la moitié au plus (un îlot d'une icône n'est
+    // pas plus large qu'elle), en 16 bandes assez fines pour que les coins restent lisses, et
+    // la vague garde la même vitesse partout (700 px/s, entre 300 et 650 ms).
+    property <length> tail: max(16px, min(48px, root.box-w * 0.5));
+    property <length> step: self.tail / 16;
     changed seq => {
         if Math.mod(root.seq, 2) == root.parity {
             root.mine += 1;
@@ -126,6 +129,7 @@ component WaveRun inherits Rectangle {
     }
     kick := Kick {
         seq: root.mine;
+        duration: max(300ms, min(Theme.dur-kick, (root.box-w + root.tail) / 1px * 1.4ms));
     }
     // Bord gauche des bandes, et l'éclat : il monte sur les premiers instants, puis faiblit.
     property <length> left: -root.tail + kick.p * (root.box-w + root.tail);
