@@ -786,6 +786,59 @@ mod tests {
         assert!(faux_telephone::Client::hello(addr, &identity.fingerprint(), &phone.device_id, &phone.device_token).is_ok(), "il revient avec son jeton");
     }
 
+    /// Contrôle à la main avec l'appli dans un émulateur Android, qui joint le PC par 10.0.2.2
+    /// (boucle locale : ni pare-feu ni Wi-Fi en jeu, tout le reste est le vrai module) :
+    /// `cargo test -p horizon-natif serve_an_emulated_phone_by_hand -- --ignored --nocapture`.
+    /// Écrit le lien d'appairage à ouvrir dans l'émulateur, puis ce qui arrive, pendant
+    /// `HORIZON_ESSAI_S` secondes (600). Les lignes ajoutées au fichier `HORIZON_ESSAI_CMD`
+    /// sont exécutées : `accent #a06cd5`, `retirer`, `offre` (nouveau code), `fin`.
+    #[test]
+    #[ignore = "sert le téléphone d'un émulateur pendant quelques minutes"]
+    fn serve_an_emulated_phone_by_hand() {
+        let core = Arc::new(Core::for_tests("pc-essai", "PC essai"));
+        let identity = identity::Identity::load_or_create(|| None, |_| {}).unwrap();
+        let notify = |event| println!("événement : {event:?}");
+        let server = server::spawn("127.0.0.1".parse().unwrap(), 0, identity.tls_config(), Arc::new(Link { core: core.clone(), notify })).unwrap();
+        let offer = |token: &str| {
+            core.pairing_offer(token.to_owned(), horizon_core::time::now_ms());
+            println!("LIEN horizon://pair?v=1&h=10.0.2.2&n=PC%20essai&p={}&fp={}&t={token}", server.port(), identity.fingerprint());
+        };
+        offer("jeton-essai-1");
+        let commands = std::env::var("HORIZON_ESSAI_CMD").unwrap_or_default();
+        let seconds = std::env::var("HORIZON_ESSAI_S").ok().and_then(|s| s.parse().ok()).unwrap_or(600);
+        let (start, mut done, mut shown) = (Instant::now(), 0, String::new());
+        'run: while start.elapsed() < Duration::from_secs(seconds) {
+            let lines: Vec<String> = std::fs::read_to_string(&commands).unwrap_or_default().lines().map(str::to_owned).collect();
+            for line in lines.iter().skip(done) {
+                println!("commande : {line}");
+                match line.split_whitespace().collect::<Vec<_>>().as_slice() {
+                    ["accent", color] => {
+                        core.set_accent((*color).to_owned());
+                        server.send_all(&ToPhone::Accent { color: (*color).to_owned() });
+                    }
+                    ["retirer"] => {
+                        for phone in core.phones(&[], 0) {
+                            core.remove(&phone.id);
+                            server.disconnect(&phone.id);
+                        }
+                    }
+                    ["offre"] => offer(&format!("jeton-essai-{}", done + 2)),
+                    ["fin"] => break 'run,
+                    _ => println!("commande inconnue"),
+                }
+            }
+            done = lines.len();
+            let now = horizon_core::time::now_ms();
+            let state = format!("connectés : {:?} ; batteries : {:?}", server.connected(), core.view(now).iter().map(|v| (v.name.clone(), v.percent, v.charging)).collect::<Vec<_>>());
+            if state != shown {
+                println!("{state}");
+                shown = state;
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        println!("fin de l'essai");
+    }
+
     #[test]
     fn the_link_view_says_who_is_there() {
         let core = Core::for_tests("pc-1", "Bureau");

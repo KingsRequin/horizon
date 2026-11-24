@@ -694,6 +694,13 @@ d'exemple par type dans `crates/horizon-core/tests/fixtures/phone/`, que l'appli
   `cargo run -p faux-telephone -- "<lien>" 82 --charge [--boucle <secondes>]` ; le jeton reçu
   est gardé dans `%TEMP%\faux-telephone.json` pour les lancements suivants. La règle de pare-feu
   vaut pour un exe : celui de debug demande la sienne.
+- **Essai avec la vraie appli, sans téléphone ni pare-feu** : un émulateur Android joint le PC
+  par `10.0.2.2` (boucle locale). `cargo test -p horizon-natif serve_an_emulated_phone_by_hand
+  -- --ignored --nocapture` monte le vrai serveur et le vrai `Core`, écrit le lien d'appairage à
+  ouvrir dans l'émulateur (`adb shell am start -a android.intent.action.VIEW -d '<lien>'`), puis
+  ce qui arrive. Les lignes ajoutées au fichier `HORIZON_ESSAI_CMD` sont exécutées : `accent
+  #a06cd5`, `retirer`, `offre`, `fin`. La batterie de l'émulateur se change par `adb emu power
+  capacity 37` et `adb emu power ac off`.
 
 ## Plugins (`src/plugins/`)
 
