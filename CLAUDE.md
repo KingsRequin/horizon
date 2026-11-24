@@ -93,9 +93,11 @@ activé dans la page Plugins.
 
 ## Pièges connus
 
-- Une seule édition. Ce qui ne sert qu'à une appli de l'auteur ou à un usage particulier (Prisme,
-  SharkApp, Essaim, Serveurs, Quota Claude) est un plugin de la bibliothèque
-  (`KingsRequin/horizon-plugins`), pas du code d'Horizon : `docs/PLUGINS.md`. Le relais
+- Une seule édition. Ce qui ne sert qu'à une appli de l'auteur ou à un usage particulier est un
+  plugin, pas du code d'Horizon (`docs/PLUGINS.md`) : dans la bibliothèque publique
+  (`KingsRequin/horizon-plugins` : Essaim, Serveurs, Quota Claude) s'il peut servir à d'autres,
+  sinon dans le dépôt privé `KingsRequin/horizon-plugins-prives` (Prisme, SharkApp, Livraison
+  Shopopop ; installé par son `scripts\installer.ps1`, sans mise à jour automatique). Le relais
   BetterDiscord (KrispBridge, port 28642) reste un repli de Discord vocal et donne Krisp.
 - Un widget intégré qui devient un plugin : migration qui change son genre en `plugin:<id>` à la
   même place (`layout/migrations.rs`) ; le plugin est alors noté dans `Layout::pending_plugins`
