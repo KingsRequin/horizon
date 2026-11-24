@@ -14,7 +14,7 @@ mod write;
 pub use alerts::AlertSettings;
 pub use discord::DiscordSettings;
 pub use features::FeatureSettings;
-pub use music::{Backdrop, MusicSettings, Pulse};
+pub use music::{Backdrop, MusicSettings, Progress, Pulse};
 
 use crate::night::NightSettings;
 use crate::palette::PaletteSettings;

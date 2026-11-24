@@ -1,6 +1,9 @@
-//! Ce que les barres tirent du son en cours : les cinq capsules du widget Lecture en cours, et
-//! le son d'essai (`horizon.exe --musique-essai`), qui remplace la capture pour voir les
-//! animations sans rien jouer.
+//! Ce que les barres tirent du son en cours : les cinq capsules du widget Lecture en cours,
+//! l'image de son îlot pour ce qui ne se dessine pas en rectangles (`canvas`), et le son d'essai
+//! (`horizon.exe --musique-essai`), qui remplace la capture pour voir les animations sans rien
+//! jouer.
+
+pub mod canvas;
 
 /// Capsules du fond « Capsules ».
 pub const CAPSULES: usize = 5;

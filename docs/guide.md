@@ -130,12 +130,15 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
 - **Animations de la musique** (*Réglages d'Horizon › Apparence › Musique*, `[music]` de
   `settings.toml`), dans la couleur de la pochette. *Fond de la lecture en cours* (`backdrop`) :
   automatique (halo sur une barre en îlots, spectre sur une barre graphique), aucun, halo,
-  spectre, ou capsules (cinq capsules à côté du titre). *Faire vivre les barres avec la musique*
-  (`[features] bar_pulse`) et son animation (`pulse`) : bords des îlots (lueur de la basse, flash
-  de la grosse caisse), respiration (fond teinté par le niveau, pochette qui bat), onde de kick
-  (une vague traverse les îlots à chaque grosse caisse), ligne d'horizon (filet sous la barre,
-  d'où partent deux éclats à chaque grosse caisse). Rien ne bouge hors lecture, en mode jeu, ni
-  si Windows demande moins d'animations.
+  aurore (trois nappes de couleur : graves, médiums, aigus), spectre, ruban (le spectre fondu en
+  une vague), points (trame de points), ou capsules (cinq capsules à côté du titre). *Barre de
+  progression* (`progress`) : droite, ou vivante (la part lue ondule avec le son). *Faire vivre
+  les barres avec la musique* (`[features] bar_pulse`) et son animation (`pulse`) : bords des
+  îlots (lueur de la basse, flash de la grosse caisse), respiration (fond teinté par le niveau,
+  pochette qui bat), onde de kick (une vague traverse les îlots à chaque grosse caisse), ligne
+  d'horizon (filet sous la barre, d'où partent deux éclats à chaque grosse caisse), lumière qui
+  tourne (deux traînées font le tour de l'îlot de la lecture en cours). Rien ne bouge hors
+  lecture ni en mode jeu ; la pulsation est coupée si Windows demande moins d'animations.
 - **Couleur du fond d'écran** (`[features] wallpaper_accent`, `windows_accent`) : hors lecture,
   l'accent vient du fond de l'écran principal, relu chaque minute (`PrintWindow` du bureau avec
   `PW_RENDERFULLCONTENT` : Wallpaper Engine et ses listes de lecture compris, ~25 ms ; rien en

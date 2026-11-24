@@ -1,7 +1,7 @@
 //! Texte de `settings.toml` écrit par Horizon : chaque option avec un commentaire qui la
 //! décrit, pour qui ouvre le fichier à la main.
 
-use super::{Backdrop, Pulse, Settings};
+use super::{Backdrop, Progress, Pulse, Settings};
 use std::fmt::Write;
 
 /// Chaîne TOML entre guillemets (caractères spéciaux échappés).
@@ -134,10 +134,14 @@ impl Settings {
              # Fond du widget Lecture en cours pendant la lecture (\"auto\" : halo sur une barre en\n\
              # îlots, spectre sur une barre graphique) : {}.\n\
              backdrop = {}\n\
+             # Barre de progression de ce widget : {}.\n\
+             progress = {}\n\
              # Animation des barres quand bar_pulse est actif : {}.\n\
              pulse = {}\n",
             ids(&Backdrop::ALL.iter().map(|b| b.id()).collect::<Vec<_>>()),
             quoted(m.backdrop.id()),
+            ids(&Progress::ALL.iter().map(|p| p.id()).collect::<Vec<_>>()),
+            quoted(m.progress.id()),
             ids(&Pulse::ALL.iter().map(|p| p.id()).collect::<Vec<_>>()),
             quoted(m.pulse.id()),
         );
@@ -160,7 +164,7 @@ impl Settings {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{AlertSettings, Backdrop, MusicSettings, Pulse, Settings, SettingsFile};
+    use super::super::{AlertSettings, Backdrop, MusicSettings, Progress, Pulse, Settings, SettingsFile};
     use crate::testdir::TestDir;
 
     #[test]
@@ -175,7 +179,7 @@ mod tests {
         s.features.headset_switch = true;
         s.features.fallback_output = r#"{0.0.0.00000000}.{a\"b}"#.into();
         s.features.game_mode = false;
-        s.music = MusicSettings { backdrop: Backdrop::Capsules, pulse: Pulse::Wave };
+        s.music = MusicSettings { backdrop: Backdrop::Ribbon, progress: Progress::Wave, pulse: Pulse::Comet };
         let text = s.to_toml();
         assert!(text.contains("# claude_island = true"), "valeur non réglée en commentaire");
         assert_eq!(Settings::parse(&text), Some(s));

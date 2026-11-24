@@ -227,7 +227,8 @@ pub fn essai(app: &AppHandle, secs: u64) {
         title: "Morceau d’essai".into(),
         artist: "Horizon".into(),
         playing: true,
-        position_ms: 0,
+        // Au tiers du morceau : la progression a de quoi se montrer.
+        position_ms: 60_000,
         duration_ms: 180_000,
         timeline_at_ms: horizon_core::time::now_ms(),
     };

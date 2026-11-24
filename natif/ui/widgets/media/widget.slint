@@ -1,7 +1,8 @@
 // Lecture en cours (app/src/widgets/media/Widget.svelte) : pochette, titre défilant, artiste,
-// commandes, progression. Le fond suit le son (`[music] backdrop` : halo, spectre derrière le
-// titre, capsules à côté de lui, ou rien ; d'office, halo en style îlots et spectre en style
-// graphique). Style îlots : filet dans l'accent pendant la lecture. Molette = ±10 s (bulle de la
+// commandes, progression. Le fond suit le son (`[music] backdrop` : halo, aurore, spectre, ruban
+// ou points derrière le titre, capsules à côté de lui, ou rien ; d'office, halo en style îlots
+// et spectre en style graphique). Ce qui ne se dessine pas en rectangles est une image de l'îlot
+// faite par Rust. Style îlots : filet dans l'accent pendant la lecture. Molette = ±10 s (bulle de la
 // barre). Survol = panneau Lecture en cours. Îlot dynamique (style îlots) : une alerte ou un
 // appel remplace un instant le contenu (ui/flash.slint), qui revient ensuite en fondu.
 
@@ -34,17 +35,25 @@ export global MediaData {
     in-out property <bool> has-duration;
     // Part lue (0–1), posée chaque seconde pendant la lecture.
     in-out property <float> progress;
-    // Fond qui suit le son sur cette barre : « halo », « spectrum », « capsules » ; vide : aucun
-    // (`[music] backdrop`, « auto » déjà traduit d'après le style de la barre).
+    // Fond qui suit le son sur cette barre (`[music] backdrop`, « auto » déjà traduit d'après le
+    // style de la barre) ; vide : aucun. « spectrum » et « capsules » sont dessinés ici, les
+    // autres dans l'image de l'îlot.
     in-out property <string> backdrop: "halo";
-    // Halo (opacité), qui suit le niveau du son.
-    in-out property <float> glow: 0.12;
     // Spectre (24 bandes, 0–1).
     in-out property <[float]> bands;
     // Capsules (cinq groupes de bandes, 0–1).
     in-out property <[float]> capsules;
-    // Masque du halo (dégradé radial), dessiné une fois par Rust.
-    in-out property <image> glow-mask;
+    // Image de l'îlot, dessinée par Rust à chaque image de son (halo, ruban, aurore, points,
+    // progression qui ondule, lumière qui tourne) ; `canvas-on` : il y a quelque chose à montrer.
+    in-out property <image> canvas;
+    in-out property <bool> canvas-on;
+    // La progression ondule (`[music] progress`) : elle est dans l'image, pas dessinée ici.
+    in-out property <bool> progress-wave;
+    // Taille et rayon de l'îlot, annoncés à Rust pour son image ; `resized` : ils ont changé.
+    in-out property <length> island-w;
+    in-out property <length> island-h;
+    in-out property <length> island-radius;
+    callback resized();
     callback previous();
     callback play-pause();
     callback next();
@@ -191,6 +200,21 @@ export component MediaWidget inherits Rectangle {
                     height: island.height;
                     border-radius: root.t.island-radius;
                     clip: true;
+                    function announce() {
+                        MediaData.island-w = self.width;
+                        MediaData.island-h = self.height;
+                        MediaData.island-radius = root.t.island-radius;
+                        MediaData.resized();
+                    }
+                    init => {
+                        self.announce();
+                    }
+                    changed width => {
+                        self.announce();
+                    }
+                    changed height => {
+                        self.announce();
+                    }
                     // Spectre : derrière tout le widget, pendant la lecture.
                     if MediaData.backdrop == "spectrum" && MediaData.playing: Spectrum {
                         y: 1px;
@@ -199,16 +223,12 @@ export component MediaWidget inherits Rectangle {
                         t: root.t;
                         bands: MediaData.bands;
                     }
-                    // Halo : ellipse de 70 % × 140 % centrée à 18 % du bord gauche, en bas.
-                    if MediaData.backdrop == "halo": Image {
-                        x: -0.52 * parent.width;
-                        y: -0.4 * parent.height;
-                        width: 1.4 * parent.width;
-                        height: 2.8 * parent.height;
-                        source: MediaData.glow-mask;
+                    // Image de l'îlot (à sa taille en pixels de l'écran, coins compris).
+                    if MediaData.canvas-on: Image {
+                        width: parent.width;
+                        height: parent.height;
+                        source: MediaData.canvas;
                         image-fit: fill;
-                        colorize: Theme.accent;
-                        opacity: MediaData.glow;
                     }
                     // Filet supérieur dans l'accent pendant la lecture.
                     if !root.t.graphic && MediaData.playing: Rectangle {
@@ -218,7 +238,7 @@ export component MediaWidget inherits Rectangle {
                         height: 1px;
                         background: @linear-gradient(90deg, Theme.accent.with-alpha(0) 0%, Theme.accent 50%, Theme.accent.with-alpha(0) 100%);
                     }
-                    if MediaData.has-duration: Rectangle {
+                    if MediaData.has-duration && !MediaData.progress-wave: Rectangle {
                         x: 10px;
                         y: parent.height - 2px - self.height;
                         width: parent.width - 20px;

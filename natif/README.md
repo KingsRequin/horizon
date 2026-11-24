@@ -183,19 +183,28 @@ déranger », recharger, démarrage avec Windows, journal, quitter) ; `state.rs`
   bas de la bande pour « horizon » (elle part du widget Lecture en cours, qui pose
   `PulseState.origin-x`). Une animation déclenchée par une grosse caisse passe par `Kick`
   (`p` de 0 à 1 à chaque changement de `beat`) et se termine d'elle-même. Une valeur qui suit
-  le son glisse d'une image de son à la suivante par un `animate` de durée `PulseState.sound`
-  (`PulseState.breath` pour la respiration), jamais d'une durée fixe : relancée à chaque image,
-  une transition ne progresse que pendant les tours de boucle sans image, et se fige dès que
-  l'interface est chargée (vu sur l'exe de debug). `Lateness` (`widgets/media/audio.rs`) relève
-  le retard de chaque image et annule alors ces durées : les valeurs sont posées telles quelles.
-  Le son est demandé au
+  le son glisse d'une image de son à la suivante par un `animate` de durée `PulseState.sound`,
+  jamais d'une durée fixe : relancée à chaque image, une transition ne progresse que pendant
+  les tours de boucle sans image, et se fige dès que l'interface est chargée (vu sur l'exe de
+  debug). `Lateness` (`widgets/media/audio.rs`) relève le retard de chaque image et annule
+  alors cette durée : les valeurs sont posées telles quelles. Mieux, quand c'est possible :
+  adoucir la valeur en Rust et la poser sans transition (le niveau de la respiration,
+  `Meter::frame`), ce qui ne fait redessiner que 20 fois par seconde. Le son est demandé au
   hub par utilisateur (`AudioHub::subscribe(barre, "pulse" | "media", …)`). Ajouter une
   animation : une variante de `Pulse` (identifiant, libellé, explication), ce que `Meter::frame`
   lui envoie, son composant dans `ui/pulse.slint`.
 - **Fond de la lecture en cours** (`[music] backdrop`, `horizon_core::settings::Backdrop`,
   `src/widgets/media/ui.rs`) : `MediaData.backdrop` (« auto » traduit d'après le style de la
-  barre) choisit ce que le widget dessine (halo, `Spectrum`, `Capsules`) ; les bandes ne sont
-  demandées au hub que pour un fond qui les dessine.
+  barre). Le spectre et les capsules sont des rectangles de l'interface (`Spectrum`,
+  `Capsules`), qui reçoivent leurs valeurs. Le halo, l'aurore, le ruban, les points, la
+  progression qui ondule (`[music] progress`) et la lumière qui tourne (`pulse = "comet"`) sont
+  une **image de l'îlot** (`horizon_core::music::canvas` : `Canvas::paint(scène, son, couleurs)`,
+  pixel par pixel, coins arrondis compris, testée sans Windows), refaite à chaque image de son
+  à la taille que le widget annonce (`MediaData.island-w/h/radius`, `resized`) et posée dans
+  `MediaData.canvas`. Le mouvement y est adouci par `Sound::feed` (montée vive, retombée
+  lente), pas par une transition. Ajouter un fond en image : une variante de `Backdrop` rangée
+  dans `is_painted`, sa fonction de dessin dans `Canvas`. Les bandes ne sont demandées au hub
+  que pour un fond qui les dessine.
 - **Son d'essai** : `horizon.exe --musique-essai [secondes]` (20 sans précision) montre un
   morceau en lecture sur les barres et remplace la capture par un son fabriqué
   (`horizon_core::music::essai_frame` : une grosse caisse par demi-seconde), mode jeu compris,

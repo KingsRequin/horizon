@@ -42,11 +42,19 @@ pub struct Shown {
     beat: bool,
 }
 
-/// Valeurs posées et retombée du flash.
+/// Constantes de temps du niveau de la respiration (secondes) : il monte en un souffle et
+/// retombe lentement. Adouci ici, il n'a pas besoin d'une transition de l'interface.
+const BREATH_UP: f32 = 0.12;
+const BREATH_DOWN: f32 = 0.7;
+/// Écart entre deux images de son.
+const FRAME: f32 = 0.05;
+
+/// Valeurs posées, niveau adouci de la respiration et retombée du flash.
 #[derive(Debug, Default)]
 pub struct Meter {
     bass: f32,
     level: f32,
+    breath: f32,
     kick_shown: f32,
     kick: f32,
 }
@@ -65,10 +73,12 @@ impl Meter {
     /// Image de son vue par l'animation `style` : chaque animation ne reçoit que ce qu'elle
     /// dessine, le reste retombe à zéro.
     pub fn frame(&mut self, style: Pulse, level: f32, bass: f32, beat: bool) -> Shown {
-        let (bass, level) = if style == Pulse::Breath { (0.0, level) } else { (bass, 0.0) };
+        let (bass, level) = if style == Pulse::Breath { (0.0, level.clamp(0.0, 1.0)) } else { (bass, 0.0) };
         // Courbe : la lueur reste discrète sur une basse moyenne, franche sur les grosses.
         let glow = put(&mut self.bass, bass.clamp(0.0, 1.0).powf(1.5));
-        let level = put(&mut self.level, level.clamp(0.0, 1.0));
+        let tau = if level > self.breath { BREATH_UP } else { BREATH_DOWN };
+        self.breath = if style == Pulse::Breath { self.breath + (level - self.breath) * (1.0 - (-FRAME / tau).exp()) } else { 0.0 };
+        let level = put(&mut self.level, self.breath);
         self.kick = match style {
             Pulse::Edges if beat => 1.0,
             Pulse::Edges => self.kick * FLASH_DECAY,
@@ -79,6 +89,7 @@ impl Meter {
 
     pub fn reset(&mut self) -> Shown {
         self.kick = 0.0;
+        self.breath = 0.0;
         Shown { glow: put(&mut self.bass, 0.0), flash: put(&mut self.kick_shown, 0.0), level: put(&mut self.level, 0.0), beat: false }
     }
 }
@@ -100,9 +111,21 @@ thread_local! {
     static APP: RefCell<Option<AppHandle>> = RefCell::default();
 }
 
-fn style() -> Option<Pulse> {
+/// Animation choisie, si la pulsation est active et les animations permises.
+fn chosen() -> Option<Pulse> {
     let s = crate::state::settings();
     (s.features.bar_pulse && !crate::motion::reduced()).then_some(s.music.pulse)
+}
+
+/// Animation dessinée par les barres : la lumière qui tourne ne l'est pas ici, mais dans
+/// l'image de l'îlot de Lecture en cours.
+fn style() -> Option<Pulse> {
+    chosen().filter(|p| *p != Pulse::Comet)
+}
+
+/// La lumière qui tourne est en service (`widgets/media/ui.rs` la dessine).
+pub fn comet() -> bool {
+    chosen() == Some(Pulse::Comet)
 }
 
 /// Suit la lecture et les réglages (fil de l'interface, avant l'ouverture des barres).
@@ -275,7 +298,14 @@ mod tests {
     fn each_animation_gets_only_what_it_draws() {
         let mut m = Meter::default();
         let v = m.frame(Pulse::Breath, 0.6, 0.9, true);
-        assert_eq!((v.glow, v.flash, v.level, v.beat), (None, None, Some(0.6), true), "respiration : niveau et coup");
+        assert_eq!((v.glow, v.flash, v.beat), (None, None, true), "respiration : niveau et coup");
+        assert!(v.level.is_some_and(|l| l > 0.1 && l < 0.4), "le niveau monte en douceur : {:?}", v.level);
+        for _ in 0..40 {
+            m.frame(Pulse::Breath, 0.6, 0.0, false);
+        }
+        assert!((m.breath - 0.6).abs() < 0.01);
+        m.frame(Pulse::Breath, 0.0, 0.0, false);
+        assert!(m.breath > 0.5, "et retombe lentement");
         for style in [Pulse::Wave, Pulse::Horizon] {
             let mut m = Meter::default();
             let v = m.frame(style, 0.6, 1.0, true);

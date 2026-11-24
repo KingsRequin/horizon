@@ -41,8 +41,9 @@ dans une appli native qui utilise ~50 Mo de mémoire et se fait oublier.
 **Elle suit la musique.** Pendant la lecture, les îlots s'éclairent avec les basses et flashent à
 chaque grosse caisse, aux couleurs de la pochette (le style graphique montre un spectre). Au plus
 20 mises à jour par seconde, et seulement quand quelque chose change. L'animation se choisit dans
-*Réglages d'Horizon › Apparence* : bords des îlots, respiration, onde de kick ou ligne d'horizon
-pour les barres ; halo, spectre ou capsules pour la lecture en cours.
+*Réglages d'Horizon › Apparence* : bords des îlots, respiration, onde de kick, ligne d'horizon ou
+lumière qui tourne pour les barres ; halo, aurore, spectre, ruban, points ou capsules pour la
+lecture en cours, dont la barre de progression peut onduler avec le son.
 
 <img src="docs/images/music.gif" alt="Barres qui pulsent avec la musique" width="100%">
 

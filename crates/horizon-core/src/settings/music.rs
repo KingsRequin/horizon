@@ -67,8 +67,20 @@ choices! {
         Auto = "auto", "Automatique", "Halo sur une barre en îlots, spectre sur une barre graphique.";
         Off = "none", "Aucun", "Rien ne suit le son dans le widget.";
         Halo = "halo", "Halo", "Une lueur derrière la pochette, plus forte quand le son monte.";
+        Aurora = "aurora", "Aurore", "Trois nappes de couleur pour les graves, les médiums et les aigus, qui dérivent avec le son.";
         Spectrum = "spectrum", "Spectre", "Vingt-quatre barres derrière le titre.";
+        Ribbon = "ribbon", "Ruban", "Le spectre fondu en une vague pleine, et une seconde vague plus lente derrière.";
+        Dots = "dots", "Points", "Une trame de points qui s’allument par colonnes, avec leur point de crête.";
         Capsules = "capsules", "Capsules", "Cinq capsules à côté du titre, rien derrière le texte.";
+    }
+}
+
+choices! {
+    /// Barre de progression du widget Lecture en cours.
+    Progress {
+        #[default]
+        Line = "line", "Droite", "Un trait qui se remplit.";
+        Wave = "wave", "Vivante", "La part déjà lue ondule, d’autant plus que le son est fort, et se retend en pause.";
     }
 }
 
@@ -80,6 +92,7 @@ choices! {
         Breath = "breath", "Respiration", "Le fond des îlots se teinte lentement avec le son ; la pochette bat sur la grosse caisse.";
         Wave = "wave", "Onde de kick", "À chaque grosse caisse, une vague de lumière traverse les îlots.";
         Horizon = "horizon", "Ligne d’horizon", "Un filet de lumière sous la barre, d’où partent deux éclats à chaque grosse caisse.";
+        Comet = "comet", "Lumière qui tourne", "Deux traînées de lumière font le tour de l’îlot de la lecture en cours.";
     }
 }
 
@@ -96,7 +109,12 @@ impl Backdrop {
 
     /// Ce fond dessine les bandes du spectre (le halo ne suit que le niveau).
     pub fn wants_bands(self) -> bool {
-        matches!(self, Backdrop::Spectrum | Backdrop::Capsules)
+        !matches!(self, Backdrop::Auto | Backdrop::Off | Backdrop::Halo)
+    }
+
+    /// Ce fond est une image de l'îlot (`music::canvas`), pas des rectangles de l'interface.
+    pub fn is_painted(self) -> bool {
+        matches!(self, Backdrop::Halo | Backdrop::Aurora | Backdrop::Ribbon | Backdrop::Dots)
     }
 }
 
@@ -104,6 +122,7 @@ impl Backdrop {
 #[serde(default)]
 pub struct MusicSettings {
     pub backdrop: Backdrop,
+    pub progress: Progress,
     pub pulse: Pulse,
 }
 
@@ -122,6 +141,10 @@ mod tests {
             assert_eq!(Pulse::parse(p.id()), Some(*p));
             assert!(!p.label().is_empty() && !p.hint().is_empty());
         }
+        for p in Progress::ALL {
+            assert_eq!(Progress::parse(p.id()), Some(*p));
+            assert!(!p.label().is_empty() && !p.hint().is_empty());
+        }
         assert_eq!(Backdrop::parse(" capsules "), Some(Backdrop::Capsules));
         assert_eq!(Pulse::parse("inconnu"), None);
     }
@@ -132,15 +155,17 @@ mod tests {
         assert_eq!(Backdrop::Auto.resolved(true), Backdrop::Spectrum);
         assert_eq!(Backdrop::Capsules.resolved(true), Backdrop::Capsules);
         assert_eq!(Backdrop::Off.resolved(false), Backdrop::Off);
-        assert!(Backdrop::Spectrum.wants_bands() && Backdrop::Capsules.wants_bands());
+        assert!(Backdrop::Spectrum.wants_bands() && Backdrop::Capsules.wants_bands() && Backdrop::Ribbon.wants_bands());
         assert!(!Backdrop::Halo.wants_bands() && !Backdrop::Off.wants_bands());
+        assert!(Backdrop::Halo.is_painted() && Backdrop::Aurora.is_painted() && Backdrop::Dots.is_painted());
+        assert!(!Backdrop::Spectrum.is_painted() && !Backdrop::Capsules.is_painted() && !Backdrop::Off.is_painted());
     }
 
     #[test]
     fn section_is_read_and_an_unknown_choice_is_the_default() {
         assert_eq!(Settings::parse("").unwrap().music, MusicSettings::default());
-        let s = Settings::parse("[music]\nbackdrop = \"capsules\"\npulse = \"horizon\"\n").unwrap();
-        assert_eq!(s.music, MusicSettings { backdrop: Backdrop::Capsules, pulse: Pulse::Horizon });
+        let s = Settings::parse("[music]\nbackdrop = \"capsules\"\nprogress = \"wave\"\npulse = \"horizon\"\n").unwrap();
+        assert_eq!(s.music, MusicSettings { backdrop: Backdrop::Capsules, progress: Progress::Wave, pulse: Pulse::Horizon });
         let s = Settings::parse("[music]\nbackdrop = \"hologramme\"\n").unwrap();
         assert_eq!(s.music, MusicSettings::default(), "le fichier reste lisible");
     }

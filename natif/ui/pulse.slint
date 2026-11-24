@@ -6,6 +6,8 @@
 // - « breath » : le fond se teinte lentement avec le niveau ;
 // - « wave » : une vague de lumière traverse l'îlot à chaque grosse caisse ;
 // - « horizon » : un filet sous la barre, d'où partent deux éclats à chaque grosse caisse.
+// (« comet », la lumière qui tourne, est dessinée dans l'image de l'îlot de Lecture en cours :
+// src/widgets/media/ui.rs.)
 // Rien n'est construit pour une animation qui n'est pas choisie, et une animation déclenchée par
 // une grosse caisse se termine d'elle-même.
 //
@@ -35,9 +37,8 @@ export global PulseState {
     // La barre reçoit les images de son en retard (interface chargée) : les valeurs sont posées
     // sans transition, car une transition relancée à chaque image ne progresserait plus.
     in-out property <bool> late;
-    // Durée du passage d'une image de son à la suivante, et de la teinte de la respiration.
+    // Durée du passage d'une image de son à la suivante.
     out property <duration> sound: self.late ? 0ms : Theme.dur-sound;
-    out property <duration> breath: self.late ? 0ms : Theme.dur-breath;
 }
 
 // Avancée d'un coup : `p` repart de 0 à chaque changement de `seq`, atteint 1 en `duration` à
@@ -91,13 +92,12 @@ component Ring inherits Rectangle {
     border-color: root.c;
 }
 
-// « breath » : teinte du fond et du bord, qui rejoint le niveau en douceur.
+// « breath » : teinte du fond et du bord. Le niveau arrive déjà adouci (src/ui/pulse.rs) : pas
+// de transition ici, qui ferait redessiner chaque îlot à la cadence de l'écran.
 component Breath inherits Rectangle {
-    property <float> level: PulseState.level;
-    animate level { duration: PulseState.breath; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
-    background: Theme.accent.with-alpha(0.26 * root.level);
+    background: Theme.accent.with-alpha(0.26 * PulseState.level);
     border-width: 1px;
-    border-color: Theme.accent.with-alpha(0.6 * root.level);
+    border-color: Theme.accent.with-alpha(0.6 * PulseState.level);
 }
 
 // « wave » : lueur de la basse à gauche, et la vague de chaque grosse caisse, qui s'éteint en

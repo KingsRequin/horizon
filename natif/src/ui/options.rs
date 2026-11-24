@@ -13,7 +13,7 @@ use crate::options::{self, Capture, Edit, OptionsView};
 use crate::settings_window::{LABEL, SettingsPage};
 use crate::ui::menu::{self, Entry};
 use horizon_core::layout::{BAND_HEIGHT, BarOptionsPatch, BarStyle, Interaction, MAX_BAR_HEIGHT, TilesMode};
-use horizon_core::settings::{Backdrop, Pulse, Settings};
+use horizon_core::settings::{Backdrop, Progress, Pulse, Settings};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -278,6 +278,8 @@ fn fill() {
     g.set_bar_pulse(f.bar_pulse);
     g.set_music_backdrop(s.music.backdrop.label().into());
     g.set_music_backdrop_hint(s.music.backdrop.hint().into());
+    g.set_music_progress(s.music.progress.label().into());
+    g.set_music_progress_hint(s.music.progress.hint().into());
     g.set_music_pulse(s.music.pulse.label().into());
     g.set_music_pulse_hint(s.music.pulse.hint().into());
     g.set_wallpaper_accent(f.wallpaper_accent);
@@ -462,6 +464,7 @@ fn pick(id: &str, x: f32, y: f32) {
             list
         }
         "music.backdrop" => Backdrop::ALL.iter().map(|b| Entry::check(b.id(), b.label(), *b == current.music.backdrop)).collect(),
+        "music.progress" => Progress::ALL.iter().map(|p| Entry::check(p.id(), p.label(), *p == current.music.progress)).collect(),
         "music.pulse" => Pulse::ALL.iter().map(|p| Entry::check(p.id(), p.label(), *p == current.music.pulse)).collect(),
         _ => return,
     };
