@@ -1,0 +1,71 @@
+// Batteries envoyées par l'appli Horizon Mobile (module « Téléphone ») : une pastille par
+// appareil, dessinée comme celle du casque. Sous le seuil de « batterie faible », couleur
+// d'alerte ; en charge, couleur « ok » et éclair ; mesure ancienne, estompée. Rien tant
+// qu'aucune batterie n'est connue. Données : src/widgets/phone/ui.rs.
+
+import { Theme, StyleTokens } from "../../theme.slint";
+import { Icon } from "../../components.slint";
+import { WidgetFrame } from "../../widget-frame.slint";
+
+export struct PhoneBattery {
+    // Nom de l'icône Phosphor : deviceMobile, watch, headphones ou batteryFull.
+    icon: string,
+    text: string,
+    charging: bool,
+    low: bool,
+    stale: bool,
+}
+
+export global PhoneData {
+    in property <[PhoneBattery]> items;
+    in property <string> title;
+}
+
+component BatteryChip inherits Rectangle {
+    in property <StyleTokens> t;
+    in property <PhoneBattery> b;
+    property <color> c: root.b.low ? root.t.bad : root.b.charging ? root.t.ok : root.t.text;
+    opacity: root.b.stale ? Theme.o-stale : 1;
+
+    HorizontalLayout {
+        spacing: 5px;
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                source: root.b.icon == "watch" ? @image-url("../../../icons/phosphor/watch.svg")
+                    : root.b.icon == "headphones" ? @image-url("../../../icons/phosphor/headphones.svg")
+                    : root.b.icon == "batteryFull" ? @image-url("../../../icons/phosphor/batteryFull.svg")
+                    : @image-url("../../../icons/phosphor/deviceMobile.svg");
+                size: 14px;
+                color: root.c;
+            }
+        }
+        Text {
+            text: root.b.text;
+            color: root.c;
+            font-family: Theme.font-mono;
+            font-size: Theme.fs-meta;
+            font-weight: 500;
+            vertical-alignment: center;
+        }
+        if root.b.charging: VerticalLayout {
+            alignment: center;
+            Icon {
+                source: @image-url("../../../icons/phosphor/lightning.svg");
+                size: 11px;
+                color: root.c;
+            }
+        }
+    }
+}
+
+export component PhoneWidget inherits WidgetFrame {
+    empty: PhoneData.items.length == 0;
+    tip: PhoneData.title;
+    gap: 10px;
+
+    for b in PhoneData.items: BatteryChip {
+        t: root.t;
+        b: b;
+    }
+}

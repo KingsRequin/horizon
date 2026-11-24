@@ -22,6 +22,7 @@ import { ClaudeSessionsWidget } from "widgets/claude_sessions/widget.slint";
 import { ClockWidget } from "widgets/clock/widget.slint";
 import { DiscordVoiceWidget } from "widgets/discord_voice/widget.slint";
 import { HeadsetWidget } from "widgets/headset/widget.slint";
+import { PhoneWidget } from "widgets/phone/widget.slint";
 import { MediaWidget } from "widgets/media/widget.slint";
 import { MicKrispWidget } from "widgets/mic_krisp/widget.slint";
 import { NotificationsWidget } from "widgets/notifications/widget.slint";
@@ -67,7 +68,7 @@ export component WidgetView inherits Rectangle {
     property <bool> ported: kind == "calendar" ||
         kind == "claude_sessions" || kind == "clock" || kind == "discord_voice" ||
         kind == "headset" || kind == "media" ||
-        kind == "mic_krisp" || kind == "notifications" ||
+        kind == "mic_krisp" || kind == "notifications" || kind == "phone" ||
         kind == "shortcuts" || kind == "suggestions" || kind == "system" || kind == "weather" ||
         kind == "windows" || root.slot.plugin;
     out property <length> natural: row.preferred-width;
@@ -142,6 +143,15 @@ export component WidgetView inherits Rectangle {
             wide: root.wide;
         }
         if kind == "headset": HeadsetWidget {
+            t: root.t;
+            slot: root.slot;
+            dim: root.dim;
+            interactive: root.live;
+            clickable: root.live-click;
+            compact: root.compact;
+            wide: root.wide;
+        }
+        if kind == "phone": PhoneWidget {
             t: root.t;
             slot: root.slot;
             dim: root.dim;

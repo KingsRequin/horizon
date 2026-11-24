@@ -9,6 +9,7 @@
 
 pub mod identity;
 pub mod server;
+pub mod ui;
 
 use crate::alerts::LowBattery;
 use crate::host::{AppHandle, Manager};
@@ -40,6 +41,7 @@ pub const BACKEND: Backend = Backend {
     name: "téléphone",
     manage: |app| crate::widgets::manage(app, PhoneState::default()),
     start: Some(start),
+    bind: Some(ui::bind),
     ..Backend::NONE
 };
 
