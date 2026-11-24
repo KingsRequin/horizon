@@ -97,7 +97,12 @@ pub struct Core {
     book: Mutex<Book>,
     pairing: Mutex<Pairing>,
     accent: Mutex<String>,
+    /// Appelé dès que la liste des téléphones change (voir [`Core::on_registry_change`]).
+    registry_changed: OnceLock<RegistryHook>,
 }
+
+/// Ce qui est fait quand la liste des téléphones change (écriture de `phones.json`).
+type RegistryHook = Box<dyn Fn(&Core) + Send + Sync>;
 
 impl Core {
     /// État relu dans le texte de `phones.json` (vide ou illisible : aucun téléphone).
@@ -112,6 +117,21 @@ impl Core {
             book: Mutex::new(saved.batteries),
             pairing: Mutex::default(),
             accent: Mutex::new(DEFAULT_ACCENT.to_owned()),
+            registry_changed: OnceLock::new(),
+        }
+    }
+
+    /// `f` est appelé, sur le fil qui la provoque, à chaque arrivée ou retrait d'un téléphone :
+    /// c'est là que le registre s'écrit sur le disque. Un retrait qui attendrait l'écriture
+    /// groupée des mesures pourrait ne jamais être écrit (session verrouillée, puis arrêt), et
+    /// le téléphone retiré serait de nouveau accepté au lancement suivant.
+    pub fn on_registry_change(&self, f: impl Fn(&Core) + Send + Sync + 'static) {
+        let _ = self.registry_changed.set(Box::new(f));
+    }
+
+    fn registry_did_change(&self) {
+        if let Some(f) = self.registry_changed.get() {
+            f(self);
         }
     }
 
@@ -163,9 +183,13 @@ impl Core {
                 }
                 lock(&self.pairing).redeem(&token, now_ms).map_err(|r| refuse(r.reason()))?;
                 let device_token = random_token(32);
-                let mut registry = lock(&self.registry);
-                registry.add(&device_id, &device_name, &device_token, now_ms);
-                Ok((device_id, ToPhone::PairAccepted { device_token, pc_id: registry.pc_id.clone(), pc_name: self.pc_name.clone() }))
+                let pc_id = {
+                    let mut registry = lock(&self.registry);
+                    registry.add(&device_id, &device_name, &device_token, now_ms);
+                    registry.pc_id.clone()
+                };
+                self.registry_did_change();
+                Ok((device_id, ToPhone::PairAccepted { device_token, pc_id, pc_name: self.pc_name.clone() }))
             }
             FromPhone::Hello { device_id, device_token, protocol, .. } => {
                 let refuse = |reason: &str| ToPhone::HelloRejected { reason: reason.to_owned() };
@@ -189,6 +213,10 @@ impl Core {
 
     /// Message d'un téléphone dont la session est ouverte ; vrai si les batteries ont changé.
     pub fn message(&self, phone_id: &str, msg: FromPhone, now_ms: u64) -> bool {
+        // Un téléphone retiré dont la session vit encore un instant ne recrée rien.
+        if !lock(&self.registry).phones.iter().any(|p| p.id == phone_id) {
+            return false;
+        }
         match msg {
             FromPhone::Battery { devices } => lock(&self.book).apply(phone_id, devices, now_ms),
             _ => false,
@@ -198,7 +226,11 @@ impl Core {
     /// Retire un téléphone : son jeton ne vaut plus rien, ses batteries sont oubliées.
     pub fn remove(&self, phone_id: &str) -> bool {
         let known = lock(&self.registry).remove(phone_id);
-        lock(&self.book).forget(phone_id) || known
+        let forgotten = lock(&self.book).forget(phone_id);
+        if known {
+            self.registry_did_change();
+        }
+        forgotten || known
     }
 
     /// Batteries à montrer.
@@ -247,7 +279,8 @@ impl<F: Fn(Event) + Send + Sync + 'static> Handler for Link<F> {
                 log::info!("téléphone : session ouverte pour {id} depuis {peer}");
                 (self.notify)(Event::Opened);
             }
-            Err(refusal) => log::warn!("téléphone : {peer} refusé ({})", refusal.to_json()),
+            // Pas un avertissement : n'importe quel appareil du réseau peut en provoquer à volonté.
+            Err(refusal) => log::debug!("téléphone : {peer} refusé ({})", refusal.to_json()),
         }
         result
     }
@@ -365,6 +398,7 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     let text = std::fs::read_to_string(file()).unwrap_or_default();
     let core = Arc::new(Core::restore(&text, &horizon_sys::local_net::host_name()));
     core.set_accent(crate::accent::accent_state(app).map_or_else(|| DEFAULT_ACCENT.to_owned(), crate::plugins::events::hex));
+    core.on_registry_change(write);
     let _ = app.state::<PhoneState>().core.set(core);
     let a = app.clone();
     start_thread("telephone-etat", move || watch(&a))?;
@@ -396,7 +430,16 @@ fn watch(app: &AppHandle) {
 }
 
 fn save(app: &AppHandle) {
-    let Some(core) = core(app) else { return };
+    if let Some(core) = core(app) {
+        write(&core);
+    }
+}
+
+/// Écrit `phones.json`. Une écriture à la fois, l'état lu sous le verrou : la dernière écrite
+/// est toujours la plus récente (fil de l'état, fil d'une session, fil de l'interface).
+fn write(core: &Core) {
+    static WRITING: Mutex<()> = Mutex::new(());
+    let _one_at_a_time = lock(&WRITING);
     let (path, tmp) = (file(), file().with_extension("json.tmp"));
     let written = std::fs::create_dir_all(crate::state::app_dir()).and_then(|()| std::fs::write(&tmp, core.snapshot())).and_then(|()| std::fs::rename(&tmp, &path));
     if let Err(e) = written {
@@ -543,8 +586,6 @@ pub fn remove_phone(app: &AppHandle, id: &str) {
     let Some(core) = state.core.get() else { return };
     if core.remove(id) {
         state.runner.disconnect(id);
-        state.dirty.store(true, Ordering::SeqCst);
-        state.wake.wake();
         publish(app);
     }
 }
@@ -665,6 +706,36 @@ mod tests {
         assert!(core.remove("tel-1"));
         assert!(core.view(10).is_empty());
         assert!(matches!(core.first(hello("tel-1", &token), 11), Err(ToPhone::HelloRejected { reason }) if reason == "unknown_device"));
+    }
+
+    #[test]
+    fn a_removed_phone_cannot_leave_batteries_behind() {
+        let core = Core::for_tests("pc-1", "Bureau");
+        pair(&core, "tel-1");
+        assert!(core.remove("tel-1"));
+        // Sa session vit encore un instant : une mesure qui arrive là ne recrée rien.
+        assert!(!core.message("tel-1", battery(82, true), 10));
+        assert!(core.view(10).is_empty());
+        assert!(!core.message("jamais-vu", battery(50, false), 10));
+        assert!(core.view(10).is_empty());
+    }
+
+    #[test]
+    fn pairing_and_removal_are_saved_at_once() {
+        let core = Core::for_tests("pc-1", "Bureau");
+        let saved = Arc::new(Mutex::new(Vec::<String>::new()));
+        let s = saved.clone();
+        core.on_registry_change(move |c| lock(&s).push(c.snapshot()));
+        pair(&core, "tel-1");
+        assert_eq!(lock(&saved).len(), 1, "un appairage est écrit sans attendre");
+        assert!(lock(&saved)[0].contains("tel-1"));
+        assert!(core.message("tel-1", battery(82, true), 10));
+        assert_eq!(lock(&saved).len(), 1, "une mesure attend l'écriture groupée");
+        assert!(core.remove("tel-1"));
+        assert_eq!(lock(&saved).len(), 2, "un retrait est écrit sans attendre");
+        assert!(!lock(&saved)[1].contains("tel-1"), "le téléphone retiré n'est plus sur le disque");
+        assert!(!core.remove("tel-1"));
+        assert_eq!(lock(&saved).len(), 2, "rien à écrire quand rien n'a changé");
     }
 
     #[test]

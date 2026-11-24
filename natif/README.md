@@ -670,14 +670,14 @@ Module intégré qui reçoit l'appli Horizon Mobile. Protocole : `docs/PHONE.md`
 d'exemple par type dans `crates/horizon-core/tests/fixtures/phone/`, que l'appli teste aussi.
 
 - **Logique pure** (`horizon_core::phone`) : `proto` (messages), `pairing` (offre à usage
-  unique, 5 min, 5 essais, contenu du QR), `registry` (téléphones appairés : seule l'empreinte
+  unique, 5 min, sans limite d'essais : le jeton fait 128 bits ; contenu du QR), `registry` (téléphones appairés : seule l'empreinte
   du jeton est gardée), `battery` (`Book` : batteries reçues, `BatteryView`), `firewall`
   (décision d'après les règles lues, script `netsh`).
 - **Système** (`horizon_sys`) : `firewall` (lecture COM des règles, pose par `netsh` élevé),
   `local_net` (adresses IPv4 locales, nom du PC).
 - **Service** : `identity.rs` (clé du PC dans le Gestionnaire d'identifiants, certificat
   auto-signé, empreinte du SPKI), `server.rs` (TLS + WebSocket, un fil par session ; avant
-  authentification : 10 s en tout pour le premier message, 64 Kio par trame, 8 connexions en
+  authentification : sondes TCP, 10 s en tout pour le premier message, 64 Kio par trame, 8 connexions en
   attente et 4 sessions au plus, adresses privées seulement), `mod.rs` (`Core` : appairage,
   sessions, batteries ; `refresh` : serveur en marche si le module est activé et que le pare-feu
   le permet ; `publish` : `EV_PHONE` = `Vec<BatteryView>` pour les barres, `EV_PHONE_LINK` =
@@ -687,7 +687,7 @@ d'exemple par type dans `crates/horizon-core/tests/fixtures/phone/`, que l'appli
   est affichée), téléphones (retrait différé par le bandeau d'annulation), seuil
   `alerts.phone_low`. Ouverte par l'activation du module, la palette et les réglages du widget.
 - **Fichiers** : `%APPDATA%\Horizon\phones.json` ; règle de pare-feu « Horizon Mobile » (une
-  seule, pour l'exe en cours, profil privé, sous-réseau local).
+  seule, pour l'exe en cours, profil privé).
 - **Essai sans téléphone** : `crates/faux-telephone` joue l'appli (les tests du serveur s'en
   servent). En vrai : `horizon.exe --reglages phone`, *Afficher le code* (en debug, le lien du
   QR est écrit dans le journal), puis

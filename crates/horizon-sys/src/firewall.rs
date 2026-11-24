@@ -5,7 +5,7 @@
 use crate::com::ComGuard;
 use anyhow::{Context, bail};
 use horizon_core::phone::firewall::{FirewallState, PORT, RuleView, decide, netsh_script};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use windows::Win32::Foundation::{CloseHandle, S_OK, VARIANT_TRUE};
 use windows::Win32::NetworkManagement::WindowsFirewall::{
@@ -14,6 +14,7 @@ use windows::Win32::NetworkManagement::WindowsFirewall::{
 };
 use windows::Win32::System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance, IDispatch};
 use windows::Win32::System::Ole::IEnumVARIANT;
+use windows::Win32::System::SystemInformation::GetSystemDirectoryW;
 use windows::Win32::System::Threading::WaitForSingleObject;
 use windows::Win32::System::Variant::{VARIANT, VT_DISPATCH, VariantClear};
 use windows::Win32::UI::Shell::{SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW, ShellExecuteExW};
@@ -36,6 +37,18 @@ pub fn state(exe: &Path, port: u16) -> FirewallState {
     }
 }
 
+/// Programme et arguments qui lancent `script` : le `cmd.exe` du système par son chemin complet
+/// (pas celui que trouverait la recherche), sans la commande `AutoRun` du registre de
+/// l'utilisateur (`/d`), qui tournerait sinon en administrateur, et sans développement de
+/// « ! » (`/v:off`).
+fn elevated_command(script: &str) -> (PathBuf, String) {
+    let mut buffer = [0u16; 260];
+    // SAFETY : `buffer` est un tampon valide, dont la taille est celle que l'appel reçoit.
+    let len = unsafe { GetSystemDirectoryW(Some(&mut buffer)) } as usize;
+    let system = if len > 0 && len < buffer.len() { PathBuf::from(String::from_utf16_lossy(&buffer[..len])) } else { PathBuf::from(r"C:\Windows\System32") };
+    (system.join("cmd.exe"), format!("/d /v:off /s /c \"{script}\""))
+}
+
 /// Remet les règles de `exe` en ordre (`netsh_script`), en administrateur : Windows demande
 /// l'accord de l'utilisateur. Bloque jusqu'à sa réponse et la fin des commandes, donc jamais
 /// sur le fil de l'interface. Rend l'état relu ; `Err` si l'élévation est refusée.
@@ -46,12 +59,13 @@ pub fn allow_elevated(exe: &Path) -> anyhow::Result<FirewallState> {
     if path.contains(['%', '"']) {
         bail!("chemin d'Horizon inattendu : {path}");
     }
-    let params = HSTRING::from(format!("/s /c \"{}\"", netsh_script(&path)));
+    let (cmd, params) = elevated_command(&netsh_script(&path));
+    let (cmd, params) = (HSTRING::from(cmd.as_os_str()), HSTRING::from(params));
     let mut info = SHELLEXECUTEINFOW {
         cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
         fMask: SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC,
         lpVerb: w!("runas"),
-        lpFile: w!("cmd.exe"),
+        lpFile: PCWSTR(cmd.as_ptr()),
         lpParameters: PCWSTR(params.as_ptr()),
         nShow: SW_HIDE.0,
         ..Default::default()
@@ -143,6 +157,16 @@ unsafe fn view(rule: &INetFwRule) -> Option<RuleView> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_elevated_command_is_the_system_s_cmd_without_the_user_s_autorun() {
+        let (file, params) = elevated_command("netsh x");
+        let lower = file.to_string_lossy().to_lowercase();
+        assert!(file.is_absolute() && lower.ends_with(r"\system32\cmd.exe"), "{lower}");
+        // `/d` : pas de commande AutoRun du registre de l'utilisateur, qui tournerait élevée ;
+        // `/v:off` : un « ! » du chemin reste un « ! ».
+        assert_eq!(params, "/d /v:off /s /c \"netsh x\"");
+    }
 
     /// Contrôle à la main : `cargo test -p horizon-sys firewall -- --ignored --nocapture`.
     #[test]

@@ -33,6 +33,9 @@ pub const MAX_CLIENTS: usize = 4;
 pub const MAX_PENDING: usize = 8;
 /// Réveil d'un fil de téléphone sans message entrant (envois en attente, arrêt).
 const POLL: Duration = Duration::from_secs(1);
+/// Silence après lequel Windows sonde une connexion, et écart entre deux sondes.
+const KEEPALIVE_IDLE: Duration = Duration::from_secs(120);
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(10);
 /// Réveil d'une connexion en attente (au plus [`FIRST_MESSAGE`]) pour voir si elle est abandonnée.
 const PENDING_POLL: Duration = Duration::from_millis(250);
 /// Un envoi qui ne part pas (téléphone disparu sans fermer) : la connexion est abandonnée.
@@ -226,6 +229,7 @@ fn accept_loop(listener: &TcpListener, tls: &Arc<ServerConfig>, handler: &Arc<dy
             log::warn!("téléphone : connexion refusée, {peer} n'est pas une adresse du réseau local");
             continue;
         }
+        keep_alive(&stream);
         let (out, inbox) = unbounded();
         let cancel = Arc::new(AtomicBool::new(false));
         let n = shared.next.fetch_add(1, Ordering::Relaxed);
@@ -251,6 +255,17 @@ fn accept_loop(listener: &TcpListener, tls: &Arc<ServerConfig>, handler: &Arc<dy
         if spawned.is_err() {
             lock(&shared.clients).retain(|c| c.n != n);
         }
+    }
+}
+
+/// Un téléphone qui sort du Wi-Fi ne ferme pas sa connexion : sans rien, sa session resterait
+/// « Connecté » pour toujours. Windows sonde donc la connexion muette (après 2 min, puis toutes
+/// les 10 s, dix fois) et la lecture échoue quand plus rien ne répond. Les sondes se règlent
+/// entre les deux systèmes : l'appli n'est pas réveillée, contrairement à un ping applicatif.
+fn keep_alive(stream: &TcpStream) {
+    let probes = socket2::TcpKeepalive::new().with_time(KEEPALIVE_IDLE).with_interval(KEEPALIVE_INTERVAL);
+    if let Err(e) = socket2::SockRef::from(stream).set_tcp_keepalive(&probes) {
+        log::warn!("téléphone : surveillance de la connexion impossible : {e}");
     }
 }
 
@@ -369,6 +384,16 @@ fn open(stream: TcpStream, tls: Arc<ServerConfig>, cancel: Arc<AtomicBool>) -> a
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_accepted_connection_watches_for_a_vanished_phone() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let _client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (stream, _) = listener.accept().unwrap();
+        assert!(!socket2::SockRef::from(&stream).keepalive().unwrap());
+        keep_alive(&stream);
+        assert!(socket2::SockRef::from(&stream).keepalive().unwrap());
+    }
     use crate::widgets::phone::identity::Identity;
     use horizon_core::phone::proto::{FromPhone, ToPhone};
     use std::sync::{Arc, Mutex};

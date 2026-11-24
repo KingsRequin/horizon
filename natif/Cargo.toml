@@ -72,6 +72,8 @@ ring = "0.17"
 base64 = "0.23"
 # QR codes de la page « Téléphone » (appairage, lien de l'appli).
 qrcode = { version = "0.15", default-features = false }
+# Sondes TCP du serveur du module Téléphone (un téléphone parti sans fermer sa connexion).
+socket2 = "0.6"
 
 [dev-dependencies]
 # Joue l'appli face au serveur du module « Téléphone ».

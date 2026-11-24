@@ -18,7 +18,10 @@ Horizon et l'appli testent tous deux contre ces fichiers.
 - Horizon n'accepte que les adresses privées (10/8, 172.16/12, 192.168/16, 169.254/16, 127/8).
 - Messages : trames texte, un objet JSON par trame, champ `type`. 64 Kio au plus par trame :
   au-delà, la connexion est fermée.
-- Pas de ping applicatif. Chaque côté envoie seulement ce qui a changé.
+- Pas de ping applicatif. Chaque côté envoie seulement ce qui a changé. Le PC active les sondes
+  TCP (« keepalive » : après 2 minutes de silence, puis toutes les 10 secondes) pour remarquer
+  un téléphone parti sans fermer sa connexion : elles se règlent entre les deux systèmes, sans
+  réveiller l'appli.
 
 ## Appairage
 
@@ -35,7 +38,7 @@ horizon://pair?v=1&h=<ipv4,ipv4…>&n=<nom du PC>&p=<port>&fp=<empreinte>&t=<jet
 | `n` | Nom du PC, encodé en pourcent. Sert aussi de nom d'hôte : `<n>.local`. |
 | `p` | Port. |
 | `fp` | Empreinte de la clé publique du PC. |
-| `t` | Jeton d'appairage : usage unique, valable 5 minutes, annulé après 5 essais faux. |
+| `t` | Jeton d'appairage (16 octets aléatoires) : usage unique, valable 5 minutes. Les essais faux ne le font pas tomber : sinon n'importe quel appareil du réseau pourrait empêcher l'appairage. |
 
 Le téléphone se connecte et envoie `pair.request`. Horizon répond `pair.accepted`, avec un
 jeton permanent propre à ce téléphone, ou `pair.rejected`. Horizon ne garde du jeton permanent
@@ -68,7 +71,7 @@ envoie à l'ouverture de la session, puis quand un pourcentage ou un état de ch
 | `type` | Champs |
 | --- | --- |
 | `pair.accepted` | `deviceToken`, `pcId`, `pcName` |
-| `pair.rejected` | `reason` : `expired`, `used`, `unknown`, `locked` |
+| `pair.rejected` | `reason` : `expired`, `used`, `unknown` |
 | `hello.ok` | `pcId`, `pcName`, `protocol` (1), `features` (liste de chaînes), `accent` (`#rrggbb`) |
 | `hello.rejected` | `reason` : `unknown_device`, `bad_token`, `protocol` |
 | `accent` | `color` (`#rrggbb`) : la couleur d'accent de la barre a changé |

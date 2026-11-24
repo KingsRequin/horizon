@@ -1,12 +1,11 @@
 //! Appairage d'un téléphone : un jeton à usage unique, affiché dans un QR code, valable cinq
-//! minutes et annulé après cinq essais faux.
+//! minutes. Les essais faux ne sont pas comptés : le jeton fait 128 bits, et une limite
+//! laisserait n'importe quel appareil du réseau local faire tomber le code affiché.
 
 use std::net::{IpAddr, Ipv4Addr};
 
 /// Durée de vie d'une offre d'appairage.
 pub const OFFER_MS: u64 = 300_000;
-/// Essais faux tolérés ; le dernier fait tomber l'offre.
-pub const MAX_TRIES: u8 = 5;
 
 /// Refus d'un jeton d'appairage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,8 +16,6 @@ pub enum Reject {
     Used,
     /// Aucune offre en cours, ou mauvais jeton.
     Unknown,
-    /// Trop d'essais faux : l'offre est annulée.
-    Locked,
 }
 
 impl Reject {
@@ -28,7 +25,6 @@ impl Reject {
             Reject::Expired => "expired",
             Reject::Used => "used",
             Reject::Unknown => "unknown",
-            Reject::Locked => "locked",
         }
     }
 }
@@ -37,7 +33,6 @@ impl Reject {
 struct Offer {
     token: String,
     at_ms: u64,
-    wrong: u8,
 }
 
 /// L'offre d'appairage en cours (une seule à la fois) et le dernier jeton qui a servi.
@@ -50,26 +45,17 @@ pub struct Pairing {
 impl Pairing {
     /// Nouvelle offre ; remplace celle en cours.
     pub fn offer(&mut self, token: String, now_ms: u64) {
-        self.offer = Some(Offer { token, at_ms: now_ms, wrong: 0 });
+        self.offer = Some(Offer { token, at_ms: now_ms });
     }
 
     /// Le téléphone présente `token`. Un succès consomme l'offre.
     pub fn redeem(&mut self, token: &str, now_ms: u64) -> Result<(), Reject> {
-        let Some(offer) = &mut self.offer else {
-            let used = self.used.as_deref().is_some_and(|u| same(u, token));
+        // Le bon jeton consomme l'offre, même trop tard ; un mauvais la laisse en place.
+        let Some(offer) = self.offer.take_if(|offer| same(&offer.token, token)) else {
+            let used = self.offer.is_none() && self.used.as_deref().is_some_and(|u| same(u, token));
             return Err(if used { Reject::Used } else { Reject::Unknown });
         };
-        if !same(&offer.token, token) {
-            offer.wrong += 1;
-            if offer.wrong >= MAX_TRIES {
-                self.offer = None;
-                return Err(Reject::Locked);
-            }
-            return Err(Reject::Unknown);
-        }
-        let expired = now_ms.saturating_sub(offer.at_ms) > OFFER_MS;
-        let offer = self.offer.take().expect("offre lue juste au-dessus");
-        if expired {
+        if now_ms.saturating_sub(offer.at_ms) > OFFER_MS {
             return Err(Reject::Expired);
         }
         self.used = Some(offer.token);
@@ -127,15 +113,16 @@ mod tests {
     }
 
     #[test]
-    fn five_wrong_tokens_cancel_the_offer() {
+    fn wrong_tokens_never_cancel_the_offer() {
+        // Un appareil quelconque du réseau local ne doit pas pouvoir faire tomber le code
+        // affiché : le jeton fait 128 bits (hors de portée d'une recherche), l'offre expire seule.
         let mut p = Pairing::default();
         p.offer("abc".into(), 0);
-        for _ in 0..4 {
+        for _ in 0..1_000 {
             assert_eq!(p.redeem("non", 1), Err(Reject::Unknown));
         }
-        assert_eq!(p.redeem("non", 1), Err(Reject::Locked));
-        assert_eq!(p.redeem("abc", 1), Err(Reject::Unknown), "l'offre est tombée");
-        assert_eq!(p.pending(1), None);
+        assert_eq!(p.pending(1), Some(OFFER_MS - 1));
+        assert_eq!(p.redeem("abc", 2), Ok(()));
     }
 
     #[test]

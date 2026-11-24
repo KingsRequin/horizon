@@ -117,7 +117,7 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   Android sur la barre, envoyée par l'appli Horizon Mobile
   (`github.com/KingsRequin/horizon-mobile`). L'activer ouvre sa page (aussi : palette,
   « Appairer un téléphone… », ou les réglages du widget) : 1) *Autoriser* pose la règle du
-  pare-feu de Windows (une seule, « Horizon Mobile », profil privé, réseau local ; Windows
+  pare-feu de Windows (une seule, « Horizon Mobile », pour les réseaux privés seulement ; Windows
   demande une autorisation d'administrateur) ; 2) le premier QR code mène à l'appli ; 3)
   *Afficher le code* montre le QR d'appairage, à viser depuis l'appli (valable 5 minutes, pour
   un seul téléphone ; quitter la page l'annule). Le widget (menu « + ») montre une pastille par
