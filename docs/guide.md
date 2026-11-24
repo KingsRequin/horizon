@@ -113,6 +113,20 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   dans Images › Captures d'écran est proposée 15 s dans l'îlot (miniature, « Envoyer à
   deskbar ») pour la session qui attend, sinon la dernière terminée. Clic : son terminal revient
   au premier plan et le chemin y est collé (presse-papiers + Ctrl+V) ; jamais Entrée.
+- **Téléphone** (module intégré, à activer : voir « Plugins ») : la batterie du téléphone
+  Android sur la barre, envoyée par l'appli Horizon Mobile
+  (`github.com/KingsRequin/horizon-mobile`). L'activer ouvre sa page (aussi : palette,
+  « Appairer un téléphone… », ou les réglages du widget) : 1) *Autoriser* pose la règle du
+  pare-feu de Windows (une seule, « Horizon Mobile », profil privé, réseau local ; Windows
+  demande une autorisation d'administrateur) ; 2) le premier QR code mène à l'appli ; 3)
+  *Afficher le code* montre le QR d'appairage, à viser depuis l'appli (valable 5 minutes, pour
+  un seul téléphone ; quitter la page l'annule). Le widget (menu « + ») montre une pastille par
+  appareil reçu : pourcentage, éclair en charge, couleur d'alerte sous le seuil (15 % par
+  défaut, réglable dans la page, 0 = jamais ; l'îlot prévient une fois), estompée quand la
+  mesure date. La page liste les téléphones appairés (« Connecté », « Vu il y a 3 h ») ; en
+  retirer un (annulable 5 s) ferme sa session et rend son jeton inutilisable. Le PC et le
+  téléphone doivent être sur le même réseau ; rien ne passe par Internet. Module désactivé :
+  Horizon n'écoute plus et le widget disparaît. Protocole : [PHONE.md](PHONE.md).
 - **Bascule audio du casque** (Réglages d'Horizon › Son et média ; désactivée tant qu'aucune sortie
   de repli n'est choisie) : casque éteint (deux lectures d'affilée, relu toutes les 5 s), la
   sortie par défaut passe sur la sortie de repli ; rallumé, elle revient à celle d'avant, sauf si
@@ -222,7 +236,9 @@ chronomètre en Slint seul).
   30 min) et à chaque lancement.
 - **Modules intégrés** (même page) : des fonctions qui restent dans Horizon, parce qu'elles
   demandent plus que ce qu'un plugin peut faire, mais ne tournent que si elles sont activées
-  (*Activer* / *Désactiver*). Aujourd'hui : Sessions Claude Code. Désactivé : pas de widget
+  (*Activer* / *Désactiver*). Aujourd'hui : Sessions Claude Code et Téléphone (`[features] phone`, activé d'office
+  seulement si son widget est sur une barre ou si un téléphone est déjà appairé). Sessions
+  Claude Code désactivé : pas de widget
   (barres, menu « + », réglages), hooks ignorés et récepteur non démarré au lancement, lignes
   « Hooks Claude Code » et « Autorisations Claude » absentes de la page « État », réglages
   « Claude attend » et « Captures d'écran vers Claude » absents de la page « Alertes ».
@@ -283,8 +299,13 @@ connaît la batterie. Sonde : `cargo run -p horizon-sys --example headset_probe`
 - `usage.db` : base locale des suggestions (premier plan des applis, visites importées de
   Vivaldi) ;
 - `tmp\` : copies temporaires de l'historique et des icônes de Vivaldi (lues sans le verrouiller) ;
+- `phones.json` : téléphones appairés (nom, dernière connexion, empreinte de leur jeton : le
+  jeton lui-même n'est gardé que par le téléphone) ; la clé du PC est dans le Gestionnaire
+  d'identifiants de Windows (`Horizon/phone/key`) ;
 - `horizon.log` : journal.
 
-Ports locaux : récepteur des hooks `127.0.0.1:28660` (module Sessions Claude Code activé). Le
+Ports locaux : récepteur des hooks `127.0.0.1:28660` (module Sessions Claude Code activé) ;
+liaison avec le téléphone sur le réseau local, port 28680 (le suivant libre jusqu'à 28689 s'il
+est pris ; module Téléphone activé et pare-feu autorisé seulement). Le
 client d'Essaim n'est plus dans Horizon : c'est le plugin Essaim qui se connecte à
 `ws://127.0.0.1:28670`.

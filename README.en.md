@@ -94,6 +94,7 @@ shortcuts, Start menu apps, audio devices, timer, profiles and more.
 | 🪟 **Windows** | Open windows per screen; bring one to the current screen (click) or send it to another one (right-click) |
 | ✨ **Suggestions** | Apps and sites you use at this time of day |
 | 🤖 **Claude Code** | *Built-in module, off until enabled.* Sessions (working, waiting, permission requests), token usage, bring the terminal back |
+| 📱 **Phone** | *Built-in module, off until enabled.* Your Android phone's battery on the bar, sent by the [Horizon Mobile](https://github.com/KingsRequin/horizon-mobile) app (local network, paired with a QR code) |
 | 🖥️ **Servers** | *Plugin.* Hosts from `~/.ssh/config`, online status and latency, SSH in one click |
 | 🌀 **[Essaim](https://github.com/KingsRequin/essaim)** | *Plugin.* Pause the music-reactive cursor and pick its preset |
 | 📈 **Claude quota** | *Plugin.* Claude subscription quota: 5-hour session, week, per-model limits |

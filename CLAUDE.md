@@ -62,6 +62,8 @@ crates/
                             analyse du son = bibliothèque partagée audio-commun (dépôt à part,
                             avec Prisme et Essaim), à ne pas recopier ici
   horizon-hook/             exe appelé par les hooks de Claude Code
+  faux-telephone/           client d'essai qui joue l'appli Horizon Mobile (tests du serveur du
+                            module Téléphone, contrôle en vrai sans téléphone)
 packaging/                  paquet « sparse » (identité de paquet) et ses icônes ; installateur
                             (horizon.iss, Inno Setup 6)
 scripts/                    installation, désinstallation, paquet d'une Release, hooks Claude,

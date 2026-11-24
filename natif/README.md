@@ -64,7 +64,7 @@ natif/
     game.rs, comfort.rs, tray.rs     modules repris de app/src-tauri/src (voir plus bas)
     relay.rs, wsclient.rs, web.rs, brands.rs, mixer.rs   services partagés
     alerts.rs, status.rs   îlot dynamique, état des intégrations
-    modules.rs          modules intégrés (Sessions Claude Code) : activés ou non
+    modules.rs          modules intégrés (Sessions Claude Code, Téléphone) : activés ou non
     accent.rs, osd.rs   accent (pochette, fond d'écran, Prisme, Windows) et affichage du volume
     options.rs          « Réglages d'Horizon » : état, enregistrement, options des barres,
                         raccourci ; règles pures testées ;
@@ -644,7 +644,7 @@ Une fonction qui demande plus que ce qu'un plugin peut faire reste dans l'exe, m
 que si elle est activée : page Plugins des réglages, rubrique « Modules intégrés » (tuiles de
 `ui::plugin_tiles::module_tiles`, actions `module_enable:<id>` / `module_disable:<id>` de
 `status::status_action`). Un module (`MODULES`) porte l'identifiant de son widget et de son
-`Backend` ; aujourd'hui : `claude_sessions`.
+`Backend` ; aujourd'hui : `claude_sessions` et `phone` (voir « Téléphone »).
 
 - `modules::resolve(app)` au démarrage, avant les barres et les services : choix de
   l'utilisateur (`[features] claude_sessions` de settings.toml), sinon activé seulement s'il
@@ -663,6 +663,37 @@ que si elle est activée : page Plugins des réglages, rubrique « Modules inté
 - Ajouter un module : une entrée dans `MODULES`, son réglage `Option<bool>` dans
   `horizon_core::settings::features` (lu par `chosen`, écrit par `set`), ce qui prouve qu'il
   sert déjà dans `in_use`.
+
+## Téléphone (`src/widgets/phone/`)
+
+Module intégré qui reçoit l'appli Horizon Mobile. Protocole : `docs/PHONE.md` ; un message
+d'exemple par type dans `crates/horizon-core/tests/fixtures/phone/`, que l'appli teste aussi.
+
+- **Logique pure** (`horizon_core::phone`) : `proto` (messages), `pairing` (offre à usage
+  unique, 5 min, 5 essais, contenu du QR), `registry` (téléphones appairés : seule l'empreinte
+  du jeton est gardée), `battery` (`Book` : batteries reçues, `BatteryView`), `firewall`
+  (décision d'après les règles lues, script `netsh`).
+- **Système** (`horizon_sys`) : `firewall` (lecture COM des règles, pose par `netsh` élevé),
+  `local_net` (adresses IPv4 locales, nom du PC).
+- **Service** : `identity.rs` (clé du PC dans le Gestionnaire d'identifiants, certificat
+  auto-signé, empreinte du SPKI), `server.rs` (TLS + WebSocket, un fil par session ; avant
+  authentification : 10 s en tout pour le premier message, 64 Kio par trame, 8 connexions en
+  attente et 4 sessions au plus, adresses privées seulement), `mod.rs` (`Core` : appairage,
+  sessions, batteries ; `refresh` : serveur en marche si le module est activé et que le pare-feu
+  le permet ; `publish` : `EV_PHONE` = `Vec<BatteryView>` pour les barres, `EV_PHONE_LINK` =
+  `LinkView` pour la page), `ui.rs` (widget de barre, global `PhoneData`).
+- **Page** (`src/ui/phone_page.rs`, `ui/phone/page.slint`, `SettingsPage::Phone`, nom `phone`) :
+  pare-feu, QR de l'appli, QR d'appairage (`qr_image`, décompte seulement pendant qu'une offre
+  est affichée), téléphones (retrait différé par le bandeau d'annulation), seuil
+  `alerts.phone_low`. Ouverte par l'activation du module, la palette et les réglages du widget.
+- **Fichiers** : `%APPDATA%\Horizon\phones.json` ; règle de pare-feu « Horizon Mobile » (une
+  seule, pour l'exe en cours, profil privé, sous-réseau local).
+- **Essai sans téléphone** : `crates/faux-telephone` joue l'appli (les tests du serveur s'en
+  servent). En vrai : `horizon.exe --reglages phone`, *Afficher le code* (en debug, le lien du
+  QR est écrit dans le journal), puis
+  `cargo run -p faux-telephone -- "<lien>" 82 --charge [--boucle <secondes>]` ; le jeton reçu
+  est gardé dans `%TEMP%\faux-telephone.json` pour les lancements suivants. La règle de pare-feu
+  vaut pour un exe : celui de debug demande la sienne.
 
 ## Plugins (`src/plugins/`)
 
