@@ -42,6 +42,54 @@ fn bump(i: usize, centre: f32, width: f32) -> f32 {
     (-(d * d) / (2.0 * width * width)).exp()
 }
 
+/// Ce que joue le son d'essai : un morceau entier, ou un seul ingrédient, pour juger chaque
+/// animation sur ce qui la fait bouger.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Essai {
+    /// Grosse caisse, basse, mélodie, charleston.
+    #[default]
+    Mix,
+    /// Une grosse caisse par demi-seconde, rien d'autre (le coup seul, sans basse ni volume).
+    Kick,
+    /// La basse seule, qui monte puis redescend en 2 s, sans grosse caisse.
+    Bass,
+    /// Le volume et le spectre seuls, qui montent puis redescendent en 2 s, sans grosse caisse.
+    Level,
+}
+
+impl Essai {
+    /// Nom donné à `--musique-essai` (`mix`, `kick`, `bass`, `level`).
+    pub fn parse(s: &str) -> Option<Essai> {
+        match s {
+            "mix" => Some(Essai::Mix),
+            "kick" => Some(Essai::Kick),
+            "bass" => Some(Essai::Bass),
+            "level" => Some(Essai::Level),
+            _ => None,
+        }
+    }
+}
+
+/// Son d'essai `kind` à l'instant `t` (secondes), `dt` après l'image précédente. Toujours le
+/// même pour un même instant.
+pub fn essai(kind: Essai, t: f32, dt: f32, bands: usize) -> EssaiFrame {
+    let swell = 0.5 - 0.5 * (t * std::f32::consts::PI).cos();
+    let beat = (t / BEAT).floor() != ((t - dt) / BEAT).floor();
+    match kind {
+        Essai::Mix => essai_frame(t, dt, bands),
+        Essai::Kick => {
+            let kick = (-t.rem_euclid(BEAT) / 0.13).exp();
+            let values = (0..bands).map(|i| kick * bump(i, bands as f32 / 24.0, 1.5)).collect();
+            EssaiFrame { level: 0.0, bass: 0.0, bands: values, beat }
+        }
+        Essai::Bass => EssaiFrame { level: 0.0, bass: swell, bands: vec![0.0; bands], beat: false },
+        Essai::Level => {
+            let values: Vec<f32> = (0..bands).map(|i| swell * (0.4 + 0.6 * bump(i, bands as f32 * 0.4, bands as f32 * 0.25))).collect();
+            EssaiFrame { level: swell, bass: 0.0, bands: values, beat: false }
+        }
+    }
+}
+
 /// Son d'essai à l'instant `t` (secondes), `dt` après l'image précédente : une grosse caisse
 /// par demi-seconde, une basse à contretemps, une mélodie qui change de note à chaque mesure et
 /// une charleston. Toujours le même pour un même instant.
@@ -104,5 +152,23 @@ mod tests {
         assert!(on_kick.bass > 0.6 && on_kick.bands[1] > 0.6, "la grosse caisse est dans les graves");
         assert_eq!(essai_frame(1.23, dt, 24), essai_frame(1.23, dt, 24));
         assert!(essai_frame(1.0, dt, 0).bands.is_empty());
+    }
+
+    #[test]
+    fn each_ingredient_plays_alone() {
+        let dt = 0.05;
+        let run = |kind| (1..=40).map(|i| essai(kind, i as f32 * dt, dt, 24)).collect::<Vec<_>>();
+        let kick = run(Essai::Kick);
+        assert_eq!(kick.iter().filter(|f| f.beat).count(), 4, "2 s : quatre coups");
+        assert!(kick.iter().all(|f| f.bass == 0.0 && f.level == 0.0), "le coup seul");
+        let bass = run(Essai::Bass);
+        assert!(bass.iter().all(|f| !f.beat && f.level == 0.0));
+        let top = bass.iter().map(|f| f.bass).fold(0.0, f32::max);
+        assert!(top > 0.99 && bass.last().unwrap().bass < 0.01, "monte puis redescend : {top}");
+        let level = run(Essai::Level);
+        assert!(level.iter().all(|f| !f.beat && f.bass == 0.0) && level[19].level > 0.99);
+        assert_eq!(essai(Essai::Mix, 1.23, dt, 24), essai_frame(1.23, dt, 24));
+        assert_eq!(Essai::parse("kick"), Some(Essai::Kick));
+        assert_eq!(Essai::parse("autre"), None);
     }
 }

@@ -34,29 +34,29 @@ pub struct AudioHub {
     subscribers: Mutex<HashMap<String, HashMap<&'static str, bool>>>,
     /// Barres masquées (plein écran) : rien ne leur est envoyé.
     hidden: Mutex<HashSet<String>>,
-    /// Son d'essai en cours (`--musique-essai`) : son début et sa durée.
-    essai: Mutex<Option<(Instant, Duration)>>,
+    /// Son d'essai en cours (`--musique-essai`) : ce qu'il joue, son début et sa durée.
+    essai: Mutex<Option<(horizon_core::music::Essai, Instant, Duration)>>,
     wake: Waker,
 }
 
 impl AudioHub {
-    /// Remplace la capture par le son d'essai (`horizon_core::music::essai_frame`) pendant
+    /// Remplace la capture par le son d'essai `kind` (`horizon_core::music::essai`) pendant
     /// `length`, mode jeu ou absence compris : rien n'est écouté pendant ce temps.
-    pub fn essai(&self, length: Duration) {
-        *lock(&self.essai) = Some((Instant::now(), length));
+    pub fn essai(&self, kind: horizon_core::music::Essai, length: Duration) {
+        *lock(&self.essai) = Some((kind, Instant::now(), length));
         self.wake.wake();
     }
 
-    /// Instant du son d'essai (secondes depuis son début), tant qu'il dure.
-    fn essai_time(&self) -> Option<f32> {
+    /// Son d'essai et son instant (secondes depuis son début), tant qu'il dure.
+    fn essai_time(&self) -> Option<(horizon_core::music::Essai, f32)> {
         let mut essai = lock(&self.essai);
-        let (start, length) = (*essai)?;
+        let (kind, start, length) = (*essai)?;
         let t = start.elapsed();
         if t >= length {
             *essai = None;
             return None;
         }
-        Some(t.as_secs_f32())
+        Some((kind, t.as_secs_f32()))
     }
 
     /// Fenêtres détruites : oubliées.
@@ -192,12 +192,12 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
                 continue;
             }
             std::thread::sleep(period);
-            let frame = if let Some(t) = essai {
+            let frame = if let Some((kind, t)) = essai {
                 // Son d'essai : rien n'est capturé.
                 analyzer = None;
                 quiet_since = None;
                 kicks = EventCounter::default();
-                let e = horizon_core::music::essai_frame(t, period.as_secs_f32(), BANDS);
+                let e = horizon_core::music::essai(kind, t, period.as_secs_f32(), BANDS);
                 AudioFrame { level: e.level, bass: e.bass, bands: e.bands, beat: e.beat, sent_ms: mono_ms() }
             } else {
                 if analyzer.is_none() {

@@ -154,20 +154,10 @@ component WaveRun inherits Rectangle {
     }
 }
 
-// « wave » : lueur de la basse à gauche, et la vague de chaque grosse caisse. La lueur tient
-// entre les coins (`radius`) et naît transparente au bord : elle n'a pas d'angle visible.
+// « wave » : la vague de chaque grosse caisse, et rien d'autre (une lueur de la basse collée au
+// bord gauche faisait un trait net à gauche, estompé à droite, en doublon de la vague).
 component Wave inherits Rectangle {
     in property <length> radius;
-    property <float> glow: PulseState.glow;
-    animate glow { duration: PulseState.sound; easing: linear; }
-    Rectangle {
-        x: root.radius;
-        width: root.width - 2 * root.radius;
-        background: @linear-gradient(90deg,
-            Theme.accent.with-alpha(0) 0%,
-            Theme.accent.with-alpha(0.32 * root.glow) 8%,
-            Theme.accent.with-alpha(0) 50%);
-    }
     WaveRun {
         parity: 0;
         box-w: root.width;

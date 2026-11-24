@@ -230,7 +230,11 @@ déranger », recharger, démarrage avec Windows, journal, quitter) ; `state.rs`
   morceau en lecture sur les barres et remplace la capture par un son fabriqué
   (`horizon_core::music::essai_frame` : une grosse caisse par demi-seconde), mode jeu compris,
   pour voir et capturer les animations sans rien jouer. Un autre morceau qui démarre l'arrête ;
-  relancé, il prolonge le précédent.
+  relancé, il prolonge le précédent. `--musique-essai 8 kick` (ou `bass`, `level`) ne joue
+  qu'un ingrédient (`horizon_core::music::Essai`) : chaque animation se juge seule, sur ce qui
+  la fait bouger (bords et ligne d'horizon : `bass` puis `kick` ; onde : `kick` ; respiration et
+  lumière qui tourne : `level`), filmée par `film.ps1` (champ 4 : l'ingrédient), en mesurant
+  la couleur image par image plutôt qu'à l'œil.
 - **Mode nuit** (style C) : le voile couvre toute la bande, widgets et affichage du volume
   compris (au-dessus d'eux, comme `.dimmable.graphic .band::after`).
 

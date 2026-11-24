@@ -118,7 +118,8 @@ activé dans la page Plugins.
 - Une valeur qui suit le son ne se lisse que par `animate … { duration: PulseState.sound; }`
   (`ui/pulse.slint`) : une transition de durée fixe, relancée à chaque image de son, se fige
   quand l'interface est chargée. Les animations de la musique se contrôlent sans rien jouer :
-  `horizon.exe --musique-essai [secondes]`, filmées sur deux grosses caisses
+  `horizon.exe --musique-essai [secondes] [kick|bass|level]` (un ingrédient seul pour juger
+  chaque effet séparément, pas la musique réelle), filmées sur deux grosses caisses
   (`.superpowers/sdd/animations-musique/film.ps1`, non suivi) : une capture isolée ne montre
   pas un effet qui se coupe ou s'arrête net.
 - Un dégradé est peint en rectangle par le rendu logiciel (coins arrondis ignorés, comme

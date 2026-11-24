@@ -162,7 +162,7 @@ fn on_snapshot(app: &AppHandle, s: MediaSnapshot) {
         let started = before.as_ref().is_some_and(|b| b.info.as_ref().is_none_or(|o| !o.playing || o.title != i.title || o.app_id != i.app_id));
         if started {
             *before = None;
-            app.state::<audio::AudioHub>().essai(std::time::Duration::ZERO);
+            app.state::<audio::AudioHub>().essai(horizon_core::music::Essai::Mix, std::time::Duration::ZERO);
         }
     }
     let now = horizon_core::time::now_ms();
@@ -231,12 +231,13 @@ static ESSAI_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::n
 /// Lecture d'avant le premier essai d'une suite (un essai relancé garde celle-ci).
 static ESSAI_BEFORE: Mutex<Option<MediaPayload>> = Mutex::new(None);
 
-/// Lecture d'essai (`horizon.exe --musique-essai [secondes]` pendant qu'Horizon tourne) : les
-/// barres montrent un morceau en lecture et reçoivent un son d'essai, pour voir les animations
-/// de la musique sans rien jouer (pendant un jeu aussi). À la fin, la lecture d'avant revient.
+/// Lecture d'essai (`horizon.exe --musique-essai [secondes] [mix|kick|bass|level]` pendant
+/// qu'Horizon tourne) : les barres montrent un morceau en lecture et reçoivent un son d'essai
+/// (`kind` : un morceau entier, ou un seul ingrédient), pour voir les animations de la musique
+/// sans rien jouer (pendant un jeu aussi). À la fin, la lecture d'avant revient.
 /// Une vraie lecture qui démarre entre-temps arrête l'essai ; un essai relancé prolonge le
 /// précédent.
-pub fn essai(app: &AppHandle, secs: u64) {
+pub fn essai(app: &AppHandle, secs: u64, kind: horizon_core::music::Essai) {
     let secs = secs.clamp(1, 600);
     let before = lock(&ESSAI_BEFORE).get_or_insert_with(|| media_state(app).payload).clone();
     let generation = ESSAI_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
@@ -250,9 +251,9 @@ pub fn essai(app: &AppHandle, secs: u64) {
         duration_ms: 180_000,
         timeline_at_ms: horizon_core::time::now_ms(),
     };
-    log::info!("musique d'essai : {secs} s");
+    log::info!("musique d'essai : {secs} s, {kind:?}");
     on_snapshot(app, MediaSnapshot { info: Some(info), sessions: before.sessions.clone(), art: None });
-    app.state::<audio::AudioHub>().essai(std::time::Duration::from_secs(secs));
+    app.state::<audio::AudioHub>().essai(kind, std::time::Duration::from_secs(secs));
     let app = app.clone();
     crate::util::spawn_named("musique-essai", move || {
         std::thread::sleep(std::time::Duration::from_secs(secs));

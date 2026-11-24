@@ -76,7 +76,12 @@ impl Meter {
     /// Image de son vue par l'animation `style` : chaque animation ne reçoit que ce qu'elle
     /// dessine, le reste retombe à zéro.
     pub fn frame(&mut self, style: Pulse, level: f32, bass: f32, beat: bool) -> Shown {
-        let (bass, level) = if style == Pulse::Breath { (0.0, level.clamp(0.0, 1.0)) } else { (bass, 0.0) };
+        let (bass, level) = match style {
+            Pulse::Breath => (0.0, level.clamp(0.0, 1.0)),
+            // L'onde ne dessine que ses vagues.
+            Pulse::Wave => (0.0, 0.0),
+            _ => (bass, 0.0),
+        };
         // Courbe : la lueur reste discrète sur une basse moyenne, franche sur les grosses.
         let glow = put(&mut self.bass, bass.clamp(0.0, 1.0).powf(1.5));
         let tau = if level > self.breath { BREATH_UP } else { BREATH_DOWN };
@@ -352,12 +357,13 @@ mod tests {
         assert!((m.breath - 0.6).abs() < 0.01);
         m.frame(Pulse::Breath, 0.0, 0.0, false);
         assert!(m.breath > 0.5, "et retombe lentement");
-        for style in [Pulse::Wave, Pulse::Horizon] {
-            let mut m = Meter::default();
-            let v = m.frame(style, 0.6, 1.0, true);
-            assert_eq!((v.glow, v.flash, v.level, v.beat), (Some(1.0), None, None, true), "{style:?} : basse et coup");
-            assert!(!m.frame(style, 0.6, 1.0, false).beat);
-        }
+        let mut m = Meter::default();
+        let v = m.frame(Pulse::Horizon, 0.6, 1.0, true);
+        assert_eq!((v.glow, v.flash, v.level, v.beat), (Some(1.0), None, None, true), "ligne d'horizon : basse et coup");
+        assert!(!m.frame(Pulse::Horizon, 0.6, 1.0, false).beat);
+        let mut m = Meter::default();
+        let v = m.frame(Pulse::Wave, 0.6, 1.0, true);
+        assert_eq!((v.glow, v.flash, v.level, v.beat), (None, None, None, true), "onde : le coup seul");
     }
 
     #[test]
