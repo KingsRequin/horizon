@@ -97,6 +97,11 @@ impl AppState {
             loaded = config::load_layout(&layout_path, &monitors);
         }
         let state = AppState::new(layout_path, loaded);
+        // Animations de la musique de 0.7.2 et 0.7.3 (réglages globaux) reprises barre par
+        // barre, une fois ; enregistrées tout de suite par `sync_monitors`, avant toute
+        // réécriture de settings.toml (qui ne les écrit plus).
+        let s = settings();
+        state.lock_layout().adopt_music(&s.music, s.features.bar_pulse);
         state.sync_monitors(&monitors);
         state
     }

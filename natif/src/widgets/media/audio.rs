@@ -69,6 +69,11 @@ impl AudioHub {
         }
     }
 
+    /// La barre `label` est masquée (plein écran) : rien ne lui est envoyé, rien n'y est à dessiner.
+    pub fn is_hidden(&self, label: &str) -> bool {
+        lock(&self.hidden).contains(label)
+    }
+
     pub fn set_hidden(&self, label: &str, hidden: bool) {
         let mut h = lock(&self.hidden);
         if hidden {
@@ -118,9 +123,16 @@ pub struct AudioFrame {
     pub bass: f32,
     pub bands: Vec<f32>,
     pub beat: bool,
-    /// Envoi de l'image (millisecondes Unix) : la barre qui la reçoit sait si elle a pris du
-    /// retard ([`Lateness`]).
+    /// Envoi de l'image ([`mono_ms`]) : la barre qui la reçoit sait si elle a pris du retard
+    /// ([`Lateness`]).
     pub sent_ms: u64,
+}
+
+/// Millisecondes depuis le premier appel : une horloge qui ne recule ni ne saute quand l'heure
+/// du système change (le retard d'une image de son se mesure avec elle).
+pub fn mono_ms() -> u64 {
+    static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    START.get_or_init(Instant::now).elapsed().as_millis() as u64
 }
 
 /// Retard d'une barre sur le son. Une animation Slint relancée à chaque image de son ne
@@ -186,7 +198,7 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
                 quiet_since = None;
                 kicks = EventCounter::default();
                 let e = horizon_core::music::essai_frame(t, period.as_secs_f32(), BANDS);
-                AudioFrame { level: e.level, bass: e.bass, bands: e.bands, beat: e.beat, sent_ms: horizon_core::time::now_ms() }
+                AudioFrame { level: e.level, bass: e.bass, bands: e.bands, beat: e.beat, sent_ms: mono_ms() }
             } else {
                 if analyzer.is_none() {
                     let opts = AudioOptions { bands: BANDS, rate: RATE, kick: true };
@@ -209,7 +221,7 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
                 } else {
                     quiet_since = None;
                 }
-                AudioFrame { level: f.volume, bass: f.kick_bass, bands: f.bands, beat, sent_ms: horizon_core::time::now_ms() }
+                AudioFrame { level: f.volume, bass: f.kick_bass, bands: f.bands, beat, sent_ms: mono_ms() }
             };
             let (spectrum, light): (Vec<_>, Vec<_>) = audience.into_iter().partition(|(_, bands)| *bands);
             let labels = |v: Vec<(String, bool)>| v.into_iter().map(|(l, _)| l).collect::<Vec<_>>();

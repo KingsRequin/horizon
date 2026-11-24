@@ -1,20 +1,22 @@
-// Pulsation des barres pendant la lecture (`[features] bar_pulse`, animation `[music] pulse`).
+// Pulsation des barres pendant la lecture (animation de chaque barre : `BarLayout::music.pulse`).
 // Rust (src/ui/pulse.rs) pose les valeurs du son dans `PulseState`, 20 fois par seconde au plus
 // et seulement quand elles changent ; l'animation choisie les dessine :
 // - « edges » (lib/Pulse.svelte) : deux couches au bord de chaque îlot (style A) ou de la bande
 //   (style C), lueur = basse, flash = grosse caisse, sans transition ;
 // - « breath » : le fond se teinte lentement avec le niveau ;
-// - « wave » : une vague de lumière traverse l'îlot à chaque grosse caisse ;
-// - « horizon » : un filet sous la barre, d'où partent deux éclats à chaque grosse caisse.
+// - « wave » : une vague de lumière traverse l'îlot de bout en bout à chaque grosse caisse ;
+// - « horizon » : un filet au bas des îlots (ou de la bande), d'où partent deux éclats à chaque
+//   grosse caisse.
 // (« comet », la lumière qui tourne, est dessinée dans l'image de l'îlot de Lecture en cours :
 // src/widgets/media/ui.rs.)
 // Rien n'est construit pour une animation qui n'est pas choisie, et une animation déclenchée par
-// une grosse caisse se termine d'elle-même.
+// une grosse caisse se termine d'elle-même ; deux exemplaires se relaient quand elle dure plus
+// longtemps que l'écart entre deux coups.
 //
 // Le rendu logiciel ne dessine ni ombre intérieure ni masque, et un dégradé n'y suit pas les
-// coins arrondis : la lueur floue est imitée par des filets concentriques, la vague par un
-// dégradé dont les arrêts avancent, posé entre les coins de l'îlot (il naît et meurt
-// transparent, sans bord visible).
+// coins arrondis (il est peint en rectangle) : la lueur floue est imitée par des filets
+// concentriques, la vague par de fines bandes unies rentrées à la courbe des coins, et ce qui
+// reste en dégradé naît et meurt transparent entre les coins.
 
 import { Theme } from "theme.slint";
 
@@ -34,6 +36,8 @@ export global PulseState {
     in-out property <int> beat;
     // Centre du widget Lecture en cours dans la barre (« horizon ») ; négatif : la barre n'en a pas.
     in-out property <length> origin-x: -1px;
+    // Largeur de la barre (« horizon » : jusqu'où vont les éclats), posée par la barre.
+    in-out property <length> span;
     // La barre reçoit les images de son en retard (interface chargée) : les valeurs sont posées
     // sans transition, car une transition relancée à chaque image ne progresserait plus.
     in-out property <bool> late;
@@ -100,15 +104,58 @@ component Breath inherits Rectangle {
     border-color: Theme.accent.with-alpha(0.6 * PulseState.level);
 }
 
-// « wave » : lueur de la basse à gauche, et la vague de chaque grosse caisse, qui s'éteint en
-// traversant. Les deux tiennent entre les coins (`radius`).
+// Vague d'une grosse caisse sur deux (`parity`), sur une boîte `box-w` × `box-h` aux coins de
+// rayon `radius`. Elle entre par le bord gauche et sort par le bord droit : toute la largeur, à
+// vitesse constante. Deux exemplaires se relaient, pour que le coup suivant ne coupe jamais une
+// vague en route. Un dégradé ne suit pas les coins arrondis dans le rendu logiciel : la vague
+// est faite de fines bandes unies, chacune rentrée en haut et en bas de ce que lui laisse le
+// coin à sa place, plus claires vers l'avant.
+component WaveRun inherits Rectangle {
+    in property <int> parity;
+    in property <length> box-w;
+    in property <length> box-h;
+    in property <length> radius;
+    property <int> seq: PulseState.beat;
+    property <int> mine;
+    property <length> step: 3px;
+    property <length> tail: 16 * self.step;
+    changed seq => {
+        if Math.mod(root.seq, 2) == root.parity {
+            root.mine += 1;
+        }
+    }
+    kick := Kick {
+        seq: root.mine;
+    }
+    // Bord gauche des bandes, et l'éclat : il monte sur les premiers instants, puis faiblit.
+    property <length> left: -root.tail + kick.p * (root.box-w + root.tail);
+    property <float> light: min(1, kick.p * 6) * (1 - 0.55 * kick.p);
+    if kick.p < 1: Rectangle {
+        for i in 16: Rectangle {
+            property <length> sx: root.left + i * root.step;
+            // Distance du milieu de la bande au bord le plus proche, et ce que le coin y prend.
+            property <length> d: min(self.sx + root.step / 2, root.box-w - self.sx - root.step / 2);
+            property <float> u: max(0, (root.radius - self.d) / 1px);
+            property <float> r: root.radius / 1px;
+            property <length> inset: self.d >= root.radius ? 0px : (root.radius - Math.sqrt(max(0, self.r * self.r - self.u * self.u)) * 1px);
+            // Plus claire vers l'avant, fondue sur les trois dernières bandes.
+            property <float> weight: Math.pow(i / 15, 1.6) * min(1, (16 - i) / 3);
+            visible: self.d > 0;
+            x: self.sx;
+            y: self.inset;
+            width: root.step;
+            height: max(0px, root.box-h - 2 * self.inset);
+            background: Theme.accent.mix(Colors.white, 0.75).with-alpha(0.5 * root.light * self.weight);
+        }
+    }
+}
+
+// « wave » : lueur de la basse à gauche, et la vague de chaque grosse caisse. La lueur tient
+// entre les coins (`radius`) et naît transparente au bord : elle n'a pas d'angle visible.
 component Wave inherits Rectangle {
     in property <length> radius;
     property <float> glow: PulseState.glow;
-    animate glow { duration: PulseState.sound; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
-    kick := Kick {
-        seq: PulseState.beat;
-    }
+    animate glow { duration: PulseState.sound; easing: linear; }
     Rectangle {
         x: root.radius;
         width: root.width - 2 * root.radius;
@@ -117,17 +164,17 @@ component Wave inherits Rectangle {
             Theme.accent.with-alpha(0.32 * root.glow) 8%,
             Theme.accent.with-alpha(0) 50%);
     }
-    if kick.p < 1: Rectangle {
-        // Tête de la vague (elle sort de l'îlot avant la fin) et son éclat : il monte sur le
-        // premier dixième du trajet (elle ne naît pas d'un coup au bord), puis s'éteint.
-        property <float> head: min(1, kick.eased * 1.15);
-        property <float> light: min(1, kick.p * 10) * (1 - kick.p);
-        x: root.radius;
-        width: root.width - 2 * root.radius;
-        background: @linear-gradient(90deg,
-            Theme.accent.with-alpha(0) max(0, self.head - 0.35) * 100%,
-            Theme.accent.mix(Colors.white, 0.75).with-alpha(0.45 * self.light) self.head * 100%,
-            Theme.accent.with-alpha(0) min(1, self.head + 0.08) * 100%);
+    WaveRun {
+        parity: 0;
+        box-w: root.width;
+        box-h: root.height;
+        radius: root.radius;
+    }
+    WaveRun {
+        parity: 1;
+        box-w: root.width;
+        box-h: root.height;
+        radius: root.radius;
     }
 }
 
@@ -155,15 +202,15 @@ export component PulseLayers inherits Rectangle {
     }
 }
 
-// Éclats d'une grosse caisse sur deux (`parity`) : ils partent de `x0` vers les deux bords de la
-// barre en s'éteignant. Deux exemplaires se relaient, pour qu'un éclat ait le temps d'arriver
-// avant le coup qui le rejouera.
+// Éclats d'une grosse caisse sur deux (`parity`) : ils naissent en fondu à `x0` et filent vers
+// les deux bords de la barre (`reach` : jusqu'au plus loin) en s'éteignant. Deux exemplaires se
+// relaient, pour qu'un éclat ait le temps d'arriver avant le coup qui le rejouera.
 component Sparks inherits Rectangle {
     in property <int> parity;
     in property <length> x0;
+    in property <length> reach;
     property <int> seq: PulseState.beat;
     property <int> mine;
-    property <length> reach: max(root.x0, root.width - root.x0) + 120px;
     changed seq => {
         if Math.mod(root.seq, 2) == root.parity {
             root.mine += 1;
@@ -173,58 +220,68 @@ component Sparks inherits Rectangle {
         seq: root.mine;
         duration: Theme.dur-spark;
     }
-    // Tête claire et arrondie par un court fondu, traîne vers le point de départ.
+    property <length> run: kick.eased * root.reach;
+    // La traîne s'allonge en partant : l'éclat ne naît pas d'un bloc.
+    property <length> tail: min(120px, self.run);
+    property <float> light: 0.95 * min(1, kick.p * 10) * (1 - kick.p);
     if kick.p < 1: Rectangle {
-        x: root.x0 + kick.eased * root.reach - self.width;
-        width: 120px;
+        x: root.x0 + root.run - root.tail;
+        width: root.tail;
         background: @linear-gradient(90deg,
             Theme.accent.with-alpha(0) 0%,
-            Theme.accent.mix(Colors.white, 0.55).with-alpha(0.95 * (1 - kick.p)) 88%,
+            Theme.accent.mix(Colors.white, 0.55).with-alpha(root.light) 88%,
             Theme.accent.with-alpha(0) 100%);
     }
     if kick.p < 1: Rectangle {
-        x: root.x0 - kick.eased * root.reach;
-        width: 120px;
+        x: root.x0 - root.run;
+        width: root.tail;
         background: @linear-gradient(90deg,
             Theme.accent.with-alpha(0) 0%,
-            Theme.accent.mix(Colors.white, 0.55).with-alpha(0.95 * (1 - kick.p)) 12%,
+            Theme.accent.mix(Colors.white, 0.55).with-alpha(root.light) 12%,
             Theme.accent.with-alpha(0) 100%);
     }
 }
 
-// « horizon » : filet au bas de la bande, sur la largeur qu'on lui donne. Au repos un trait
-// discret ; la basse étire une lueur depuis le widget Lecture en cours (le milieu de la barre
-// s'il n'y est pas), et chaque grosse caisse envoie deux éclats vers les bords.
+// « horizon » : un filet, vu par morceaux. En style îlots, chaque îlot en porte un morceau à son
+// bas (rien dans le vide entre eux) ; en style graphique, il court au bas de la bande. Tous
+// les morceaux d'une barre se lisent comme une seule ligne : leurs positions sont comptées dans
+// la fenêtre. Au repos un trait discret ; la basse étire une lueur depuis le widget Lecture en
+// cours (le milieu de la barre s'il n'y est pas), et chaque grosse caisse envoie deux éclats
+// vers les bords.
 export component HorizonLine inherits Rectangle {
-    // Décalage de ce filet dans la fenêtre (`origin-x` est en pixels de la fenêtre).
+    // Place de ce morceau dans la fenêtre (`origin-x` et `span` sont comptés dans la fenêtre).
     in property <length> offset-x;
-    property <length> x0: PulseState.origin-x >= 0 ? PulseState.origin-x - root.offset-x : root.width / 2;
+    property <length> span: PulseState.span > 0 ? PulseState.span : root.width;
+    property <length> origin: PulseState.origin-x >= 0 ? PulseState.origin-x : root.span / 2;
+    property <length> x0: root.origin - root.offset-x;
     property <float> glow: PulseState.glow;
     property <float> rest: PulseState.active ? 1 : 0;
-    property <length> reach: root.width * (0.12 + 0.5 * root.glow);
-    animate glow { duration: PulseState.sound; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+    property <length> reach: root.span * (0.12 + 0.5 * root.glow);
+    animate glow { duration: PulseState.sound; easing: linear; }
     animate rest { duration: Theme.dur-slow; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
     height: 2px;
     clip: true;
     Rectangle {
         y: 1px;
         height: 1px;
-        background: Theme.accent.with-alpha(0.14 * root.rest);
+        background: Theme.accent.with-alpha(0.12 * root.rest);
     }
     Rectangle {
         x: root.x0 - root.reach;
         width: 2 * root.reach;
         background: @linear-gradient(90deg,
             Theme.accent.with-alpha(0) 0%,
-            Theme.accent.mix(Colors.white, 0.8).with-alpha((0.22 + 0.7 * root.glow) * root.rest) 50%,
+            Theme.accent.mix(Colors.white, 0.8).with-alpha(0.8 * root.glow * root.rest) 50%,
             Theme.accent.with-alpha(0) 100%);
     }
     Sparks {
         parity: 0;
         x0: root.x0;
+        reach: max(root.origin, root.span - root.origin) + 120px;
     }
     Sparks {
         parity: 1;
         x0: root.x0;
+        reach: max(root.origin, root.span - root.origin) + 120px;
     }
 }

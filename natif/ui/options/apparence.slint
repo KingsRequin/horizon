@@ -1,7 +1,7 @@
-// Section « Apparence » : animations de la musique (fond de la lecture en cours, pulsation des
-// barres), couleur du fond d'écran (et accent de Windows), nuit (plage horaire, luminosité des
-// barres non cliquables, « Ne pas déranger »). Options de `[features]`, `[music]` et `[night]`
-// de settings.toml.
+// Section « Apparence » : renvoi vers les animations de la musique (réglées par barre, section
+// Barres), couleur du fond d'écran (et accent de Windows), nuit (plage horaire, luminosité des
+// barres non cliquables, « Ne pas déranger »). Options de `[features]` et `[night]` de
+// settings.toml.
 
 import { Theme } from "../theme.slint";
 import { SettingsLayout } from "../settings/layout.slint";
@@ -9,7 +9,8 @@ import { SettingsTitle, SettingsHeading } from "../settings/text.slint";
 import { SettingRow } from "../settings/row.slint";
 import { SettingCheck } from "../settings/check.slint";
 import { SettingExpander } from "../settings/expander.slint";
-import { CommitField, SelectField } from "../settings/field.slint";
+import { CommitField } from "../settings/field.slint";
+import { SettingsButton } from "../settings/button.slint";
 import { Slider } from "../panel/slider.slint";
 import { OptionsData } from "data.slint";
 
@@ -23,47 +24,12 @@ export component ApparenceSection inherits VerticalLayout {
         text: "Musique";
     }
     SettingRow {
-        label: "Fond de la lecture en cours";
-        hint: OptionsData.music-backdrop-hint;
-        SelectField {
-            text: OptionsData.music-backdrop;
-            enabled: !OptionsData.locked;
-            open(x, y) => {
-                OptionsData.pick("music.backdrop", x, y);
-            }
-        }
-    }
-    SettingRow {
-        label: "Barre de progression";
-        hint: OptionsData.music-progress-hint;
-        SelectField {
-            text: OptionsData.music-progress;
-            enabled: !OptionsData.locked;
-            open(x, y) => {
-                OptionsData.pick("music.progress", x, y);
-            }
-        }
-    }
-    SettingExpander {
-        checked: OptionsData.bar-pulse;
-        enabled: !OptionsData.locked;
-        expanded: OptionsData.bar-pulse;
-        label: "Faire vivre les barres avec la musique";
-        hint: "Pendant la lecture, les barres prennent la couleur de la pochette et suivent la basse et la grosse caisse (le même kick qu’Essaim). Coupé si Windows demande moins d’animations.";
-        toggled(v) => {
-            OptionsData.toggle("features.bar_pulse", v);
-        }
-        SettingRow {
-            nested: true;
-            enabled: OptionsData.bar-pulse;
-            label: "Animation";
-            hint: OptionsData.music-pulse-hint;
-            SelectField {
-                text: OptionsData.music-pulse;
-                enabled: !OptionsData.locked && OptionsData.bar-pulse;
-                open(x, y) => {
-                    OptionsData.pick("music.pulse", x, y);
-                }
+        label: "Animations de la musique";
+        hint: "Elles se règlent écran par écran : l’animation de la barre, le fond et la barre de progression de la lecture en cours. Rien ne bouge si Windows demande moins d’animations.";
+        SettingsButton {
+            text: "Barres";
+            clicked => {
+                OptionsData.go("barres");
             }
         }
     }

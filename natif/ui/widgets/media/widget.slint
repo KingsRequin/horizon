@@ -35,10 +35,11 @@ export global MediaData {
     in-out property <bool> has-duration;
     // Part lue (0–1), posée chaque seconde pendant la lecture.
     in-out property <float> progress;
-    // Fond qui suit le son sur cette barre (`[music] backdrop`, « auto » déjà traduit d'après le
-    // style de la barre) ; vide : aucun. « spectrum » et « capsules » sont dessinés ici, les
-    // autres dans l'image de l'îlot.
+    // Fond qui suit le son sur cette barre (`BarLayout::music.backdrop`) ; vide : aucun.
+    // « spectrum » et « capsules » sont dessinés ici, les autres dans l'image de l'îlot.
     in-out property <string> backdrop: "halo";
+    // Le son est suivi : lecture en cours, ou retombée après la pause pas encore finie.
+    in-out property <bool> live;
     // Spectre (24 bandes, 0–1).
     in-out property <[float]> bands;
     // Capsules (cinq groupes de bandes, 0–1).
@@ -100,15 +101,18 @@ export component MediaWidget inherits Rectangle {
         : root.t.graphic ? MediaData.artist + " · " + MediaData.app : MediaData.artist;
     property <int> art-seq: MediaData.art-seq;
     property <length> art-size: root.t.graphic ? 28px : 24px;
+    property <length> graphic-pad: 8px;
     // Centre du widget dans la barre : la ligne d'horizon de la pulsation part de là.
     property <length> centre-x: area.absolute-position.x + root.width / 2;
     width: island.width;
 
+    // Masqué (barre trop chargée), il ne compte plus : la ligne part du milieu de la barre.
+    property <length> origin: root.slot.hidden ? -1px : root.centre-x;
     init => {
-        PulseState.origin-x = root.centre-x;
+        PulseState.origin-x = root.origin;
     }
-    changed centre-x => {
-        PulseState.origin-x = root.centre-x;
+    changed origin => {
+        PulseState.origin-x = root.origin;
     }
 
     // Retour du contenu (au début d'une lecture) et nouvelle pochette : en fondu.
@@ -159,6 +163,10 @@ export component MediaWidget inherits Rectangle {
             t: root.t;
             dim: root.dim;
             gap: 0;
+            // En style graphique, une marge : le fond qui suit le son ne colle pas au contenu.
+            graphic-padding: root.graphic-pad;
+            // Pas de pulsation par-dessus une alerte de l'îlot dynamique.
+            pulse: !root.flash;
 
             // Îlot dynamique : teinte de la gravité sur tout l'îlot (sans largeur dans la rangée),
             // puis l'alerte.
@@ -195,15 +203,16 @@ export component MediaWidget inherits Rectangle {
             if !root.flash && root.content: Rectangle {
                 width: 0;
                 Rectangle {
-                    x: root.t.graphic ? 0 : -12px;
+                    x: root.t.graphic ? -root.graphic-pad : -12px;
                     width: island.width;
                     height: island.height;
                     border-radius: root.t.island-radius;
                     clip: true;
+                    property <length> radius: root.t.island-radius;
                     function announce() {
                         MediaData.island-w = self.width;
                         MediaData.island-h = self.height;
-                        MediaData.island-radius = root.t.island-radius;
+                        MediaData.island-radius = self.radius;
                         MediaData.resized();
                     }
                     init => {
@@ -215,12 +224,17 @@ export component MediaWidget inherits Rectangle {
                     changed height => {
                         self.announce();
                     }
-                    // Spectre : derrière tout le widget, pendant la lecture.
-                    if MediaData.backdrop == "spectrum" && MediaData.playing: Spectrum {
+                    changed radius => {
+                        self.announce();
+                    }
+                    // Spectre : derrière tout le widget, pendant la lecture et sa retombée ;
+                    // en îlots, rentré des coins (la découpe ne les arrondit pas).
+                    if MediaData.backdrop == "spectrum" && MediaData.live: Spectrum {
                         y: 1px;
                         width: parent.width;
                         height: parent.height - 2px;
                         t: root.t;
+                        pad: root.t.graphic ? 6px : root.t.island-radius - 2px;
                         bands: MediaData.bands;
                     }
                     // Image de l'îlot (à sa taille en pixels de l'écran, coins compris).

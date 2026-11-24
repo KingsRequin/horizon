@@ -6,13 +6,17 @@
 mod defaults;
 mod migrations;
 mod monitors;
+mod music;
 mod profiles;
 mod undo;
 
 pub(crate) use defaults::role_of;
+pub use music::BarMusic;
+pub(crate) use music::MIGRATION_MUSIC;
 pub use profiles::{Profile, ProfileFollower};
 pub use undo::UndoStack;
 
+use crate::settings::{Backdrop, Progress, Pulse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -214,6 +218,8 @@ pub struct BarLayout {
     pub height: u32,
     /// Tuiles sous la barre ou dans un volet.
     pub tiles_mode: TilesMode,
+    /// Animations de la musique sur cette barre.
+    pub music: BarMusic,
     pub left: Vec<WidgetInstance>,
     pub center: Vec<WidgetInstance>,
     pub right: Vec<WidgetInstance>,
@@ -241,6 +247,10 @@ struct RawBar {
     height: Option<u32>,
     #[serde(default)]
     tiles_mode: TilesMode,
+    /// Absente (barre d'avant 0.7.4) : le préréglage du style, puis la reprise des réglages
+    /// globaux (`Layout::adopt_music`).
+    #[serde(default)]
+    music: Option<BarMusic>,
     #[serde(default)]
     left: Vec<WidgetInstance>,
     #[serde(default)]
@@ -266,6 +276,7 @@ impl From<RawBar> for BarLayout {
             autohide: r.autohide.unwrap_or(true),
             height: clamp_height(r.height.unwrap_or(BAND_HEIGHT)),
             tiles_mode: r.tiles_mode,
+            music: r.music.unwrap_or_else(|| BarMusic::for_style(r.style)).fitted(r.style),
             left: r.left,
             center: r.center,
             right: r.right,
@@ -324,6 +335,9 @@ pub struct BarOptionsPatch {
     pub autohide: Option<bool>,
     pub height: Option<u32>,
     pub tiles_mode: Option<TilesMode>,
+    pub backdrop: Option<Backdrop>,
+    pub progress: Option<Progress>,
+    pub pulse: Option<Pulse>,
 }
 
 impl BarLayout {
@@ -442,17 +456,31 @@ impl Layout {
 
     pub fn set_style(&mut self, monitor_id: &str, style: BarStyle) -> anyhow::Result<()> {
         let b = self.bar_index(monitor_id)?;
-        self.bars[b].style = style;
+        self.bars[b].restyle(style);
         Ok(())
     }
 
     /// Options d'une barre ; une hauteur hors bornes est ramenée entre la bande seule et
-    /// `MAX_BAR_HEIGHT`.
+    /// `MAX_BAR_HEIGHT`, une animation sans sens sur le style de la barre est refusée.
     pub fn set_bar_options(&mut self, monitor_id: &str, patch: BarOptionsPatch) -> anyhow::Result<()> {
         let i = self.bar_index(monitor_id)?;
         let b = &mut self.bars[i];
         if let Some(s) = patch.style {
-            b.style = s;
+            b.restyle(s);
+        }
+        if let Some(p) = patch.pulse
+            && !p.fits(b.style == BarStyle::Graphic)
+        {
+            anyhow::bail!("« {} » n'existe pas sur une barre graphique", p.label(true));
+        }
+        if let Some(v) = patch.backdrop {
+            b.music.backdrop = v;
+        }
+        if let Some(v) = patch.progress {
+            b.music.progress = v;
+        }
+        if let Some(v) = patch.pulse {
+            b.music.pulse = v;
         }
         if let Some(i) = patch.interaction {
             b.interaction = i;

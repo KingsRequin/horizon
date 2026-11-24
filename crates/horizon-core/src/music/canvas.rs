@@ -79,8 +79,11 @@ pub struct Sound {
     pub high: f32,
     /// Grosse caisse qui retombe.
     pub kick: f32,
-    /// Opacité du halo : niveau du moment, avec un éclat sur la grosse caisse.
+    /// Éclat du halo (0–1, au-dessus de son repos) : le niveau, et un éclat sur la grosse caisse.
     pub glow: f32,
+    /// Présence du son (0–1) : monte quand il y en a, retombe en pause ou dans un silence. Ce
+    /// qui bouge sans dépendre d'une bande (dérive, ondulation, lumière qui tourne) en dépend.
+    pub presence: f32,
     /// Dérive de l'aurore, qui n'avance qu'avec le son.
     pub drift: f32,
     /// Ondulation de la progression : phase et amplitude (pixels logiques).
@@ -90,7 +93,26 @@ pub struct Sound {
     pub comet: f32,
 }
 
+/// Les fréquences de la dérive de l'aurore (0,6 ; 0,7 ; 0,8 ; 0,9) ont toutes une période qui
+/// divise 20π : la dérive y est ramenée sans saut visible, et reste précise en f32.
+const DRIFT_PERIOD: f32 = 20.0 * std::f32::consts::PI;
+/// Vitesse de la lumière qui tourne au plus (tours par seconde) : à 20 images par seconde, son
+/// pas reste de quelques pixels.
+const COMET_MAX: f32 = 0.11;
+
 impl Sound {
+    /// Plus rien ne bouge ni ne se voit : la retombée est finie.
+    pub fn is_quiet(&self) -> bool {
+        let small = |v: &[f32]| v.iter().all(|b| *b < 0.01);
+        self.presence < 0.01 && self.glow < 0.01 && self.kick < 0.01 && self.wave_amp < 0.02 && small(&self.bands) && small(&self.slow) && small(&self.peaks)
+    }
+
+    /// Une image de silence : tout retombe à son rythme (pause, silence, mode jeu).
+    pub fn fade(&mut self, dt: f32) {
+        let zeros = vec![0.0; self.bands.len()];
+        self.feed(0.0, 0.0, &zeros, false, dt);
+    }
+
     /// Une image de son, `dt` secondes après la précédente.
     pub fn feed(&mut self, level: f32, bass: f32, bands: &[f32], beat: bool, dt: f32) {
         let n = bands.len();
@@ -108,20 +130,24 @@ impl Sound {
         let mean = |from: usize, to: usize| if to > from { self.bands[from..to].iter().sum::<f32>() / (to - from) as f32 } else { 0.0 };
         (self.low, self.mid, self.high) =
             ((mean(0, n / 4) * 1.5).min(1.0), (mean(n / 4, 2 * n / 3) * 1.8).min(1.0), (mean(2 * n / 3, n) * 2.2).min(1.0));
-        let level = level.clamp(0.0, 1.0);
-        self.level = ease(self.level, level, dt, 0.04, 0.17);
+        let raw = level.clamp(0.0, 1.0);
+        self.level = ease(self.level, raw, dt, 0.04, 0.17);
         self.bass = ease(self.bass, bass.clamp(0.0, 1.0), dt, 0.04, 0.17);
         self.kick = if beat { 1.0 } else { self.kick * (-dt / 0.12).exp() };
-        self.glow = (0.2 + level * 0.9 + if beat { 0.15 } else { 0.0 }).min(1.0);
-        self.drift += dt * (0.15 + self.level * 1.5);
-        self.wave_phase = (self.wave_phase + dt * (3.0 + self.level * 9.0)).rem_euclid(std::f32::consts::TAU);
-        self.wave_amp = ease(self.wave_amp, 0.5 + self.level * 1.5, dt, 0.08, 0.22);
-        self.comet = (self.comet + dt * (0.04 + self.level * 0.2 + self.kick * 0.4)).rem_euclid(1.0);
+        self.presence = ease(self.presence, if raw > 0.005 { 1.0 } else { 0.0 }, dt, 0.15, 0.35);
+        let glow = if raw > 0.005 { (0.08 + self.level * 0.9 + 0.15 * self.kick).min(1.0) } else { 0.0 };
+        self.glow = ease(self.glow, glow, dt, 0.05, 0.25);
+        self.drift = (self.drift + dt * (0.15 + self.level * 1.5) * self.presence).rem_euclid(DRIFT_PERIOD);
+        self.wave_phase = (self.wave_phase + dt * (3.0 + self.level * 9.0) * self.presence).rem_euclid(std::f32::consts::TAU);
+        self.wave_amp = ease(self.wave_amp, self.presence * (0.5 + self.level * 1.5), dt, 0.08, 0.22);
+        let speed = (0.03 + 0.08 * self.level + 0.04 * self.kick).min(COMET_MAX) * self.presence;
+        self.comet = (self.comet + dt * speed).rem_euclid(1.0);
     }
 
-    /// La lecture s'arrête : tout retombe, la dérive et la place de la lumière sont gardées.
+    /// Tout à zéro tout de suite (autre réglage), la dérive et la place de la lumière gardées.
     pub fn rest(&mut self) {
-        *self = Sound { drift: self.drift, comet: self.comet, bands: vec![0.0; self.bands.len()], slow: vec![0.0; self.bands.len()], peaks: vec![0.0; self.bands.len()], ..Sound::default() };
+        let n = self.bands.len();
+        *self = Sound { drift: self.drift, comet: self.comet, bands: vec![0.0; n], slow: vec![0.0; n], peaks: vec![0.0; n], ..Sound::default() };
     }
 }
 
@@ -135,7 +161,8 @@ pub struct Scene {
     pub progress: Option<f32>,
     /// Lumière qui tourne autour de l'îlot (pulsation « comet »).
     pub comet: bool,
-    pub playing: bool,
+    /// Une barre de progression est au bas de l'îlot : le ruban reste au-dessus d'elle.
+    pub track: bool,
 }
 
 impl Scene {
@@ -155,13 +182,35 @@ pub struct Canvas {
     radius: f32,
     /// Couleur prémultipliée de chaque pixel (rouge, vert, bleu, alpha, de 0 à 1).
     acc: Vec<[f32; 4]>,
+    /// Part de chaque pixel dans l'îlot (coins arrondis), et forme du halo : fixes pour une
+    /// taille, calculées une fois.
+    mask: Vec<f32>,
+    halo: Vec<f32>,
     pixels: Vec<u8>,
 }
 
 impl Canvas {
     pub fn new(width: u32, height: u32, scale: f32, radius: f32) -> Canvas {
         let (width, height) = (width as usize, height as usize);
-        Canvas { width, height, scale: scale.max(0.1), radius, acc: vec![[0.0; 4]; width * height], pixels: vec![0; width * height * 4] }
+        let mut c = Canvas {
+            width,
+            height,
+            scale: scale.max(0.1),
+            radius,
+            acc: vec![[0.0; 4]; width * height],
+            mask: Vec::with_capacity(width * height),
+            halo: Vec::with_capacity(width * height),
+            pixels: vec![0; width * height * 4],
+        };
+        let (w, h) = c.size();
+        for y in 0..height {
+            for x in 0..width {
+                let (lx, ly) = c.at(x, y);
+                c.mask.push((0.5 - c.edge(lx, ly, 0.0) * c.scale).clamp(0.0, 1.0));
+                c.halo.push(halo_alpha((lx - 0.18 * w) / (0.7 * w), (ly - h) / (1.4 * h)));
+            }
+        }
+        c
     }
 
     /// Cette image est celle d'un îlot de cette taille (sinon elle est à refaire).
@@ -215,49 +264,45 @@ impl Canvas {
     pub fn paint(&mut self, scene: &Scene, sound: &Sound, colors: &Palette) -> &[u8] {
         self.acc.fill([0.0; 4]);
         match scene.backdrop {
-            Backdrop::Halo => self.halo(if scene.playing { sound.glow } else { 0.12 }, colors),
-            Backdrop::Ribbon => self.ribbon(sound, colors),
-            Backdrop::Aurora => self.aurora(sound, colors, scene.playing),
+            Backdrop::Halo => self.halo(0.12 + 0.88 * sound.glow, colors),
+            Backdrop::Ribbon => self.ribbon(sound, colors, scene.track),
+            Backdrop::Aurora => self.aurora(sound, colors),
             Backdrop::Dots => self.dots(sound, colors),
-            Backdrop::Auto | Backdrop::Off | Backdrop::Spectrum | Backdrop::Capsules => {}
+            Backdrop::Off | Backdrop::Spectrum | Backdrop::Capsules => {}
         }
         if let Some(progress) = scene.progress {
             self.squiggle(progress.clamp(0.0, 1.0), sound, colors);
         }
-        if scene.comet && scene.playing {
+        if scene.comet && sound.presence > 0.02 {
             self.comet(sound, colors);
         }
         // Coins de l'îlot, puis octets.
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let (lx, ly) = self.at(x, y);
-                let inside = (0.5 - self.edge(lx, ly, 0.0) * self.scale).clamp(0.0, 1.0);
-                let i = y * self.width + x;
-                for c in 0..4 {
-                    self.pixels[i * 4 + c] = (self.acc[i][c] * inside * 255.0).round().clamp(0.0, 255.0) as u8;
-                }
+        for ((out, p), inside) in self.pixels.chunks_exact_mut(4).zip(&self.acc).zip(&self.mask) {
+            for (o, v) in out.iter_mut().zip(p) {
+                *o = (v * inside * 255.0).round().clamp(0.0, 255.0) as u8;
             }
         }
         &self.pixels
     }
 
     /// Halo : ellipse de 70 % × 140 % de l'îlot, centrée à 18 % du bord gauche, en bas ; pleine
-    /// à 55 % au centre, éteinte à 72 % du rayon (`radial-gradient` de la version Tauri).
+    /// à 55 % au centre, éteinte à 72 % du rayon (`radial-gradient` de la version Tauri). Au
+    /// repos il garde `0.12` de son éclat.
     fn halo(&mut self, glow: f32, colors: &Palette) {
-        let (w, h) = self.size();
         for y in 0..self.height {
             for x in 0..self.width {
-                let (lx, ly) = self.at(x, y);
-                let (dx, dy) = ((lx - 0.18 * w) / (0.7 * w), (ly - h) / (1.4 * h));
-                self.over(x, y, colors.a, halo_alpha(dx, dy) * glow);
+                let a = self.halo[y * self.width + x] * glow;
+                self.over(x, y, colors.a, a);
             }
         }
     }
 
     /// Ruban : les bandes fondues en une vague pleine dans l'accent, et derrière elle une
-    /// seconde vague plus lente dans la teinte voisine. Sans son, deux traits au bas de l'îlot.
-    fn ribbon(&mut self, sound: &Sound, colors: &Palette) {
+    /// seconde vague plus lente dans la teinte voisine. Sans son, deux traits au bas de l'îlot,
+    /// au-dessus de la barre de progression s'il y en a une (`track`).
+    fn ribbon(&mut self, sound: &Sound, colors: &Palette, track: bool) {
         let (w, h) = self.size();
+        let base = if track { h - 7.0 } else { h - 3.0 };
         for (bands, color, alpha, gain) in [(&sound.slow, colors.b, 0.2, 1.25), (&sound.bands, colors.a, 0.4, 1.05)] {
             let points = ribbon_points(bands);
             for x in 0..self.width {
@@ -265,10 +310,11 @@ impl Canvas {
                 // Les points de la vague débordent un peu de l'îlot, pour qu'elle n'y soit pas pincée.
                 // Courbe qui relève les sons moyens : la vague se voit sans attendre un son fort.
                 let v = (curve(&points, (lx / w + 0.04) / 1.08) * gain).clamp(0.0, 1.0).powf(0.7);
-                let top = h - 3.0 - v * (h - 6.0);
+                let top = base - v * (base - 3.0);
                 for y in 0..self.height {
                     let ly = (y as f32 + 0.5) / self.scale;
-                    let below = ((ly - top) * self.scale + 0.5).clamp(0.0, 1.0);
+                    // Rien sous la ligne de base : la barre de progression reste lisible.
+                    let below = ((ly - top) * self.scale + 0.5).clamp(0.0, 1.0) * ((base + 1.0 - ly) * self.scale + 0.5).clamp(0.0, 1.0);
                     let fill = alpha * (1.0 - 0.88 * ly / h) * below;
                     let line = (alpha * 1.9).min(0.9) * (1.0 - (ly - top).abs() / 0.9).max(0.0);
                     self.over(x, y, color, fill.max(line));
@@ -279,9 +325,9 @@ impl Canvas {
 
     /// Aurore : trois nappes de lumière (graves dans l'accent, médiums et aigus dans les teintes
     /// voisines) qui gonflent avec leur part du spectre et dérivent avec le son.
-    fn aurora(&mut self, sound: &Sound, colors: &Palette, playing: bool) {
+    fn aurora(&mut self, sound: &Sound, colors: &Palette) {
         let (w, h) = self.size();
-        let (ph, on) = (sound.drift, if playing { 1.0 } else { 0.45 });
+        let (ph, on) = (sound.drift, 0.45 + 0.55 * sound.presence);
         let blobs = [
             (0.2 + 0.09 * (ph * 0.9).sin(), 0.95, 1.0 + 1.7 * sound.low, colors.a, sound.low),
             (0.55 + 0.15 * (ph * 0.6 + 2.0).sin(), 0.25 + 0.3 * (ph * 0.8 + 1.0).sin(), 0.9 + 1.6 * sound.mid, colors.b, sound.mid),
@@ -289,8 +335,11 @@ impl Canvas {
         ];
         for (bx, by, size, color, energy) in blobs {
             let (cx, cy, r, alpha) = (w * bx, h * by, h * size * 1.6, (0.2 + 0.5 * energy) * on);
-            for y in 0..self.height {
-                for x in 0..self.width {
+            // Seulement le carré qui contient la nappe.
+            let span = |c: f32, max: usize| (((c - r) * self.scale).floor().max(0.0) as usize, (((c + r) * self.scale).ceil().max(0.0) as usize).min(max));
+            let ((xa, xb), (ya, yb)) = (span(cx, self.width), span(cy, self.height));
+            for y in ya..yb {
+                for x in xa..xb {
                     let (lx, ly) = self.at(x, y);
                     let d = ((lx - cx).powi(2) + (ly - cy).powi(2)).sqrt() / r;
                     if d < 1.0 {
@@ -388,7 +437,7 @@ impl Canvas {
         if a < 0.0 || b < 0.0 || around <= 0.0 {
             return;
         }
-        let (light, tail) = (0.45 + 0.55 * sound.bass, around * (0.2 + 0.12 * sound.level));
+        let (light, tail) = ((0.45 + 0.55 * sound.bass) * sound.presence, around * (0.2 + 0.12 * sound.level));
         for y in 0..self.height {
             for x in 0..self.width {
                 let (lx, ly) = self.at(x, y);
@@ -475,7 +524,16 @@ mod tests {
     const ACCENT: [u8; 3] = [249, 115, 22];
 
     fn scene(backdrop: Backdrop) -> Scene {
-        Scene { backdrop, progress: None, comet: false, playing: true }
+        Scene { backdrop, progress: None, comet: false, track: false }
+    }
+
+    /// Son fort, puis `quiet` images de silence.
+    fn faded(quiet: usize) -> Sound {
+        let mut s = loud();
+        for _ in 0..quiet {
+            s.fade(0.05);
+        }
+        s
     }
 
     /// Îlot de 300 × 34 à 100 %, coins de 12.
@@ -515,11 +573,26 @@ mod tests {
         let mut s = Sound::default();
         s.feed(1.0, 1.0, &[1.0; 24], true, 0.05);
         assert!(s.bands[0] > 0.6 && s.slow[0] < 0.3, "vague vive et vague lente");
-        assert_eq!((s.kick, s.peaks[0], s.glow), (1.0, 1.0, 1.0));
-        let quick = s.bands[0];
-        s.feed(0.0, 0.0, &[0.0; 24], false, 0.05);
+        assert_eq!((s.kick, s.peaks[0]), (1.0, 1.0));
+        assert!(s.glow > 0.3 && s.presence > 0.2, "le halo et la présence montent sans sauter");
+        let (quick, glow) = (s.bands[0], s.glow);
+        s.fade(0.05);
         assert!(s.bands[0] > quick * 0.6, "retombée lente");
-        assert!(s.kick < 0.7 && s.peaks[0] > 0.9 && s.glow < 0.25);
+        assert!(s.kick < 0.7 && s.peaks[0] > 0.9 && s.glow > glow * 0.6 && s.glow < glow);
+        // Le silence finit par tout éteindre, sans saut.
+        let mut s = faded(0);
+        let mut frames = 0;
+        while !s.is_quiet() {
+            s.fade(0.05);
+            frames += 1;
+            assert!(frames < 80, "retombée trop longue");
+        }
+        assert!(frames > 8, "retombée trop brève ({frames} images)");
+        let (drift, comet) = (s.drift, s.comet);
+        for _ in 0..40 {
+            s.fade(0.05);
+        }
+        assert!((s.drift - drift).abs() < 1e-3 && (s.comet - comet).abs() < 1e-3, "rien n'avance sans son");
         let (drift, comet) = (s.drift, s.comet);
         s.rest();
         assert_eq!((s.level, s.kick, s.wave_amp, s.bands.len()), (0.0, 0.0, 0.0, 24));
@@ -549,28 +622,34 @@ mod tests {
         assert_eq!(halo_alpha(0.72, 0.0), 0.0);
         assert!((halo_alpha(0.0, 0.36) - 0.275).abs() < 1e-6);
         let mut c = canvas();
-        let mut s = Sound::default();
-        s.feed(1.0, 0.0, &[], true, 0.05);
-        let px = c.paint(&scene(Backdrop::Halo), &s, &Palette::from_accent(ACCENT)).to_vec();
+        let px = c.paint(&scene(Backdrop::Halo), &loud(), &Palette::from_accent(ACCENT)).to_vec();
         // Centre de l'ellipse : 18 % du bord gauche, en bas.
-        assert!(alpha(&px, 54, 32) > 120, "{}", alpha(&px, 54, 32));
+        assert!(alpha(&px, 54, 32) > 100, "{}", alpha(&px, 54, 32));
         assert_eq!(alpha(&px, 290, 5), 0, "loin du centre");
         assert_eq!(alpha(&px, 0, 33), 0, "coin bas gauche découpé");
-        assert!(alpha(&px, 12, 33) > 60, "bord bas gardé après le coin");
-        // En pause : un halo faible, le même quel que soit le son.
-        let quiet = c.paint(&Scene { playing: false, ..scene(Backdrop::Halo) }, &s, &Palette::from_accent(ACCENT)).to_vec();
-        assert!((14..=20).contains(&alpha(&quiet, 54, 32)), "{}", alpha(&quiet, 54, 32));
+        assert!(alpha(&px, 12, 33) > 50, "bord bas gardé après le coin");
+        // Sans son : un halo faible, atteint en douceur.
+        let rest = c.paint(&scene(Backdrop::Halo), &Sound::default(), &Palette::from_accent(ACCENT)).to_vec();
+        assert!((14..=20).contains(&alpha(&rest, 54, 32)), "{}", alpha(&rest, 54, 32));
+        let half = c.paint(&scene(Backdrop::Halo), &faded(3), &Palette::from_accent(ACCENT)).to_vec();
+        assert!(alpha(&half, 54, 32) > alpha(&rest, 54, 32) && alpha(&half, 54, 32) < alpha(&px, 54, 32));
     }
 
     #[test]
     fn ribbon_rises_with_the_sound_and_lies_flat_without() {
         let mut c = canvas();
         let p = Palette::from_accent(ACCENT);
-        let loud = c.paint(&scene(Backdrop::Ribbon), &loud(), &p).to_vec();
-        assert!(alpha(&loud, 150, 10) > 40, "vague haute au milieu : {}", alpha(&loud, 150, 10));
+        let high = c.paint(&scene(Backdrop::Ribbon), &loud(), &p).to_vec();
+        assert!(alpha(&high, 150, 10) > 40, "vague haute au milieu : {}", alpha(&high, 150, 10));
         let quiet = c.paint(&scene(Backdrop::Ribbon), &Sound::default(), &p).to_vec();
         assert_eq!(alpha(&quiet, 150, 10), 0);
         assert!(alpha(&quiet, 150, 31) > 60, "trait au bas de l'îlot : {}", alpha(&quiet, 150, 31));
+        // Avec une barre de progression : le trait passe au-dessus, rien ne la recouvre.
+        let track = c.paint(&Scene { track: true, ..scene(Backdrop::Ribbon) }, &Sound::default(), &p).to_vec();
+        assert!(alpha(&track, 150, 27) > 60, "{}", alpha(&track, 150, 27));
+        assert_eq!(alpha(&track, 150, 31), 0, "progression lisible");
+        let loud_track = c.paint(&Scene { track: true, ..scene(Backdrop::Ribbon) }, &loud(), &p).to_vec();
+        assert_eq!(alpha(&loud_track, 150, 31), 0);
     }
 
     #[test]
@@ -585,12 +664,11 @@ mod tests {
     }
 
     #[test]
-    fn aurora_glows_and_dims_when_paused() {
+    fn aurora_glows_and_dims_when_the_sound_stops() {
         let mut c = canvas();
         let p = Palette::from_accent(ACCENT);
-        let s = loud();
-        let on = c.paint(&scene(Backdrop::Aurora), &s, &p).to_vec();
-        let off = c.paint(&Scene { playing: false, ..scene(Backdrop::Aurora) }, &s, &p).to_vec();
+        let on = c.paint(&scene(Backdrop::Aurora), &loud(), &p).to_vec();
+        let off = c.paint(&scene(Backdrop::Aurora), &faded(60), &p).to_vec();
         assert!(alpha(&on, 60, 30) > alpha(&off, 60, 30) && alpha(&off, 60, 30) > 0);
         assert_eq!(alpha(&on, 0, 0), 0, "coin découpé");
     }
@@ -624,7 +702,7 @@ mod tests {
         assert!(rows.iter().any(|r| *r != rows[0]), "elle ondule");
         assert_eq!(alpha(&px, 5, 29), 0, "rien avant le début de la barre");
         // Sans son : droite.
-        let flat = c.paint(&Scene { progress: Some(0.5), playing: false, ..scene(Backdrop::Off) }, &Sound::default(), &p).to_vec();
+        let flat = c.paint(&Scene { progress: Some(0.5), ..scene(Backdrop::Off) }, &Sound::default(), &p).to_vec();
         assert!((40..120).all(|x| alpha(&flat, x, 29) > 100 && alpha(&flat, x, 26) == 0));
         // Avec du son, elle reste dans les 7 px du bas.
         assert!((40..120).all(|x| alpha(&px, x, 26) == 0), "sous la ligne de l'artiste");
@@ -639,7 +717,7 @@ mod tests {
         assert!(alpha(&px, 150, 0) > 0 && alpha(&px, 150, 33) > 0, "bord du haut et du bas");
         let brightest = (0..300).map(|x| alpha(&px, x, 0).max(alpha(&px, x, 33))).max().unwrap();
         assert!(brightest > 130, "une traînée bien visible : {brightest}");
-        let paused = c.paint(&Scene { comet: true, playing: false, ..scene(Backdrop::Off) }, &loud(), &p).to_vec();
-        assert!(paused.iter().all(|v| *v == 0), "éteinte en pause");
+        let paused = c.paint(&Scene { comet: true, ..scene(Backdrop::Off) }, &faded(60), &p).to_vec();
+        assert!(paused.iter().all(|v| *v == 0), "éteinte après le silence");
     }
 }

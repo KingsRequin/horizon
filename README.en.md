@@ -43,10 +43,10 @@ in one native app that uses ~50 MB of memory and stays out of your way.
 
 **It follows the music.** While something plays, the islands light up with the bass and flash on
 every kick, in the colors of the album art (the graphic style shows a spectrum). Updated at most
-20 times per second, and only when something changes. The animation is chosen in *Horizon
-settings › Appearance*: island edges, breathing, kick wave, horizon line or circling light for
-the bars; halo, aurora, spectrum, ribbon, dots or capsules for the now-playing widget, whose
-progress bar can ripple with the sound.
+20 times per second, and only when something changes. Each screen has its own animations, in
+*Horizon settings › Bars* or by right-clicking the bar: edges, breathing, kick wave, horizon line
+or circling light for the bar; halo, aurora, spectrum, ribbon, dots or capsules for the
+now-playing widget, whose progress bar can ripple with the sound.
 
 <img src="docs/images/music.gif" alt="Bars pulsing with the music" width="100%">
 

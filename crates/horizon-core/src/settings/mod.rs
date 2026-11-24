@@ -16,6 +16,7 @@ pub use discord::DiscordSettings;
 pub use features::FeatureSettings;
 pub use music::{Backdrop, MusicSettings, Progress, Pulse};
 
+
 use crate::night::NightSettings;
 use crate::palette::PaletteSettings;
 use serde::{Deserialize, Serialize};

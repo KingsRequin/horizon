@@ -21,6 +21,6 @@ export component Capsules inherits Rectangle {
         border-radius: root.dot / 2;
         background: Theme.accent.mix(Colors.white, 0.85);
         opacity: root.playing ? 0.95 : Theme.o-stale;
-        animate height { duration: PulseState.sound; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+        animate height { duration: PulseState.sound; easing: linear; }
     }
 }

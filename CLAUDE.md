@@ -116,7 +116,12 @@ activé dans la page Plugins.
 - Une valeur qui suit le son ne se lisse que par `animate … { duration: PulseState.sound; }`
   (`ui/pulse.slint`) : une transition de durée fixe, relancée à chaque image de son, se fige
   quand l'interface est chargée. Les animations de la musique se contrôlent sans rien jouer :
-  `horizon.exe --musique-essai [secondes]`.
+  `horizon.exe --musique-essai [secondes]`, filmées sur deux grosses caisses
+  (`.superpowers/sdd/animations-musique/film.ps1`, non suivi) : une capture isolée ne montre
+  pas un effet qui se coupe ou s'arrête net.
+- Un dégradé est peint en rectangle par le rendu logiciel (coins arrondis ignorés, comme
+  `clip`) : dans un îlot, il naît et meurt transparent entre les coins, ou il est remplacé par
+  des bandes unies rentrées à la courbe des coins.
 - Jamais de `PopupWindow` Slint (coupée par la barre) : panneau = fenêtre surgissante.
 - Rendu logiciel : ni ombre, ni masque, ni transformation (rotation, échelle animée) ; une mise
   en page dont la taille dépend de la largeur de la fenêtre fait une boucle de liaison (poser à la

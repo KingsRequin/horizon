@@ -26,9 +26,9 @@ pub struct FeatureSettings {
     pub osd: bool,
     /// Nouveau morceau : titre annoncé dans la barre principale.
     pub osd_track: bool,
-    /// Pendant la lecture, les îlots s'éclairent de l'accent avec la basse et flashent à chaque
-    /// grosse caisse.
-    pub bar_pulse: bool,
+    /// « Faire vivre les barres avec la musique » de 0.7.3 et avant, lu une fois pour la reprise
+    /// des animations, devenues réglables barre par barre (`layout::BarMusic`) ; jamais écrit.
+    pub bar_pulse: Option<bool>,
     /// Versions publiées (Releases GitHub) : nouvelle version cherchée, téléchargée, vérifiée,
     /// puis installée au démarrage suivant.
     pub auto_update: bool,
@@ -49,7 +49,7 @@ impl Default for FeatureSettings {
             windows_accent: true,
             osd: true,
             osd_track: true,
-            bar_pulse: true,
+            bar_pulse: None,
             auto_update: true,
             claude_sessions: None,
         }

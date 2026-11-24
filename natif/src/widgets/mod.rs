@@ -91,6 +91,9 @@ pub struct Backend {
     pub start: Option<Start>,
     /// Appelé pour chaque barre qui montre au moins un exemplaire du widget.
     pub bind: Option<Bind>,
+    /// Le dernier exemplaire a quitté la barre (étiquette) : ce que `bind` a mis en route
+    /// s'arrête (ses écouteurs, eux, sont retirés par `rebind`).
+    pub unbind: Option<fn(&AppHandle, &str)>,
     /// Horizon se ferme (enregistrer ce qui attend).
     pub exit: Option<fn(&AppHandle)>,
     /// Son panneau surgissant (`ui/widgets/<id>/panel.slint`).
@@ -99,7 +102,7 @@ pub struct Backend {
 
 impl Backend {
     /// Widget sans rien : base des `BACKEND` (`..Backend::NONE`).
-    pub const NONE: Backend = Backend { id: "", name: "", manage: |_| {}, start: None, bind: None, exit: None, panel: None };
+    pub const NONE: Backend = Backend { id: "", name: "", manage: |_| {}, start: None, bind: None, unbind: None, exit: None, panel: None };
 }
 
 /// Panneau d'un widget, côté Rust (fil de l'interface), montré par la fenêtre surgissante et par
@@ -248,10 +251,12 @@ fn scope(label: &str, id: &str) -> String {
     format!("{label}#{id}")
 }
 
-/// Ce dont dépend la liaison d'un widget de `LAYOUT_BOUND` : style, interaction, exemplaires
-/// (identifiants et réglages, dans l'ordre).
-fn signature<'a>(bar: &'a BarLayout, id: &'a str) -> (horizon_core::layout::BarStyle, Interaction, Vec<(&'a str, &'a serde_json::Value)>) {
-    (bar.style, bar.interaction, instances(bar, id).map(|w| (w.id.as_str(), &w.settings)).collect())
+/// Ce dont dépend la liaison d'un widget de `LAYOUT_BOUND` : style, interaction, animations de
+/// la musique, exemplaires (identifiants et réglages, dans l'ordre).
+type Signature<'a> = (horizon_core::layout::BarStyle, Interaction, horizon_core::layout::BarMusic, Vec<(&'a str, &'a serde_json::Value)>);
+
+fn signature<'a>(bar: &'a BarLayout, id: &'a str) -> Signature<'a> {
+    (bar.style, bar.interaction, bar.music, instances(bar, id).map(|w| (w.id.as_str(), &w.settings)).collect())
 }
 
 /// Relie les widgets de la barre `label` (fil de l'interface) : ceux qu'elle montre. Renvoie les
@@ -276,6 +281,13 @@ pub fn rebind(
     for b in BACKENDS {
         let Some(bind) = b.bind else { continue };
         if manifest(b.id).is_none() || instances(new, b.id).next().is_none() {
+            // Le widget a quitté la barre : ses écouteurs et ce qu'il avait mis en route aussi.
+            if bound.remove(b.id) {
+                crate::host::unlisten_scope(&scope(label, b.id));
+                if let Some(unbind) = b.unbind {
+                    unbind(app, label);
+                }
+            }
             continue;
         }
         let again = bound.contains(b.id);

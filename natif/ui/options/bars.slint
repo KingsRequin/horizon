@@ -1,5 +1,6 @@
 // Section « Barres » (app/src/settings/options/BarsSection.svelte) : style, interaction, tuiles
-// (sous la barre ou dans un volet), hauteur (sous la barre seulement) et masquage en plein écran de chaque barre (layout.json, appliqués aussitôt et annulables par
+// (sous la barre ou dans un volet), hauteur (sous la barre seulement), masquage en plein écran
+// et animations de la musique de chaque barre (layout.json, appliqués aussitôt et annulables par
 // Ctrl+Z en mode édition), puis réapparition au-dessus d'un plein écran.
 
 import { Theme } from "../theme.slint";
@@ -8,13 +9,13 @@ import { SettingsTitle, SettingsHeading, SettingsNote } from "../settings/text.s
 import { SettingRow } from "../settings/row.slint";
 import { SettingCheck } from "../settings/check.slint";
 import { Segmented } from "../settings/segmented.slint";
-import { NumberField } from "../settings/field.slint";
+import { NumberField, SelectField } from "../settings/field.slint";
 import { OptionsData } from "data.slint";
 
 export component BarsSection inherits VerticalLayout {
     SettingsTitle {
         text: "Barres";
-        description: "Chaque écran a sa barre. Le style se change aussi par clic droit sur la barre.";
+        description: "Chaque écran a sa barre. Le style et les animations de la musique se changent aussi par clic droit sur la barre.";
     }
     for b in OptionsData.bars: VerticalLayout {
         Rectangle {
@@ -94,6 +95,42 @@ export component BarsSection inherits VerticalLayout {
                     hint: "La barre revient quand la souris s’arrête en haut de l’écran.";
                     toggled(v) => {
                         OptionsData.bar(b.monitor-id, "autohide", v ? "true" : "false");
+                    }
+                }
+                // Animations de la musique de cette barre (le fond et la progression sont ceux
+                // du widget Lecture en cours : grisés sans lui).
+                SettingRow {
+                    label: "Musique : animation";
+                    hint: b.music-pulse-hint;
+                    SelectField {
+                        text: b.music-pulse;
+                        open(x, y) => {
+                            OptionsData.pick("bar.pulse|" + b.monitor-id, x, y);
+                        }
+                    }
+                }
+                SettingRow {
+                    label: "Musique : fond de la lecture en cours";
+                    hint: b.has-media ? b.music-backdrop-hint : "Sans effet : cette barre n’a pas de widget Lecture en cours.";
+                    enabled: b.has-media;
+                    SelectField {
+                        text: b.music-backdrop;
+                        enabled: b.has-media;
+                        open(x, y) => {
+                            OptionsData.pick("bar.backdrop|" + b.monitor-id, x, y);
+                        }
+                    }
+                }
+                SettingRow {
+                    label: "Musique : barre de progression";
+                    hint: b.has-media ? b.music-progress-hint : "Sans effet : cette barre n’a pas de widget Lecture en cours.";
+                    enabled: b.has-media;
+                    SelectField {
+                        text: b.music-progress;
+                        enabled: b.has-media;
+                        open(x, y) => {
+                            OptionsData.pick("bar.progress|" + b.monitor-id, x, y);
+                        }
                     }
                 }
             }

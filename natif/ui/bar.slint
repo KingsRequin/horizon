@@ -262,6 +262,9 @@ export component BarWindow inherits Window {
     default-font-weight: 500;
 
     changed inner-width => { root.refit(); }
+    // Largeur de la barre, pour la ligne d'horizon de ses îlots.
+    init => { PulseState.span = root.width; }
+    changed width => { PulseState.span = root.width; }
     changed tiles-width => { root.tiles-resized(); }
     changed tiles-height => { root.tiles-resized(); }
     changed tiles-max-scroll => { root.tiles-scroll = min(root.tiles-scroll, root.tiles-max-scroll); }
@@ -299,11 +302,11 @@ export component BarWindow inherits Window {
             height: parent.height - 6px;
             radius: t.island-radius;
         }
-        // Ligne d'horizon : sous les îlots (style A, toute la largeur) ou au bas de la bande
-        // sombre, entre ses coins (style C).
-        if PulseState.style == "horizon": HorizonLine {
-            x: t.graphic ? 4px + t.island-radius : 0;
-            y: t.graphic ? parent.height - 5px : parent.height - 2px;
+        // Ligne d'horizon du style graphique : au bas de la bande sombre, entre ses coins (en
+        // style îlots, chaque îlot porte son morceau : components.slint).
+        if t.graphic && PulseState.style == "horizon": HorizonLine {
+            x: 4px + t.island-radius;
+            y: parent.height - 5px;
             width: parent.width - 2 * self.x;
             offset-x: self.x;
         }

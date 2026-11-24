@@ -1,10 +1,11 @@
-//! Pulsation des barres pendant la lecture (`[features] bar_pulse`, animation `[music] pulse`) :
+//! Pulsation des barres pendant la lecture (animation de chaque barre : `BarLayout::music.pulse`) :
 //! les barres suivent la basse, le niveau et chaque grosse caisse (détecteur d'Essaim,
 //! `widgets/media/audio.rs`). Les animations sont dans `ui/pulse.slint` ; ici, seules les valeurs
 //! du son (global `PulseState` de chaque barre) sont posées, au rythme des images de son (20 par
-//! seconde) et seulement quand elles changent. Le son n'est demandé que pendant la lecture,
-//! fonction active et animations permises ; le hub n'envoie rien à une barre masquée (plein
-//! écran) ni pendant le mode jeu. Fil de l'interface.
+//! seconde) et seulement quand elles changent. Le son n'est demandé que pendant la lecture, avec
+//! une animation choisie et les animations permises ; le hub n'envoie rien à une barre masquée
+//! (plein écran) ni pendant le mode jeu. En pause ou dans un silence, les valeurs retombent en
+//! douceur. Fil de l'interface.
 //!
 //! Repris de `app/src/lib/Pulse.svelte` (animation « edges »).
 
@@ -13,9 +14,11 @@ use crate::events::EV_OPTIONS;
 use crate::host::{self, AppHandle, Manager};
 use crate::widgets::media::audio::{AudioFrame, AudioHub, EV_AUDIO, Lateness};
 use crate::widgets::media::{EV_MEDIA, MediaPayload, media_state};
+use horizon_core::layout::BarLayout;
 use horizon_core::settings::Pulse;
 use slint::ComponentHandle;
 use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 use std::time::Duration;
 
 /// Retombée du flash d'une grosse caisse à chaque image de son (50 ms) : ~300 ms visibles.
@@ -87,6 +90,11 @@ impl Meter {
         Shown { glow, flash: put(&mut self.kick_shown, self.kick), level, beat: beat && style != Pulse::Edges }
     }
 
+    /// Tout est retombé à zéro.
+    pub fn is_off(&self) -> bool {
+        self.bass == 0.0 && self.level == 0.0 && self.kick_shown == 0.0
+    }
+
     pub fn reset(&mut self) -> Shown {
         self.kick = 0.0;
         self.breath = 0.0;
@@ -97,41 +105,38 @@ impl Meter {
 struct Bar {
     label: String,
     window: slint::Weak<BarWindow>,
+    /// Animation choisie pour cette barre (`BarLayout::music.pulse`).
+    chosen: Pulse,
     meter: Meter,
     late: Lateness,
     subscribed: bool,
+    /// Plus d'image de son depuis `QUIET` : les valeurs retombent.
     quiet: slint::Timer,
+    /// Retombée en douceur (au rythme des images de son) jusqu'à zéro.
+    fade: Rc<slint::Timer>,
+}
+
+impl Bar {
+    /// Animation dessinée par la barre : aucune si Windows demande moins d'animations ; la
+    /// lumière qui tourne n'est pas dessinée ici mais dans l'image de l'îlot de Lecture en cours.
+    fn style(&self) -> Option<Pulse> {
+        let p = if REDUCED.get() { Pulse::Off } else { self.chosen };
+        (p != Pulse::Off && p != Pulse::Comet).then_some(p)
+    }
 }
 
 thread_local! {
     static BARS: RefCell<Vec<Bar>> = RefCell::default();
     static PLAYING: Cell<bool> = const { Cell::new(false) };
-    /// Animation en service : `[features] bar_pulse`, animations permises, `[music] pulse`.
-    static STYLE: Cell<Option<Pulse>> = const { Cell::new(None) };
+    /// Windows demande moins d'animations (relu à chaque `EV_OPTIONS`).
+    static REDUCED: Cell<bool> = const { Cell::new(false) };
     static APP: RefCell<Option<AppHandle>> = RefCell::default();
-}
-
-/// Animation choisie, si la pulsation est active et les animations permises.
-fn chosen() -> Option<Pulse> {
-    let s = crate::state::settings();
-    (s.features.bar_pulse && !crate::motion::reduced()).then_some(s.music.pulse)
-}
-
-/// Animation dessinée par les barres : la lumière qui tourne ne l'est pas ici, mais dans
-/// l'image de l'îlot de Lecture en cours.
-fn style() -> Option<Pulse> {
-    chosen().filter(|p| *p != Pulse::Comet)
-}
-
-/// La lumière qui tourne est en service (`widgets/media/ui.rs` la dessine).
-pub fn comet() -> bool {
-    chosen() == Some(Pulse::Comet)
 }
 
 /// Suit la lecture et les réglages (fil de l'interface, avant l'ouverture des barres).
 pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     APP.set(Some(app.clone()));
-    STYLE.set(style());
+    REDUCED.set(crate::motion::reduced());
     PLAYING.set(media_state(app).payload.info.is_some_and(|i| i.playing));
     host::listen(EV_MEDIA, None, |e| {
         if let Some(p) = e.payload::<MediaPayload>() {
@@ -142,23 +147,25 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
         }
     });
     host::listen(EV_OPTIONS, None, |_| {
-        STYLE.set(style());
+        REDUCED.set(crate::motion::reduced());
         sync_all();
     });
     Ok(())
 }
 
 /// Relie la barre `label`.
-pub fn bind(window: &BarWindow, label: &str) {
+pub fn bind(window: &BarWindow, label: &str, bar: &BarLayout) {
     BARS.with_borrow_mut(|b| {
         b.retain(|x| x.label != label && x.window.upgrade().is_some());
         b.push(Bar {
             label: label.to_owned(),
             window: window.as_weak(),
+            chosen: bar.music.pulse,
             meter: Meter::default(),
             late: Lateness::default(),
             subscribed: false,
             quiet: slint::Timer::default(),
+            fade: Rc::default(),
         });
     });
     let l = label.to_owned();
@@ -170,17 +177,29 @@ pub fn bind(window: &BarWindow, label: &str) {
     sync_all();
 }
 
+/// Disposition de la barre `label` changée : son animation suit.
+pub fn set_bar(label: &str, bar: &BarLayout) {
+    let changed = BARS.with_borrow_mut(|bars| {
+        let b = bars.iter_mut().find(|b| b.label == label)?;
+        (b.chosen != bar.music.pulse).then(|| b.chosen = bar.music.pulse)
+    });
+    if changed.is_some() {
+        sync_all();
+    }
+}
+
 /// Donne à chaque barre son animation, l'abonne au son ou l'en désabonne selon la lecture ;
-/// éteint tout sinon.
+/// sinon les valeurs retombent en douceur.
 fn sync_all() {
-    let style = STYLE.get();
-    let want = style.is_some() && PLAYING.get();
+    let playing = PLAYING.get();
     let Some(app) = APP.with_borrow(Clone::clone) else { return };
     let hub = app.state::<AudioHub>();
     BARS.with_borrow_mut(|bars| {
         bars.retain(|b| b.window.upgrade().is_some());
         for b in bars.iter_mut() {
             let Some(w) = b.window.upgrade() else { continue };
+            let style = b.style();
+            let want = style.is_some() && playing;
             let g = w.global::<PulseState>();
             let id = style.map_or("", Pulse::id);
             let changed = g.get_style().as_str() != id;
@@ -192,11 +211,15 @@ fn sync_all() {
                 b.subscribed = want;
                 hub.subscribe(&b.label, "pulse", want, false);
             }
-            // Autre animation : les valeurs de l'ancienne ne passent pas à la nouvelle.
-            if !want || changed {
+            if changed {
+                // Autre animation : les valeurs de l'ancienne ne passent pas à la nouvelle.
                 b.quiet.stop();
+                b.fade.stop();
                 let v = b.meter.reset();
                 apply(b, v);
+            } else if !want {
+                b.quiet.stop();
+                fade_out(b);
             }
         }
     });
@@ -227,17 +250,18 @@ fn apply(b: &Bar, v: Shown) {
 fn on_audio(label: &str, f: &AudioFrame) {
     BARS.with_borrow_mut(|bars| {
         let Some(b) = bars.iter_mut().find(|b| b.label == label) else { return };
-        let late = b.late.observe(f.sent_ms, horizon_core::time::now_ms());
+        let late = b.late.observe(f.sent_ms, crate::widgets::media::audio::mono_ms());
         if let Some(w) = b.window.upgrade() {
             let g = w.global::<PulseState>();
             if g.get_late() != late {
                 g.set_late(late);
             }
         }
-        let Some(style) = STYLE.get() else { return };
+        let Some(style) = b.style() else { return };
         if !b.subscribed {
             return;
         }
+        b.fade.stop();
         let v = b.meter.frame(style, f.level, f.bass, f.beat);
         apply(b, v);
         let l = label.to_owned();
@@ -245,14 +269,36 @@ fn on_audio(label: &str, f: &AudioFrame) {
     });
 }
 
-/// Plus d'image de son : tout s'éteint.
+/// Plus d'image de son : tout retombe en douceur.
 fn quiet(label: &str) {
     BARS.with_borrow_mut(|bars| {
         if let Some(b) = bars.iter_mut().find(|b| b.label == label) {
-            let v = b.meter.reset();
-            apply(b, v);
+            fade_out(b);
         }
     });
+}
+
+/// Les valeurs de la barre retombent au rythme des images de son (le flash, la lueur et le
+/// niveau de la respiration suivent leur propre retombée), puis le minuteur s'arrête.
+fn fade_out(b: &mut Bar) {
+    let Some(style) = b.style() else {
+        let v = b.meter.reset();
+        return apply(b, v);
+    };
+    let label = b.label.clone();
+    let step = move || {
+        BARS.with_borrow_mut(|bars| {
+            let Some(b) = bars.iter_mut().find(|b| b.label == label) else { return };
+            let v = b.meter.frame(style, 0.0, 0.0, false);
+            apply(b, v);
+            if b.meter.is_off() {
+                b.fade.stop();
+            }
+        });
+    };
+    if !b.meter.is_off() && !b.fade.running() {
+        b.fade.start(slint::TimerMode::Repeated, Duration::from_secs_f32(FRAME), step);
+    }
 }
 
 #[cfg(test)]

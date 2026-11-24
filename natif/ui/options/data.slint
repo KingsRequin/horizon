@@ -25,6 +25,15 @@ export struct OptionsBar {
     // Tuiles : « fixed », « click » ou « hover », et l'explication du choix.
     tiles: string,
     tiles-hint: string,
+    // Animations de la musique : libellé du choix et ce qu'il montre ; la barre a le widget
+    // Lecture en cours (le fond et la progression n'existent que là).
+    has-media: bool,
+    music-backdrop: string,
+    music-backdrop-hint: string,
+    music-progress: string,
+    music-progress-hint: string,
+    music-pulse: string,
+    music-pulse-hint: string,
 }
 
 // Ligne de la page État.
@@ -130,14 +139,6 @@ export global OptionsData {
     in property <bool> headset-switch;
     in property <bool> osd;
     in property <bool> osd-track;
-    in property <bool> bar-pulse;
-    // Animations de la musique (`[music]`) : libellé du choix en vigueur et ce qu'il montre.
-    in property <string> music-backdrop;
-    in property <string> music-backdrop-hint;
-    in property <string> music-progress;
-    in property <string> music-progress-hint;
-    in property <string> music-pulse;
-    in property <string> music-pulse-hint;
     in property <bool> wallpaper-accent;
     in property <bool> windows-accent;
     in property <bool> game-mode;

@@ -44,10 +44,11 @@ export global Theme {
     out property <duration> dur-color: reduced-motion ? 0ms : 700ms;
     out property <duration> dur-pulse: reduced-motion ? 0ms : 1600ms;
     out property <duration> dur-ambient: reduced-motion ? 0ms : 1500ms;
-    // Animations de la musique (ui/pulse.slint, fond « Capsules ») : passage d'une image de son à
-    // la suivante (20 par seconde), onde et éclat d'une grosse caisse. La première passe par
-    // `PulseState.sound`, nulle quand la barre est en retard sur le son.
-    out property <duration> dur-sound: reduced-motion ? 0ms : 90ms;
+    // Animations de la musique (ui/pulse.slint, fond « Capsules », spectre) : passage d'une image
+    // de son à la suivante (20 par seconde, à vitesse constante : juste un peu plus que l'écart
+    // entre deux images, pour qu'une valeur arrive sans s'arrêter), onde et éclat d'une grosse
+    // caisse. La première passe par `PulseState.sound`, nulle quand la barre est en retard.
+    out property <duration> dur-sound: reduced-motion ? 0ms : 55ms;
     out property <duration> dur-kick: reduced-motion ? 0ms : 650ms;
     out property <duration> dur-spark: reduced-motion ? 0ms : 900ms;
 

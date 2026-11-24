@@ -1,7 +1,7 @@
 //! Texte de `settings.toml` écrit par Horizon : chaque option avec un commentaire qui la
 //! décrit, pour qui ouvre le fichier à la main.
 
-use super::{Backdrop, Progress, Pulse, Settings};
+use super::Settings;
 use std::fmt::Write;
 
 /// Chaîne TOML entre guillemets (caractères spéciaux échappés).
@@ -106,8 +106,6 @@ impl Settings {
              # Windows ; osd_track : titre de chaque nouveau morceau.
              osd = {}
              osd_track = {}
-             # Pendant la lecture, les barres suivent la musique (l'animation : [music] pulse).
-             bar_pulse = {}
              # Versions publiées : nouvelle version cherchée sur GitHub, installée au démarrage suivant.
              auto_update = {}
              # Module « Sessions Claude Code » (page Plugins des réglages). Non réglé : activé
@@ -121,30 +119,11 @@ impl Settings {
             f.windows_accent,
             f.osd,
             f.osd_track,
-            f.bar_pulse,
             f.auto_update,
         );
         line(&mut o, "claude_sessions", f.claude_sessions, "true");
-        let m = &self.music;
-        let ids = |all: &[&str]| all.iter().map(|id| quoted(id)).collect::<Vec<_>>().join(", ");
-        let _ = write!(
-            o,
-            "\n\
-             [music]\n\
-             # Fond du widget Lecture en cours pendant la lecture (\"auto\" : halo sur une barre en\n\
-             # îlots, spectre sur une barre graphique) : {}.\n\
-             backdrop = {}\n\
-             # Barre de progression de ce widget : {}.\n\
-             progress = {}\n\
-             # Animation des barres quand bar_pulse est actif : {}.\n\
-             pulse = {}\n",
-            ids(&Backdrop::ALL.iter().map(|b| b.id()).collect::<Vec<_>>()),
-            quoted(m.backdrop.id()),
-            ids(&Progress::ALL.iter().map(|p| p.id()).collect::<Vec<_>>()),
-            quoted(m.progress.id()),
-            ids(&Pulse::ALL.iter().map(|p| p.id()).collect::<Vec<_>>()),
-            quoted(m.pulse.id()),
-        );
+        // Les animations de la musique se règlent barre par barre (layout.json) : ni [music] ni
+        // bar_pulse ne sont plus écrits.
         let _ = write!(
             o,
             "
@@ -164,7 +143,7 @@ impl Settings {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{AlertSettings, Backdrop, MusicSettings, Progress, Pulse, Settings, SettingsFile};
+    use super::super::{AlertSettings, Settings, SettingsFile};
     use crate::testdir::TestDir;
 
     #[test]
@@ -179,7 +158,6 @@ mod tests {
         s.features.headset_switch = true;
         s.features.fallback_output = r#"{0.0.0.00000000}.{a\"b}"#.into();
         s.features.game_mode = false;
-        s.music = MusicSettings { backdrop: Backdrop::Ribbon, progress: Progress::Wave, pulse: Pulse::Comet };
         let text = s.to_toml();
         assert!(text.contains("# claude_island = true"), "valeur non réglée en commentaire");
         assert_eq!(Settings::parse(&text), Some(s));

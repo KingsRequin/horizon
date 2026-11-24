@@ -155,7 +155,7 @@ pub fn open(app: &AppHandle, label: &str, monitor: &MonitorInfo, rect: (i32, i32
     // Accent, affichage du volume (barre principale), pulsation.
     super::accent::follow(&window);
     super::osd::bind(app, &window, label, layout.role == BarRole::Main);
-    super::pulse::bind(&window, label);
+    super::pulse::bind(&window, label, &layout);
     window.set_left(ModelRc::from(models[0].clone()));
     window.set_center(ModelRc::from(models[1].clone()));
     window.set_right(ModelRc::from(models[2].clone()));
@@ -621,6 +621,11 @@ fn apply_layout(app: &AppHandle, label: &str, bar: &BarLayout) {
     let Some(b) = get(label) else { return };
     let old = b.layout.replace(bar.clone());
     apply_options(&b.window, bar);
+    super::pulse::set_bar(label, bar);
+    // Plus de widget Lecture en cours : la ligne d'horizon repart du milieu de la barre.
+    if !bar.widgets().any(|w| w.kind == horizon_core::layout::WidgetKind::MEDIA) {
+        b.window.global::<super::PulseState>().set_origin_x(-1.0);
+    }
     // Volet ouvert devenu sans objet : mode changé, ou plus de tuile (hors édition).
     if b.drawer_open.get() && (bar.tiles_mode != old.tiles_mode || (bar.tiles.is_empty() && !b.window.get_editing())) {
         close_drawer(label);

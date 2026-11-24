@@ -176,13 +176,27 @@ déranger », recharger, démarrage avec Windows, journal, quitter) ; `state.rs`
   `OsdData`) : barre principale seulement, centré dans la bande ; l'îlot de Windows est masqué
   pendant ce temps et remis à la fermeture (`osd::exit`, aussi en cas de panique), en plein
   écran sur l'écran principal et quand `[features] osd` est coupé.
+- **Animations de la musique, par barre** : `BarLayout::music` (`horizon_core::layout::BarMusic` :
+  `backdrop`, `progress`, `pulse`, dans `layout.json`), réglées par `BarOptionsPatch` (Réglages ›
+  Barres, `ui::options::music_entries` ; menu de la barre › Musique, `MenuAction::Music`).
+  Préréglage du style à la création (`BarMusic::for_style`), suivi au changement de style s'il
+  n'a pas été touché (`BarLayout::restyle`) ; « lumière qui tourne » refusée sur une barre
+  graphique (`Pulse::fits`). Reprise une fois des réglages globaux de 0.7.2 et 0.7.3
+  (`Layout::adopt_music`, marque `music-per-bar`, au chargement de `AppState::load`).
+  `BarMusic::effective` coupe tout si Windows demande moins d'animations (relu toutes les 5 s
+  par `options.rs`, qui émet alors `EV_OPTIONS`).
 - **Pulsation** (`src/ui/pulse.rs`, `ui/pulse.slint`, global `PulseState`) : Rust pose les
-  valeurs du son (basse, niveau, flash, compteur de grosses caisses), l'animation choisie
-  (`[music] pulse`, `horizon_core::settings::Pulse`) les dessine : `PulseLayers` dans `Island`
-  (style A) et sur la bande (style C) pour « edges », « breath » et « wave », `HorizonLine` au
-  bas de la bande pour « horizon » (elle part du widget Lecture en cours, qui pose
-  `PulseState.origin-x`). Une animation déclenchée par une grosse caisse passe par `Kick`
-  (`p` de 0 à 1 à chaque changement de `beat`) et se termine d'elle-même. Une valeur qui suit
+  valeurs du son (basse, niveau, flash, compteur de grosses caisses), l'animation de la barre
+  (`pulse::set_bar`, à chaque disposition) les dessine : `PulseLayers` dans `Island` (style A,
+  sous le contenu) et sur la bande (style C) pour « edges », « breath » et « wave », `HorizonLine`
+  au bas de chaque îlot (style A) ou de la bande (style C) pour « horizon » (elle part du widget
+  Lecture en cours, qui pose `PulseState.origin-x` ; la barre pose `PulseState.span`). Une
+  animation déclenchée par une grosse caisse passe par `Kick` (`p` de 0 à 1 à chaque
+  changement de `beat`) et se termine d'elle-même ; si elle dure plus que l'écart entre deux
+  coups, deux exemplaires se relaient selon la parité du coup (`WaveRun`, `Sparks`). Un dégradé
+  est peint en rectangle, coins ignorés : la vague est faite de bandes unies rentrées à la
+  courbe des coins. En pause ou dans un silence, les valeurs retombent au rythme des images de
+  son (`fade_out`), pas d'un coup. Une valeur qui suit
   le son glisse d'une image de son à la suivante par un `animate` de durée `PulseState.sound`,
   jamais d'une durée fixe : relancée à chaque image, une transition ne progresse que pendant
   les tours de boucle sans image, et se fige dès que l'interface est chargée (vu sur l'exe de
@@ -193,22 +207,26 @@ déranger », recharger, démarrage avec Windows, journal, quitter) ; `state.rs`
   hub par utilisateur (`AudioHub::subscribe(barre, "pulse" | "media", …)`). Ajouter une
   animation : une variante de `Pulse` (identifiant, libellé, explication), ce que `Meter::frame`
   lui envoie, son composant dans `ui/pulse.slint`.
-- **Fond de la lecture en cours** (`[music] backdrop`, `horizon_core::settings::Backdrop`,
-  `src/widgets/media/ui.rs`) : `MediaData.backdrop` (« auto » traduit d'après le style de la
-  barre). Le spectre et les capsules sont des rectangles de l'interface (`Spectrum`,
-  `Capsules`), qui reçoivent leurs valeurs. Le halo, l'aurore, le ruban, les points, la
-  progression qui ondule (`[music] progress`) et la lumière qui tourne (`pulse = "comet"`) sont
+- **Fond de la lecture en cours** (`BarMusic::backdrop`, `horizon_core::settings::Backdrop`,
+  `src/widgets/media/ui.rs`, relié de nouveau quand la musique de la barre change : elle est
+  dans la `signature` du widget) : `MediaData.backdrop`. Le spectre et les capsules sont des
+  rectangles de l'interface (`Spectrum`, `Capsules`), qui reçoivent leurs valeurs et retombent
+  en pause (`MediaData.live`). Le halo, l'aurore, le ruban, les points, la progression qui
+  ondule (`progress = "wave"`) et la lumière qui tourne (`pulse = "comet"`) sont
   une **image de l'îlot** (`horizon_core::music::canvas` : `Canvas::paint(scène, son, couleurs)`,
   pixel par pixel, coins arrondis compris, testée sans Windows), refaite à chaque image de son
   à la taille que le widget annonce (`MediaData.island-w/h/radius`, `resized`) et posée dans
   `MediaData.canvas`. Le mouvement y est adouci par `Sound::feed` (montée vive, retombée
-  lente), pas par une transition. Ajouter un fond en image : une variante de `Backdrop` rangée
-  dans `is_painted`, sa fonction de dessin dans `Canvas`. Les bandes ne sont demandées au hub
-  que pour un fond qui les dessine.
+  lente), pas par une transition ; sans son (pause, silence de 400 ms, hub muet en mode jeu),
+  `Sound::fade` fait tout retomber puis le minuteur s'arrête. Ajouter un fond en image : une
+  variante de `Backdrop` rangée dans `is_painted`, sa fonction de dessin dans `Canvas`. Les
+  bandes ne sont demandées au hub que pour un fond qui les dessine. Le widget retiré d'une
+  barre s'arrête (`Backend::unbind` : écouteurs, abonnement, minuteurs).
 - **Son d'essai** : `horizon.exe --musique-essai [secondes]` (20 sans précision) montre un
   morceau en lecture sur les barres et remplace la capture par un son fabriqué
   (`horizon_core::music::essai_frame` : une grosse caisse par demi-seconde), mode jeu compris,
-  pour voir et capturer les animations sans rien jouer.
+  pour voir et capturer les animations sans rien jouer. Un autre morceau qui démarre l'arrête ;
+  relancé, il prolonge le précédent.
 - **Mode nuit** (style C) : le voile couvre toute la bande, widgets et affichage du volume
   compris (au-dessus d'eux, comme `.dimmable.graphic .band::after`).
 
