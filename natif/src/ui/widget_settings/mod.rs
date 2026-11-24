@@ -148,6 +148,12 @@ pub fn bind(app: &AppHandle, window: &SettingsWindow) {
     });
     let a = app.clone();
     g.on_open_options(move |section| crate::settings_window::open(&a, SettingsPage::Options(section.to_string())));
+    let a = app.clone();
+    g.on_open_page(move |page| {
+        if let Err(e) = crate::settings_window::settings_open(&a, &page) {
+            log::warn!("réglages : {e}");
+        }
+    });
     calendar::bind(window);
     plugin::bind(window);
     shortcuts::bind(window);

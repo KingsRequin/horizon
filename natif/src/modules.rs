@@ -118,6 +118,10 @@ pub fn set(app: &AppHandle, id: &str, on: bool) -> Result<(), String> {
         // Le service ne démarre qu'une fois : c'est lui qui suit l'état du module ensuite
         // (serveur lancé ou arrêté, batteries retirées des barres).
         crate::widgets::phone::refresh(app);
+        if on {
+            // Activé : la suite se passe dans sa page (pare-feu, appairage).
+            crate::settings_window::open(app, crate::settings_window::SettingsPage::Phone);
+        }
     }
     crate::ui::bar::plugins_changed(app);
     crate::status::wake(app);

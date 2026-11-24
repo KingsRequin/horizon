@@ -16,6 +16,7 @@ pub mod island;
 pub mod menu;
 pub mod model;
 pub mod options;
+pub mod phone_page;
 pub mod osd;
 pub mod panel_hosts;
 pub mod palette;

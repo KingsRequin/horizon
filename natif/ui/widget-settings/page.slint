@@ -10,6 +10,7 @@ import { SettingsScroll } from "../settings/scroll.slint";
 import { SettingsNote } from "../settings/text.slint";
 import { SettingCheck } from "../settings/check.slint";
 import { GlobalLink } from "../settings/global-link.slint";
+import { SettingsButton } from "../settings/button.slint";
 import { WeatherSettings } from "weather.slint";
 import { SuggestionsSettings } from "suggestions.slint";
 import { CalendarSettings } from "calendar.slint";
@@ -26,6 +27,8 @@ export global WidgetSettingsData {
     callback set-discord-mute(bool);
     // Lien vers une section des « Réglages d'Horizon ».
     callback open-options(string);
+    // Lien vers une autre page de la fenêtre de réglages (« phone »).
+    callback open-page(string);
 }
 
 // En-tête d'une page (`header` de SettingsApp.svelte) : titre `h1` et rappel de l'enregistrement.
@@ -105,6 +108,24 @@ export component WidgetSettingsPage inherits Rectangle {
                 WidgetSettingsData.open-options(s);
             }
         }
+        if root.kind == "phone": VerticalLayout {
+            spacing: 10px;
+            SettingsNote {
+                text: "Appairage, téléphones et seuil de l’alerte valent pour toutes les barres : ils sont dans la page du module.";
+            }
+            HorizontalLayout {
+                alignment: start;
+                SettingsButton {
+                    text: "Ouvrir la page Téléphone";
+                    icon: @image-url("../../icons/phosphor/deviceMobile.svg");
+                    icon-size: 14px;
+                    on: true;
+                    clicked => {
+                        WidgetSettingsData.open-page("phone");
+                    }
+                }
+            }
+        }
         if root.kind == "mic_krisp": SettingCheck {
             checked: WidgetSettingsData.discord-mute;
             label: "En appel Discord, le bouton micro coupe le micro de Discord";
@@ -118,7 +139,7 @@ export component WidgetSettingsPage inherits Rectangle {
         if root.kind == "suggestions": SuggestionsSettings { }
         if root.kind == "calendar": CalendarSettings { }
         if root.kind == "shortcuts": ShortcutsSettings { }
-        if root.kind != "" && !(root.kind == "headset" || root.kind == "claude_sessions" || root.kind == "notifications" || root.kind == "mic_krisp" || root.kind == "weather" || root.kind == "suggestions" || root.kind == "calendar" || root.kind == "shortcuts"): SettingsNote {
+        if root.kind != "" && !(root.kind == "headset" || root.kind == "claude_sessions" || root.kind == "notifications" || root.kind == "phone" || root.kind == "mic_krisp" || root.kind == "weather" || root.kind == "suggestions" || root.kind == "calendar" || root.kind == "shortcuts"): SettingsNote {
             text: "Ce widget n’a pas de réglages.";
             font-size: Theme.fs-meta;
         }

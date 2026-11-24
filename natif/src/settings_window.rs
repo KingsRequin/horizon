@@ -20,17 +20,20 @@ pub enum SettingsPage {
     /// Réglages d'un widget (identifiant).
     Widget(String),
     Profiles,
+    /// Module « Téléphone » : pare-feu, appairage, téléphones.
+    Phone,
     /// « Réglages d'Horizon », sur une section (`barres`, `alertes`, `etat`…).
     Options(String),
 }
 
 impl SettingsPage {
-    /// Page demandée par l'interface : `widget:<id>`, `profiles` ou `options:<section>`.
+    /// Page demandée par l'interface : `widget:<id>`, `profiles`, `phone` ou `options:<section>`.
     pub fn parse(page: &str) -> Option<SettingsPage> {
         Some(match page.split_once(':') {
             Some(("widget", id)) if !id.is_empty() => SettingsPage::Widget(id.to_owned()),
             Some(("options", s)) if s.chars().all(|c| c.is_ascii_lowercase()) => SettingsPage::Options(s.to_owned()),
             None if page == "profiles" => SettingsPage::Profiles,
+            None if page == "phone" => SettingsPage::Phone,
             _ => return None,
         })
     }
@@ -54,6 +57,7 @@ impl SettingsPage {
                 }
             }
             SettingsPage::Profiles => "Profils — Horizon".into(),
+            SettingsPage::Phone => "Téléphone — Horizon".into(),
             SettingsPage::Options(_) => "Réglages d’Horizon".into(),
         }
     }
@@ -147,6 +151,7 @@ mod tests {
     fn settings_pages() {
         assert_eq!(SettingsPage::parse("widget:w1"), Some(SettingsPage::Widget("w1".into())));
         assert_eq!(SettingsPage::parse("profiles"), Some(SettingsPage::Profiles));
+        assert_eq!(SettingsPage::parse("phone"), Some(SettingsPage::Phone));
         assert_eq!(SettingsPage::parse("options:alertes"), Some(SettingsPage::Options("alertes".into())));
         assert_eq!(SettingsPage::parse("options:../x"), None);
         assert_eq!(SettingsPage::parse("autre"), None);

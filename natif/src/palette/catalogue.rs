@@ -28,6 +28,8 @@ pub(super) enum Action {
     /// Fenêtre « Réglages d'Horizon », sur une section.
     Options(&'static str),
     Profiles,
+    /// Page du module Téléphone (appairage).
+    Phone,
     Edit,
     Quit,
     Dnd,
@@ -152,6 +154,13 @@ pub(super) fn catalogue(app: &AppHandle) -> Vec<Entry> {
     }
     out.push(Entry::new("act:edit", "Modifier la barre", "Mode édition de l’écran principal", glyph("pencilSimple")).keywords("édition disposition widgets").action("Modifier", Action::Edit));
     out.push(Entry::new("act:profiles", "Gérer les profils…", "Profils de disposition", glyph("userSwitch")).keywords("profil réglages").action("Ouvrir", Action::Profiles));
+    if crate::modules::enabled("phone") {
+        out.push(
+            Entry::new("act:phone", "Appairer un téléphone…", "Module Téléphone", glyph("deviceMobile"))
+                .keywords("téléphone mobile batterie qr code appairage android")
+                .action("Ouvrir", Action::Phone),
+        );
+    }
     out.push(
         Entry::new("act:settings", "Réglages d’Horizon", "Barres, alertes, nuit, minuteur, palette", glyph("gearSix"))
             .keywords("réglages paramètres configuration options toml")
@@ -401,6 +410,10 @@ pub(super) fn run_action(app: &AppHandle, a: Action) -> Result<(), String> {
         }
         Action::Profiles => {
             crate::settings_window::open(app, crate::settings_window::SettingsPage::Profiles);
+            Ok(())
+        }
+        Action::Phone => {
+            crate::settings_window::open(app, crate::settings_window::SettingsPage::Phone);
             Ok(())
         }
         Action::Edit => crate::edit::edit_main_bar(app),

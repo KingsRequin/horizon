@@ -1,0 +1,231 @@
+// Page « Téléphone » de la fenêtre de réglages : module qui relie l'appli Horizon Mobile.
+// Dans l'ordre : autoriser Horizon sur le réseau local (pare-feu de Windows), installer
+// l'appli, appairer un téléphone par QR code, téléphones appairés, seuil de l'alerte
+// « batterie faible ». Service : src/ui/phone_page.rs.
+
+import { Theme } from "../theme.slint";
+import { SettingsLayout } from "../settings/layout.slint";
+import { SettingsScroll } from "../settings/scroll.slint";
+import { SettingsTitle, SettingsHeading, SettingsNote } from "../settings/text.slint";
+import { SettingRow } from "../settings/row.slint";
+import { SettingsButton, RemoveButton } from "../settings/button.slint";
+import { NumberField } from "../settings/field.slint";
+
+export struct PhoneRow {
+    id: string,
+    name: string,
+    // « Connecté » ou « Vu il y a 3 h ».
+    state: string,
+}
+
+export global PhonePageData {
+    // Module activé (sinon la page ne montre qu'une note).
+    in property <bool> enabled;
+    // État du pare-feu : allowed, missing, blocked ou unknown.
+    in property <string> firewall;
+    in property <string> firewall-hint;
+    in property <bool> listening;
+    // Autorisation d'administrateur en cours (Windows attend la réponse).
+    in property <bool> busy;
+    // Lien vers la dernière version de l'appli.
+    in property <image> app-qr;
+    in property <image> pair-qr;
+    // Une offre d'appairage est affichée.
+    in property <bool> pairing;
+    // « Valable encore 4 min 32 », ou ce qu'il est advenu du dernier code.
+    in property <string> remaining;
+    in property <[PhoneRow]> phones;
+    // Seuil de l'alerte « batterie faible », en % (0 : jamais).
+    in property <int> threshold;
+    in property <string> error;
+    callback allow();
+    callback pair();
+    callback cancel();
+    callback remove(string);
+    callback set-threshold(int);
+}
+
+// Carte à QR code : texte à gauche, code sur fond blanc à droite (un QR se lit sombre sur clair).
+component QrCard inherits Rectangle {
+    in property <string> title;
+    in property <string> hint;
+    in property <string> detail;
+    in property <image> code;
+    in property <length> code-size: 148px;
+    border-radius: Theme.r-md;
+    background: SettingsLayout.t.surface-1;
+
+    HorizontalLayout {
+        padding: 16px;
+        spacing: 16px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 6px;
+            Text {
+                width: SettingsLayout.content-w - root.code-size - 64px;
+                text: root.title;
+                color: SettingsLayout.t.text;
+                font-weight: 600;
+                wrap: word-wrap;
+            }
+            Text {
+                width: SettingsLayout.content-w - root.code-size - 64px;
+                text: root.hint;
+                color: SettingsLayout.t.text-dim;
+                font-size: Theme.fs-meta;
+                wrap: word-wrap;
+            }
+            if root.detail != "": Text {
+                text: root.detail;
+                color: Theme.accent;
+                font-family: Theme.font-mono;
+                font-size: Theme.fs-meta;
+                font-weight: 500;
+            }
+            @children
+        }
+        Rectangle {
+            width: root.code-size + 16px;
+            height: root.code-size + 16px;
+            border-radius: Theme.r-md;
+            background: white;
+            Image {
+                width: root.code-size;
+                height: root.code-size;
+                source: root.code;
+                image-fit: contain;
+                image-rendering: pixelated;
+            }
+        }
+    }
+}
+
+export component PhonePage inherits Rectangle {
+    public function scroll-top() {
+        scroll.scroll-top();
+    }
+
+    changed visible => {
+        if self.visible {
+            SettingsLayout.content-w = scroll.content-w;
+        }
+    }
+
+    scroll := SettingsScroll {
+        width: root.width;
+        height: root.height;
+        init => {
+            if root.visible {
+                SettingsLayout.content-w = self.content-w;
+            }
+        }
+        changed content-w => {
+            if root.visible {
+                SettingsLayout.content-w = self.content-w;
+            }
+        }
+        SettingsTitle {
+            text: "Téléphone";
+            description: "La batterie de ton téléphone sur la barre, envoyée par l’appli Horizon Mobile. Le téléphone et le PC doivent être sur le même réseau.";
+        }
+        if !PhonePageData.enabled: SettingsNote {
+            text: "Le module Téléphone est désactivé. Active-le dans Réglages d’Horizon › Plugins, « Modules intégrés ».";
+            above: 12px;
+        }
+        if PhonePageData.enabled: VerticalLayout {
+            SettingsHeading {
+                text: "Réseau local";
+            }
+            SettingRow {
+                label: PhonePageData.firewall == "allowed" ? "Horizon est autorisé sur le réseau local" : PhonePageData.firewall == "unknown" ? "Pare-feu de Windows non lu" : "Autoriser Horizon sur le réseau local";
+                hint: PhonePageData.firewall-hint;
+                if PhonePageData.firewall == "missing" || PhonePageData.firewall == "blocked": SettingsButton {
+                    text: PhonePageData.busy ? "En attente de Windows…" : "Autoriser";
+                    filled: true;
+                    enabled: !PhonePageData.busy;
+                    clicked => {
+                        PhonePageData.allow();
+                    }
+                }
+            }
+            SettingsHeading {
+                text: "1. Installe l’appli";
+            }
+            QrCard {
+                title: "Horizon Mobile pour Android";
+                hint: "Vise ce code avec l’appareil photo du téléphone, puis installe la dernière version.";
+                detail: "github.com/KingsRequin/horizon-mobile";
+                code: PhonePageData.app-qr;
+                code-size: 116px;
+            }
+            SettingsHeading {
+                text: "2. Appaire ton téléphone";
+            }
+            if !PhonePageData.pairing: SettingRow {
+                label: "Code d’appairage";
+                hint: PhonePageData.remaining != "" ? PhonePageData.remaining : PhonePageData.listening ? "Valable 5 minutes, pour un seul téléphone." : "Autorise d’abord Horizon sur le réseau local.";
+                SettingsButton {
+                    text: "Afficher le code";
+                    enabled: PhonePageData.listening;
+                    clicked => {
+                        PhonePageData.pair();
+                    }
+                }
+            }
+            if PhonePageData.pairing: QrCard {
+                title: "Dans l’appli, vise ce code";
+                hint: "Il ne sert qu’une fois. Ne le montre à personne d’autre : il donne accès à ce PC.";
+                detail: PhonePageData.remaining;
+                code: PhonePageData.pair-qr;
+                HorizontalLayout {
+                    padding-top: 6px;
+                    alignment: start;
+                    SettingsButton {
+                        text: "Masquer le code";
+                        small: true;
+                        clicked => {
+                            PhonePageData.cancel();
+                        }
+                    }
+                }
+            }
+            SettingsHeading {
+                text: "Téléphones appairés";
+            }
+            if PhonePageData.phones.length == 0: SettingsNote {
+                text: "Aucun téléphone pour l’instant.";
+                below: 8px;
+            }
+            for p in PhonePageData.phones: SettingRow {
+                label: p.name;
+                hint: p.state;
+                RemoveButton {
+                    what: p.name;
+                    clicked => {
+                        PhonePageData.remove(p.id);
+                    }
+                }
+            }
+            SettingsHeading {
+                text: "Alerte";
+            }
+            SettingRow {
+                label: "Alerte « batterie faible »";
+                hint: "En pourcentage, pour chaque appareil envoyé par le téléphone. 0 : jamais.";
+                NumberField {
+                    value: PhonePageData.threshold;
+                    minimum: 0;
+                    maximum: 100;
+                    committed(v) => {
+                        PhonePageData.set-threshold(v);
+                    }
+                }
+            }
+        }
+        if PhonePageData.error != "": SettingsNote {
+            text: PhonePageData.error;
+            tint: SettingsLayout.t.bad;
+            above: 10px;
+        }
+    }
+}

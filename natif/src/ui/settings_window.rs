@@ -7,7 +7,8 @@
 //! focus.
 //!
 //! Pages : « Réglages d'Horizon » (`ui::options`), réglages d'un widget
-//! (`ui::widget_settings`), profils (`ui::profiles`). Une page de plus : un élément
+//! (`ui::widget_settings`), profils (`ui::profiles`), module Téléphone (`ui::phone_page`). Une
+//! page de plus : un élément
 //! `visible: root.page == …` dans `ui/settings-window.slint`, sa liaison appelée par `show`, et
 //! au départ de la page (`leave_page`) et à la fermeture (`close`) ce qui attend est enregistré.
 //! Retraits annulables : `offer_undo` (bandeau `UndoBar`, définitif après 5 s, au changement de
@@ -106,6 +107,7 @@ fn try_show(app: &AppHandle, page: &SettingsPage) -> anyhow::Result<()> {
         SettingsPage::Options(section) => super::options::show(app, &window, section),
         SettingsPage::Widget(id) => super::widget_settings::show(app, &window, id),
         SettingsPage::Profiles => super::profiles::show(app, &window),
+        SettingsPage::Phone => super::phone_page::show(app, &window),
     }
     Ok(())
 }
@@ -123,6 +125,7 @@ fn leave_page(page: Option<&SettingsPage>) {
         Some(SettingsPage::Options(_)) => super::options::leave(),
         Some(SettingsPage::Widget(_)) => super::widget_settings::leave(),
         Some(SettingsPage::Profiles) => super::profiles::leave(),
+        Some(SettingsPage::Phone) => super::phone_page::leave(),
         None => {}
     }
 }
@@ -143,6 +146,7 @@ fn page_name(page: &SettingsPage) -> &'static str {
         SettingsPage::Options(_) => "options",
         SettingsPage::Widget(_) => "widget",
         SettingsPage::Profiles => "profiles",
+        SettingsPage::Phone => "phone",
     }
 }
 
@@ -182,6 +186,7 @@ fn create(app: &AppHandle, page: &SettingsPage, title: &str, monitor: Option<&ho
     super::options::bind(app, &window);
     super::widget_settings::bind(app, &window);
     super::profiles::bind(app, &window);
+    super::phone_page::bind(app, &window);
     window.show()?;
     OPEN.set(Some(Open {
         window: window.clone_strong(),
@@ -200,6 +205,7 @@ pub fn close(app: &AppHandle) {
     super::options::closing(app);
     super::widget_settings::closing(app);
     super::profiles::closing(app);
+    super::phone_page::closing(app);
     o.undo.settle();
     o.undo_timer.stop();
     let _ = o.window.hide();

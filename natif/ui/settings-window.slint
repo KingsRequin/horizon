@@ -1,6 +1,7 @@
 // Fenêtre de réglages, unique (src/ui/settings_window.rs) : fenêtre Windows ordinaire, opaque
 // (`page-bg`), redimensionnable (560 × 420 au moins), qui montre une page : « Réglages
-// d'Horizon » (`options`), réglages d'un widget (`widget`) ou profils (`profiles`).
+// d'Horizon » (`options`), réglages d'un widget (`widget`), profils (`profiles`) ou module
+// Téléphone (`phone`).
 //
 // La page affichée pose `SettingsLayout.content-w` (largeur de son contenu qui défile, les pages
 // cachées ne la touchent pas) et utilise les briques de `ui/settings/`.
@@ -12,9 +13,10 @@ import { SettingsLayout } from "settings/layout.slint";
 import { OptionsPage } from "options/page.slint";
 import { WidgetSettingsPage } from "widget-settings/page.slint";
 import { ProfilesPage } from "profiles/page.slint";
+import { PhonePage } from "phone/page.slint";
 
 export component SettingsWindow inherits Window {
-    // Page montrée : « options », « widget » ou « profiles ».
+    // Page montrée : « options », « widget », « profiles » ou « phone ».
     in property <string> page: "options";
     // Retrait annulable en cours (bandeau `UndoBar`, logique src/undoable.rs) ; vide = caché.
     in property <string> undo-label;
@@ -36,6 +38,7 @@ export component SettingsWindow inherits Window {
         options.scroll-top();
         widget.scroll-top();
         profiles.scroll-top();
+        phone.scroll-top();
     }
 
     options := OptionsPage {
@@ -52,6 +55,12 @@ export component SettingsWindow inherits Window {
 
     profiles := ProfilesPage {
         visible: root.page == "profiles";
+        width: root.width;
+        height: root.height;
+    }
+
+    phone := PhonePage {
+        visible: root.page == "phone";
         width: root.width;
         height: root.height;
     }

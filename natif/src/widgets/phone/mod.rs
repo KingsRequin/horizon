@@ -12,7 +12,7 @@ pub mod server;
 pub mod ui;
 
 use crate::alerts::LowBattery;
-use crate::host::{AppHandle, Manager};
+use crate::host::{AppHandle, Emitter, Manager};
 use crate::util::{Published, Waker, lock, start_thread};
 use crate::widgets::Backend;
 use horizon_core::phone::battery::{BatteryView, Book};
@@ -517,6 +517,17 @@ pub fn offer_pairing(app: &AppHandle) -> Result<String, String> {
     let qr = core.offer(&horizon_sys::local_net::local_ipv4(), &horizon_sys::local_net::host_name(), port, &fingerprint, random_token(16), now_ms())?;
     publish(app);
     Ok(qr)
+}
+
+/// Millisecondes restantes de l'offre d'appairage (0 : aucune), à l'instant.
+pub fn pairing_left(app: &AppHandle) -> u64 {
+    core(app).map_or(0, |core| core.pending_ms(now_ms()))
+}
+
+/// Le seuil d'alerte a changé : les barres recolorent leurs batteries (les mesures, elles,
+/// n'ont pas changé : `publish` ne renverrait rien).
+pub fn threshold_changed(app: &AppHandle) {
+    let _ = app.emit(EV_PHONE, batteries(app));
 }
 
 pub fn cancel_pairing(app: &AppHandle) {
