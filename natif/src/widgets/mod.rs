@@ -162,6 +162,7 @@ pub const BACKENDS: &[&Backend] = &[
     &media::BACKEND,
     &mic_krisp::BACKEND,
     &notifications::BACKEND,
+    &phone::BACKEND,
     &shortcuts::BACKEND,
     &suggestions::BACKEND,
     &system::BACKEND,
@@ -332,7 +333,7 @@ mod tests {
 
     #[test]
     fn catalogue_matches_the_widget_folders() {
-        assert_eq!(MANIFESTS.len(), 13);
+        assert_eq!(MANIFESTS.len(), 14);
         let clock = manifest("clock").unwrap();
         assert_eq!((clock.label, clock.icon, clock.squeeze), ("Horloge", "clock", None));
         assert_eq!(SQUEEZE_ORDER.first(), Some(&"suggestions"), "masqué le premier");

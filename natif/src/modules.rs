@@ -21,12 +21,20 @@ pub struct Module {
     pub icon: &'static str,
 }
 
-pub const MODULES: &[Module] = &[Module {
-    id: "claude_sessions",
-    name: "Sessions Claude Code",
-    description: "Sessions de Claude Code sur la barre, « Claude attend » dans l’îlot, consommation du jour, captures d’écran proposées à la session qui attend.",
-    icon: "terminalWindow",
-}];
+pub const MODULES: &[Module] = &[
+    Module {
+        id: "claude_sessions",
+        name: "Sessions Claude Code",
+        description: "Sessions de Claude Code sur la barre, « Claude attend » dans l’îlot, consommation du jour, captures d’écran proposées à la session qui attend.",
+        icon: "terminalWindow",
+    },
+    Module {
+        id: "phone",
+        name: "Téléphone",
+        description: "Batterie du téléphone sur la barre, envoyée par l’appli Horizon Mobile, appairée par QR code. Horizon écoute alors sur le réseau local.",
+        icon: "deviceMobile",
+    },
+];
 
 /// Modules activés (posé par [`resolve`] au démarrage, puis par [`set`]).
 static ENABLED: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
@@ -51,17 +59,18 @@ fn chosen(id: &str) -> Option<bool> {
     let f = crate::state::settings().features;
     match id {
         "claude_sessions" => f.claude_sessions,
+        "phone" => f.phone,
         _ => None,
     }
 }
 
-/// Le module `id` sert déjà : un de ses widgets est sur une barre (tous profils), ou les hooks
-/// d'Horizon sont dans les réglages de Claude Code.
+/// Le module `id` sert déjà : un de ses widgets est sur une barre (tous profils), les hooks
+/// d'Horizon sont dans les réglages de Claude Code, ou un téléphone est appairé.
 fn in_use(app: &AppHandle, id: &str) -> bool {
     let on_a_bar = app.state::<AppState>().read(|l| {
         l.bars.iter().chain(l.profiles.iter().flat_map(|p| p.bars.iter())).flat_map(BarLayout::widgets).any(|w| w.kind.as_str() == id)
     });
-    on_a_bar || (id == "claude_sessions" && claude_hooks_installed())
+    on_a_bar || (id == "claude_sessions" && claude_hooks_installed()) || (id == "phone" && crate::widgets::phone::paired_on_disk())
 }
 
 /// Les hooks d'Horizon figurent dans `settings.json` de Claude Code (posés par l'installateur).
@@ -88,6 +97,7 @@ pub fn set(app: &AppHandle, id: &str, on: bool) -> Result<(), String> {
     let mut s = crate::state::settings();
     match m.id {
         "claude_sessions" => s.features.claude_sessions = Some(on),
+        "phone" => s.features.phone = Some(on),
         _ => return Err(format!("module sans réglage : {id}")),
     }
     crate::options::options_set(app, s)?;
@@ -103,6 +113,11 @@ pub fn set(app: &AppHandle, id: &str, on: bool) -> Result<(), String> {
         crate::widgets::start_one(app, m.id);
     } else if m.id == "claude_sessions" {
         crate::widgets::claude_sessions::clear(app);
+    }
+    if m.id == "phone" {
+        // Le service ne démarre qu'une fois : c'est lui qui suit l'état du module ensuite
+        // (serveur lancé ou arrêté, batteries retirées des barres).
+        crate::widgets::phone::refresh(app);
     }
     crate::ui::bar::plugins_changed(app);
     crate::status::wake(app);
@@ -124,7 +139,7 @@ mod tests {
     #[test]
     fn only_modules_can_be_off() {
         assert!(enabled("clock") && enabled("plugin:prisme"));
-        assert!(module("claude_sessions").is_some());
+        assert!(module("claude_sessions").is_some() && module("phone").is_some());
         assert!(MODULES.iter().all(|m| crate::widgets::MANIFESTS.iter().any(|w| w.id == m.id)), "un module est un widget d'Horizon");
     }
 }

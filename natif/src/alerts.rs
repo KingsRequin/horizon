@@ -148,7 +148,7 @@ pub fn announce(app: &AppHandle, kind: AlertKind, alert: Alert, island: bool, li
     true
 }
 
-/// Batterie du casque (seuil de la section « Alertes »).
+/// Alerte « batterie faible » d'un appareil (casque, téléphone, montre…).
 pub struct LowBattery {
     icon: &'static str,
     alert: LowAlert,
@@ -159,10 +159,17 @@ impl LowBattery {
         LowBattery { icon, alert: LowAlert::default() }
     }
 
-    /// Nouvelle mesure de l'appareil `name` ; annonce le passage sous le seuil.
+    /// Nouvelle mesure du casque `name` ; annonce le passage sous le seuil de la section
+    /// « Alertes ».
     pub fn update(&mut self, app: &AppHandle, name: &str, level: u8, charging: bool) {
         let alerts = crate::state::settings().alerts;
         let threshold = app.state::<crate::state::AppState>().read(|l| alerts.headset_threshold(l));
+        self.update_with(app, name, level, charging, threshold);
+    }
+
+    /// Nouvelle mesure de l'appareil `name` ; annonce le passage sous `threshold` (`None` :
+    /// alerte coupée).
+    pub fn update_with(&mut self, app: &AppHandle, name: &str, level: u8, charging: bool, threshold: Option<u8>) {
         let Some(t) = threshold else { return };
         if self.alert.update(level, charging, t) {
             log::info!("{name} : batterie faible ({level} %)");

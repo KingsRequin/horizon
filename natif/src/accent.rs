@@ -65,6 +65,7 @@ fn update(app: &AppHandle, f: impl FnOnce(&mut AccentSources)) {
     };
     if let Some(c) = bars {
         let _ = app.emit(EV_ACCENT, c);
+        crate::widgets::phone::accent_changed(app, c);
     }
     crate::plugins::events::emit(app, "accent", serde_json::json!({ "color": prisme.map(crate::plugins::events::hex) }));
 }

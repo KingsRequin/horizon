@@ -133,6 +133,26 @@ fn checks(app: &AppHandle) -> Vec<Check> {
         });
     }
 
+    // Module Téléphone (rien à dire s'il est désactivé : page Plugins).
+    if crate::modules::enabled("phone") {
+        use horizon_core::phone::firewall::FirewallState;
+        let h = crate::widgets::phone::health(app);
+        let phones = match (h.phones, h.connected) {
+            (0, _) => "aucun téléphone appairé".to_owned(),
+            (1, 1) => "1 téléphone appairé, connecté".to_owned(),
+            (1, _) => "1 téléphone appairé".to_owned(),
+            (n, c) => format!("{n} téléphones appairés, {c} connecté(s)"),
+        };
+        out.push(match (h.port, h.firewall) {
+            (Some(port), _) => Check::new("phone", "Téléphone", Level::Ok, format!("écoute sur le port {port} · {phones}")).at("dernier envoi", h.last_ms),
+            (None, FirewallState::Blocked) => {
+                Check::new("phone", "Téléphone", Level::Error, "le pare-feu de Windows bloque Horizon : page Téléphone, « Autoriser sur le réseau local »")
+            }
+            (None, FirewallState::Missing) => Check::new("phone", "Téléphone", Level::Off, "en attente de l’autorisation du pare-feu : page Téléphone"),
+            (None, _) => Check::new("phone", "Téléphone", Level::Error, "serveur à l’arrêt (voir le journal)"),
+        });
+    }
+
     // Mode jeu (plein écran sur l'écran principal).
     let game = crate::state::settings().features.game_mode;
     out.push(match crate::game::since_ms() {
