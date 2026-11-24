@@ -22,6 +22,7 @@ pub mod low_battery;
 pub mod media;
 pub mod misses;
 pub mod mixer;
+pub mod music;
 pub mod night;
 pub mod notifs;
 pub mod options_search;

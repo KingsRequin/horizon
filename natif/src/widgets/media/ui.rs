@@ -1,14 +1,17 @@
 //! Lecture en cours dans les barres (global `MediaData` de `ui/widgets/media/widget.slint`) :
 //! état et pochette reçus du service, position qui avance chaque seconde pendant la lecture,
-//! abonnement au son (halo des îlots, spectre du style graphique), commandes et molette ±10 s
-//! avec la bulle de la barre. Fil de l'interface.
+//! abonnement au son pour le fond choisi (`[music] backdrop` : halo, spectre, capsules),
+//! commandes et molette ±10 s avec la bulle de la barre. Fil de l'interface.
 
 use super::audio::{AudioFrame, AudioHub, BANDS, EV_AUDIO};
 use super::{Art, EV_MEDIA, EV_MEDIA_ART, MediaPayload, SEEK_MS};
+use crate::events::EV_OPTIONS;
 use crate::host::{self, AppHandle, Manager};
 use crate::ui::{BarWindow, MediaData, format, hint};
 use horizon_core::layout::{BarLayout, BarStyle};
 use horizon_core::media::MediaInfo;
+use horizon_core::music::{CAPSULES, capsules};
+use horizon_core::settings::Backdrop;
 use slint::{ComponentHandle, Model, ModelRc, SharedPixelBuffer, VecModel};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -19,7 +22,10 @@ struct Bar {
     label: String,
     window: slint::Weak<BarWindow>,
     graphic: bool,
+    /// Fond qui suit le son sur cette barre (jamais `Auto` : déjà traduit d'après son style).
+    backdrop: Backdrop,
     bands: Rc<VecModel<f32>>,
+    capsules: Rc<VecModel<f32>>,
     /// Abonnée au son.
     subscribed: bool,
     /// Avance cumulée des crans de molette rapprochés (ms).
@@ -129,18 +135,38 @@ fn live_bars() -> Vec<(String, BarWindow)> {
     })
 }
 
+/// Identifiant du fond pour l'interface (`MediaData.backdrop`) ; vide : aucun.
+fn backdrop_id(b: Backdrop) -> &'static str {
+    if b == Backdrop::Off { "" } else { b.id() }
+}
+
+/// Valeur d'une bande ou d'une capsule, au centième, posée seulement si elle a bougé.
+fn put(model: &VecModel<f32>, i: usize, v: f32) {
+    let v = (v.clamp(0.0, 1.0) * 100.0).round() / 100.0;
+    if model.row_data(i) != Some(v) {
+        model.set_row_data(i, v);
+    }
+}
+
 pub(super) fn bind(app: &AppHandle, window: &BarWindow, label: &str, bar: &BarLayout) {
     let g = window.global::<MediaData>();
     g.set_glow_mask(GLOW_MASK.with(Clone::clone));
     let bands = Rc::new(VecModel::from(vec![0.0f32; BANDS]));
     g.set_bands(ModelRc::from(bands.clone()));
+    let caps = Rc::new(VecModel::from(vec![0.0f32; CAPSULES]));
+    g.set_capsules(ModelRc::from(caps.clone()));
+    let graphic = bar.style == BarStyle::Graphic;
+    let backdrop = crate::state::settings().music.backdrop.resolved(graphic);
+    g.set_backdrop(backdrop_id(backdrop).into());
     BARS.with_borrow_mut(|b| {
         b.retain(|x| x.label != label);
         b.push(Bar {
             label: label.to_owned(),
             window: window.as_weak(),
-            graphic: bar.style == BarStyle::Graphic,
+            graphic,
+            backdrop,
             bands,
+            capsules: caps,
             subscribed: false,
             seek_total: 0,
         })
@@ -156,6 +182,8 @@ pub(super) fn bind(app: &AppHandle, window: &BarWindow, label: &str, bar: &BarLa
             on_media(&a, &l, p);
         }
     });
+    let (a, l) = (app.clone(), label.to_owned());
+    host::listen(EV_OPTIONS, Some(label), move |_| on_options(&a, &l));
     let l = label.to_owned();
     host::listen(EV_MEDIA_ART, Some(label), move |e| {
         if let Some(art) = e.payload::<Option<Art>>() {
@@ -208,13 +236,40 @@ fn on_media(app: &AppHandle, label: &str, p: &MediaPayload) {
         if !playing {
             g.set_glow(glow(false, None));
         }
-        // Le son n'est suivi que pendant la lecture (le hub ne sert pas les barres masquées).
-        if bar.subscribed != playing {
-            bar.subscribed = playing;
-            app.state::<AudioHub>().subscribe(label, "media", playing, bar.graphic);
-        }
+        follow_sound(app, bar, playing);
     });
     sync_tick();
+}
+
+/// Le son n'est suivi que pendant la lecture, et seulement si un fond le montre (le hub ne sert
+/// pas les barres masquées) ; les bandes ne sont demandées que pour un fond qui les dessine.
+fn follow_sound(app: &AppHandle, bar: &mut Bar, playing: bool) {
+    let want = playing && bar.backdrop != Backdrop::Off;
+    if bar.subscribed != want {
+        bar.subscribed = want;
+        app.state::<AudioHub>().subscribe(&bar.label, "media", want, bar.backdrop.wants_bands());
+    }
+}
+
+/// Réglages modifiés : le fond de la barre `label` est relu, et son abonnement au son refait
+/// s'il a changé (un autre fond ne demande pas la même chose au hub).
+fn on_options(app: &AppHandle, label: &str) {
+    let playing = NOW.with_borrow(Now::playing);
+    with_bar(label, |bar, w| {
+        let backdrop = crate::state::settings().music.backdrop.resolved(bar.graphic);
+        if backdrop == bar.backdrop {
+            return;
+        }
+        bar.backdrop = backdrop;
+        let g = w.global::<MediaData>();
+        g.set_backdrop(backdrop_id(backdrop).into());
+        g.set_glow(glow(false, None));
+        if bar.subscribed {
+            bar.subscribed = false;
+            app.state::<AudioHub>().subscribe(label, "media", false, false);
+        }
+        follow_sound(app, bar, playing);
+    });
 }
 
 fn on_art(label: &str, art: Option<&Art>) {
@@ -230,18 +285,11 @@ fn on_art(label: &str, art: Option<&Art>) {
 
 fn on_audio(label: &str, f: &AudioFrame) {
     let playing = NOW.with_borrow(Now::playing);
-    with_bar(label, |bar, w| {
-        if bar.graphic {
-            for (i, v) in f.bands.iter().take(BANDS).enumerate() {
-                // Au centième, et seulement si la bande a bougé.
-                let v = (v.clamp(0.0, 1.0) * 100.0).round() / 100.0;
-                if bar.bands.row_data(i) != Some(v) {
-                    bar.bands.set_row_data(i, v);
-                }
-            }
-        } else {
-            w.global::<MediaData>().set_glow(glow(playing, Some(f)));
-        }
+    with_bar(label, |bar, w| match bar.backdrop {
+        Backdrop::Halo => w.global::<MediaData>().set_glow(glow(playing, Some(f))),
+        Backdrop::Spectrum => f.bands.iter().take(BANDS).enumerate().for_each(|(i, v)| put(&bar.bands, i, *v)),
+        Backdrop::Capsules => capsules(&f.bands).iter().enumerate().for_each(|(i, v)| put(&bar.capsules, i, *v)),
+        Backdrop::Off | Backdrop::Auto => {}
     });
 }
 
@@ -315,7 +363,7 @@ mod tests {
 
     #[test]
     fn glow_follows_the_sound() {
-        let f = |level, beat| AudioFrame { level, bass: 0.0, bands: Vec::new(), beat };
+        let f = |level, beat| AudioFrame { level, bass: 0.0, bands: Vec::new(), beat, sent_ms: 0 };
         assert_eq!(glow(false, Some(&f(1.0, true))), 0.12);
         assert_eq!(glow(true, None), 0.12);
         assert_eq!(glow(true, Some(&f(0.5, false))), 0.65);

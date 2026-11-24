@@ -12,7 +12,7 @@ use crate::host::{AppHandle, Emitter, Manager};
 use crate::state::{AppState, settings, settings_path};
 use crate::util::{lock, start_thread};
 use horizon_core::layout::{BarOptionsPatch, BarRole, BarStyle, Interaction, TilesMode};
-use horizon_core::settings::{Settings, SettingsFile};
+use horizon_core::settings::{Backdrop, Pulse, Settings, SettingsFile};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -249,6 +249,8 @@ pub fn apply_edit(s: &mut Settings, id: &str, v: &Edit) -> Result<(), String> {
         "features.windows_accent" => f.windows_accent = flag()?,
         "features.game_mode" => f.game_mode = flag()?,
         "features.auto_update" => f.auto_update = flag()?,
+        "music.backdrop" => s.music.backdrop = Backdrop::parse(&text()?).ok_or_else(bad)?,
+        "music.pulse" => s.music.pulse = Pulse::parse(&text()?).ok_or_else(bad)?,
         "night.start" => n.start = normalize_time(&text()?).ok_or_else(bad)?,
         "night.end" => n.end = normalize_time(&text()?).ok_or_else(bad)?,
         "night.opacity" => n.opacity = int(10, 100)? as f32 / 100.0,
@@ -416,8 +418,13 @@ mod tests {
         assert!((s.night.opacity - 0.55).abs() < 1e-6);
         apply_edit(&mut s, "night.start", &Edit::Text("7h5".into())).unwrap();
         assert_eq!(s.night.start, "07:05");
+        // Animations de la musique : l'identifiant du choix.
+        apply_edit(&mut s, "music.backdrop", &Edit::Text("capsules".into())).unwrap();
+        apply_edit(&mut s, "music.pulse", &Edit::Text("horizon".into())).unwrap();
+        assert_eq!((s.music.backdrop, s.music.pulse), (Backdrop::Capsules, Pulse::Horizon));
         // Refus : rien ne change.
         let before = s.clone();
+        assert!(apply_edit(&mut s, "music.pulse", &Edit::Text("stroboscope".into())).is_err());
         assert!(apply_edit(&mut s, "night.end", &Edit::Text("25:00".into())).is_err());
         assert!(apply_edit(&mut s, "features.osd", &Edit::Int(1)).is_err());
         assert!(apply_edit(&mut s, "inconnu", &Edit::Bool(true)).is_err());

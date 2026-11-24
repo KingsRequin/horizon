@@ -100,6 +100,12 @@ fn received(args: &[String]) {
     if let Some(i) = args.iter().position(|a| a == "--alerte-essai") {
         crate::alerts::essai(&app, args.get(i + 1).map_or("", String::as_str));
     }
+    // Lecture et son d'essai, pour voir les animations de la musique
+    // (`--musique-essai [secondes]`, 20 s sans précision).
+    if let Some(i) = args.iter().position(|a| a == "--musique-essai") {
+        let secs = args.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(20);
+        crate::widgets::media::essai(&app, secs);
+    }
     // Fenêtre des réglages (`--reglages [page]`) et palette d'essai, sans action
     // (`--palette-essai`).
     if let Some(i) = args.iter().position(|a| a == "--reglages") {

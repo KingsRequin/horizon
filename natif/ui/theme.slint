@@ -44,6 +44,14 @@ export global Theme {
     out property <duration> dur-color: reduced-motion ? 0ms : 700ms;
     out property <duration> dur-pulse: reduced-motion ? 0ms : 1600ms;
     out property <duration> dur-ambient: reduced-motion ? 0ms : 1500ms;
+    // Animations de la musique (ui/pulse.slint, fond « Capsules ») : passage d'une image de son à
+    // la suivante (20 par seconde), teinte de la respiration, onde et éclat d'une grosse caisse.
+    // Les deux premières passent par `PulseState.sound` et `PulseState.breath`, nulles quand la
+    // barre est en retard sur le son.
+    out property <duration> dur-sound: reduced-motion ? 0ms : 90ms;
+    out property <duration> dur-breath: reduced-motion ? 0ms : 420ms;
+    out property <duration> dur-kick: reduced-motion ? 0ms : 650ms;
+    out property <duration> dur-spark: reduced-motion ? 0ms : 900ms;
 
     // Accent : couleur de la pochette en cours (fond d'écran sinon), orange d'origine.
     in-out property <color> accent: #f97316;

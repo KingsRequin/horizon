@@ -113,6 +113,10 @@ activé dans la page Plugins.
 - Aucune animation sans fin ; ce qui suit le son est posé au plus 20 fois par seconde et
   seulement si la valeur change ; rien ne tourne quand c'est inutile (barre cachée, plein écran,
   session verrouillée).
+- Une valeur qui suit le son ne se lisse que par `animate … { duration: PulseState.sound; }`
+  (`ui/pulse.slint`) : une transition de durée fixe, relancée à chaque image de son, se fige
+  quand l'interface est chargée. Les animations de la musique se contrôlent sans rien jouer :
+  `horizon.exe --musique-essai [secondes]`.
 - Jamais de `PopupWindow` Slint (coupée par la barre) : panneau = fenêtre surgissante.
 - Rendu logiciel : ni ombre, ni masque, ni transformation (rotation, échelle animée) ; une mise
   en page dont la taille dépend de la largeur de la fenêtre fait une boucle de liaison (poser à la

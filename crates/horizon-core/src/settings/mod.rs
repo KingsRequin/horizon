@@ -8,11 +8,13 @@
 mod alerts;
 mod discord;
 mod features;
+mod music;
 mod write;
 
 pub use alerts::AlertSettings;
 pub use discord::DiscordSettings;
 pub use features::FeatureSettings;
+pub use music::{Backdrop, MusicSettings, Pulse};
 
 use crate::night::NightSettings;
 use crate::palette::PaletteSettings;
@@ -78,6 +80,7 @@ pub struct Settings {
     pub alerts: AlertSettings,
     pub timer: TimerSettings,
     pub features: FeatureSettings,
+    pub music: MusicSettings,
     pub discord: DiscordSettings,
 }
 

@@ -212,6 +212,36 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Appli de la lecture d'essai.
+const ESSAI_APP: &str = "horizon.essai";
+
+/// Lecture d'essai (`horizon.exe --musique-essai [secondes]` pendant qu'Horizon tourne) : les
+/// barres montrent un morceau en lecture et reçoivent un son d'essai, pour voir les animations
+/// de la musique sans rien jouer (pendant un jeu aussi). À la fin, la lecture d'avant revient,
+/// sauf si une vraie l'a remplacée entre-temps.
+pub fn essai(app: &AppHandle, secs: u64) {
+    let secs = secs.clamp(1, 600);
+    let before = media_state(app).payload;
+    let info = MediaInfo {
+        app_id: ESSAI_APP.into(),
+        title: "Morceau d’essai".into(),
+        artist: "Horizon".into(),
+        playing: true,
+        position_ms: 0,
+        duration_ms: 180_000,
+        timeline_at_ms: horizon_core::time::now_ms(),
+    };
+    log::info!("musique d'essai : {secs} s");
+    on_snapshot(app, MediaSnapshot { info: Some(info), sessions: before.sessions.clone(), art: None });
+    app.state::<audio::AudioHub>().essai(std::time::Duration::from_secs(secs));
+    let app = app.clone();
+    crate::util::spawn_named("musique-essai", move || {
+        std::thread::sleep(std::time::Duration::from_secs(secs));
+        if current_app_id(&app).as_deref() == Some(ESSAI_APP) {
+            on_snapshot(&app, MediaSnapshot { info: before.info, sessions: before.sessions, art: None });
+        }
+    });
+}
 
 /// Identifiant SMTC de l'appli de la lecture en cours.
 pub fn current_app_id(app: &AppHandle) -> Option<String> {
