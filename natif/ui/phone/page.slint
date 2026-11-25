@@ -148,10 +148,12 @@ export component PhonePage inherits Rectangle {
                     }
                 }
             }
-            SettingsHeading {
+            // Masqué pendant que le code d'appairage est affiché : deux QR codes à l'écran, et
+            // le viseur de l'appli hésite entre les deux.
+            if !PhonePageData.pairing: SettingsHeading {
                 text: "1. Installe l’appli";
             }
-            QrCard {
+            if !PhonePageData.pairing: QrCard {
                 title: "Horizon Mobile pour Android";
                 hint: "Vise ce code avec l’appareil photo du téléphone, puis installe la dernière version.";
                 detail: "github.com/KingsRequin/horizon-mobile";
@@ -159,7 +161,7 @@ export component PhonePage inherits Rectangle {
                 code-size: 116px;
             }
             SettingsHeading {
-                text: "2. Appaire ton téléphone";
+                text: PhonePageData.pairing ? "Appaire ton téléphone" : "2. Appaire ton téléphone";
             }
             if !PhonePageData.pairing: SettingRow {
                 label: "Code d’appairage";
