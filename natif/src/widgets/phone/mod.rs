@@ -173,6 +173,9 @@ impl Core {
     }
 
     /// Première trame d'un téléphone : son identifiant et la réponse, ou le refus.
+    // Le refus a la taille de la réponse (`hello.ok`) et ne sert qu'une fois par connexion :
+    // l'emballer n'apporterait rien.
+    #[allow(clippy::result_large_err)]
     pub fn first(&self, msg: FromPhone, now_ms: u64) -> Result<(String, ToPhone), ToPhone> {
         match msg {
             FromPhone::PairRequest { token, device_id, device_name, .. } => {

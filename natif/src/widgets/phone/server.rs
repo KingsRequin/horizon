@@ -47,6 +47,9 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(3);
 pub trait Handler: Send + Sync + 'static {
     /// Première trame (`pair.request` ou `hello`) venue de `peer` : l'identifiant du téléphone
     /// et la réponse à lui envoyer, ou le refus (la connexion est alors fermée).
+    // Le refus a la taille de la réponse (`hello.ok`) et ne sert qu'une fois par connexion :
+    // l'emballer n'apporterait rien.
+    #[allow(clippy::result_large_err)]
     fn first(&self, msg: FromPhone, peer: IpAddr) -> Result<(String, ToPhone), ToPhone>;
     /// Message d'un téléphone dont la session est ouverte.
     fn message(&self, phone_id: &str, msg: FromPhone);
