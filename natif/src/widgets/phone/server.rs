@@ -424,7 +424,7 @@ mod tests {
                 }
                 FromPhone::Hello { device_token, .. } if device_token == "jeton-permanent" => Ok((
                     "tel-test".into(),
-                    ToPhone::HelloOk { pc_id: "pc-test".into(), pc_name: "Test".into(), protocol: 1, features: vec!["battery".into()], accent: "#f97316".into() },
+                    ToPhone::HelloOk { pc_id: "pc-test".into(), pc_name: "Test".into(), protocol: 1, features: vec!["battery".into()], granted: vec!["battery".into()], accent: "#f97316".into() },
                 )),
                 FromPhone::Hello { .. } => Err(ToPhone::HelloRejected { reason: "bad_token".into() }),
                 _ => Err(ToPhone::PairRejected { reason: "unknown".into() }),

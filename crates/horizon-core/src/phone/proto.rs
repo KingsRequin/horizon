@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// Version du protocole parlée par cette version d'Horizon.
 pub const PROTOCOL: u32 = 1;
 /// Fonctions annoncées au téléphone dans `hello.ok`.
-pub const FEATURES: &[&str] = &["battery"];
+pub const FEATURES: &[&str] = &["battery", "media"];
 
 /// Genre d'un appareil dont le téléphone envoie la batterie.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,7 +36,7 @@ pub struct DeviceBattery {
 }
 
 /// Message reçu du téléphone.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "type", rename_all_fields = "camelCase")]
 pub enum FromPhone {
     #[serde(rename = "pair.request")]
@@ -45,24 +45,79 @@ pub enum FromPhone {
     Hello { device_id: String, device_token: String, protocol: u32, app_version: String },
     #[serde(rename = "phone.battery")]
     Battery { devices: Vec<DeviceBattery> },
+    /// Ce que le téléphone veut recevoir (`media`, `volume`) ; remplace la liste précédente.
+    #[serde(rename = "watch")]
+    Watch { topics: Vec<String> },
+    /// `play_pause`, `next` ou `previous` (trié par `remote::command`).
+    #[serde(rename = "media.command")]
+    MediaCommand { action: String },
+    /// Aller à cette position du morceau en cours.
+    #[serde(rename = "media.seek")]
+    MediaSeek { position_ms: u64 },
+    /// Suivre cette lecture plutôt que celle choisie par Windows.
+    #[serde(rename = "media.select")]
+    MediaSelect { app_id: String },
+    /// Volume général, de 0 à 1.
+    #[serde(rename = "volume.set")]
+    VolumeSet { volume: f32 },
+    #[serde(rename = "volume.mute")]
+    VolumeMute { muted: bool },
     #[serde(other)]
     Unknown,
 }
 
 /// Message envoyé au téléphone.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all_fields = "camelCase")]
 pub enum ToPhone {
     #[serde(rename = "pair.accepted")]
     PairAccepted { device_token: String, pc_id: String, pc_name: String },
     #[serde(rename = "pair.rejected")]
     PairRejected { reason: String },
+    /// `features` : ce que ce PC sait faire ; `granted` : ce que ce téléphone a le droit de faire.
     #[serde(rename = "hello.ok")]
-    HelloOk { pc_id: String, pc_name: String, protocol: u32, features: Vec<String>, accent: String },
+    HelloOk { pc_id: String, pc_name: String, protocol: u32, features: Vec<String>, granted: Vec<String>, accent: String },
     #[serde(rename = "hello.rejected")]
     HelloRejected { reason: String },
     #[serde(rename = "accent")]
     Accent { color: String },
+    /// Les droits de ce téléphone ont changé pendant la session.
+    #[serde(rename = "rights")]
+    Rights { granted: Vec<String> },
+    /// Lecture en cours (`None` : rien ne joue) et lectures entre lesquelles choisir.
+    #[serde(rename = "media.state")]
+    MediaState { media: Option<MediaView>, sessions: Vec<SessionView> },
+    /// Pochette du morceau `art_key` : JPEG en base64.
+    #[serde(rename = "media.art")]
+    MediaArt { art_key: String, jpeg: String },
+    /// Volume général (sortie par défaut), de 0 à 1.
+    #[serde(rename = "volume.state")]
+    VolumeState { volume: f32, muted: bool },
+}
+
+/// Lecture en cours telle que le téléphone la reçoit. `position_ms` vaut au moment de l'envoi :
+/// le téléphone la fait avancer depuis la réception (les deux horloges ne sont pas les mêmes).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaView {
+    pub app_id: String,
+    pub app_name: String,
+    pub title: String,
+    pub artist: String,
+    pub playing: bool,
+    pub position_ms: u64,
+    /// 0 : pas de durée (radio, direct).
+    pub duration_ms: u64,
+    /// Clé de la pochette de ce morceau (`media.art`) ; `None` : pas de pochette.
+    pub art_key: Option<String>,
+}
+
+/// Une lecture que le téléphone peut choisir de suivre.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionView {
+    pub app_id: String,
+    pub name: String,
 }
 
 /// Message du téléphone ; `None` : JSON illisible, sans `type`, ou champs obligatoires absents.
@@ -115,12 +170,68 @@ mod tests {
             let expected: serde_json::Value = serde_json::from_str(fixture(name)).unwrap();
             assert_eq!(sent, expected, "{name}");
         };
-        let ok = ToPhone::HelloOk { pc_id: "pc-1".into(), pc_name: "Bureau".into(), protocol: 1, features: vec!["battery".into()], accent: "#f97316".into() };
-        same(ok, "hello.ok.json");
         same(ToPhone::PairRejected { reason: "expired".into() }, "pair.rejected.json");
         same(ToPhone::HelloRejected { reason: "unknown_device".into() }, "hello.rejected.json");
         same(ToPhone::Accent { color: "#a06cd5".into() }, "accent.json");
         let token = "3qX8mZ1kLr5vYt0aBn7cWd2eFg4hJi6oPs9uQx_-AbC";
         same(ToPhone::PairAccepted { device_token: token.into(), pc_id: "pc-1".into(), pc_name: "Bureau".into() }, "pair.accepted.json");
+    }
+
+    #[test]
+    fn every_new_message_from_the_phone_parses() {
+        assert_eq!(parse(fixture("watch.json")), Some(FromPhone::Watch { topics: vec!["media".into(), "volume".into()] }));
+        assert_eq!(parse(fixture("media.command.json")), Some(FromPhone::MediaCommand { action: "play_pause".into() }));
+        assert_eq!(parse(fixture("media.seek.json")), Some(FromPhone::MediaSeek { position_ms: 68_000 }));
+        assert_eq!(parse(fixture("media.select.json")), Some(FromPhone::MediaSelect { app_id: "Spotify.exe".into() }));
+        assert_eq!(parse(fixture("volume.set.json")), Some(FromPhone::VolumeSet { volume: 0.72 }));
+        assert_eq!(parse(fixture("volume.mute.json")), Some(FromPhone::VolumeMute { muted: true }));
+    }
+
+    #[test]
+    fn a_media_command_with_an_unknown_action_is_kept_as_text() {
+        // Le tri des actions est fait par `remote::command` : ici, rien ne se perd.
+        assert_eq!(parse(r#"{"type":"media.command","action":"shuffle"}"#), Some(FromPhone::MediaCommand { action: "shuffle".into() }));
+    }
+
+    #[test]
+    fn every_new_message_to_the_phone_matches_its_fixture() {
+        let same = |msg: ToPhone, name: &str| {
+            let sent: serde_json::Value = serde_json::from_str(&msg.to_json()).unwrap();
+            let expected: serde_json::Value = serde_json::from_str(fixture(name)).unwrap();
+            assert_eq!(sent, expected, "{name}");
+        };
+        let rights = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        let ok = ToPhone::HelloOk {
+            pc_id: "pc-1".into(),
+            pc_name: "Bureau".into(),
+            protocol: 1,
+            features: rights(&["battery", "media"]),
+            granted: rights(&["battery", "media", "sound"]),
+            accent: "#f97316".into(),
+        };
+        same(ok, "hello.ok.json");
+        same(ToPhone::Rights { granted: rights(&["battery", "sound"]) }, "rights.json");
+        let media = MediaView {
+            app_id: "Spotify.exe".into(),
+            app_name: "Spotify".into(),
+            title: "FROGZ".into(),
+            artist: "SPLATA".into(),
+            playing: true,
+            position_ms: 68_000,
+            duration_ms: 233_000,
+            art_key: Some("9f2c1e0a7b3d4c55".into()),
+        };
+        let sessions = vec![SessionView { app_id: "Spotify.exe".into(), name: "Spotify".into() }, SessionView { app_id: "Chrome".into(), name: "Google Chrome".into() }];
+        same(ToPhone::MediaState { media: Some(media), sessions }, "media.state.json");
+        same(ToPhone::MediaState { media: None, sessions: Vec::new() }, "media.state-vide.json");
+        same(ToPhone::MediaArt { art_key: "9f2c1e0a7b3d4c55".into(), jpeg: "/9j/4AAQSkZJRgABAQAAAQABAAD/2w==".into() }, "media.art.json");
+        same(ToPhone::VolumeState { volume: 0.5, muted: false }, "volume.state.json");
+    }
+
+    #[test]
+    fn the_hello_of_the_first_version_had_no_rights() {
+        // Gardé pour l'appli : un PC 0.8.0 n'envoie pas `granted`.
+        let old: serde_json::Value = serde_json::from_str(fixture("hello.ok-sans-droits.json")).unwrap();
+        assert!(old.get("granted").is_none() && old["features"] == serde_json::json!(["battery"]));
     }
 }

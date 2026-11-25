@@ -203,6 +203,8 @@ impl Core {
                     pc_name: self.pc_name.clone(),
                     protocol: PROTOCOL,
                     features: FEATURES.iter().map(|f| (*f).to_owned()).collect(),
+                    // Les droits par téléphone arrivent avec le registre (tâche suivante).
+                    granted: FEATURES.iter().map(|f| (*f).to_owned()).collect(),
                     accent: lock(&self.accent).clone(),
                 };
                 Ok((device_id, ok))
@@ -670,7 +672,7 @@ mod tests {
         assert_eq!((id.as_str(), pc_id.as_str(), pc_name.as_str()), ("tel-1", "pc-1", "Bureau"));
         assert_eq!(device_token.len(), 43, "32 octets aléatoires");
         let ok = core.first(hello("tel-1", &device_token), 2);
-        assert!(matches!(&ok, Ok((id, ToPhone::HelloOk { protocol: 1, features, accent, .. })) if id == "tel-1" && features == &["battery"] && accent == "#f97316"), "{ok:?}");
+        assert!(matches!(&ok, Ok((id, ToPhone::HelloOk { protocol: 1, features, accent, .. })) if id == "tel-1" && features == &["battery", "media"] && accent == "#f97316"), "{ok:?}");
         assert!(matches!(core.first(hello("tel-1", "faux"), 3), Err(ToPhone::HelloRejected { reason }) if reason == "bad_token"));
         let newer = FromPhone::Hello { device_id: "tel-1".into(), device_token, protocol: 2, app_version: "9".into() };
         assert!(matches!(core.first(newer, 3), Err(ToPhone::HelloRejected { reason }) if reason == "protocol"));
