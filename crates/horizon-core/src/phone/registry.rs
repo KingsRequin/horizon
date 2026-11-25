@@ -18,6 +18,18 @@ pub struct Phone {
     pub token_hash: String,
     pub paired_ms: u64,
     pub last_seen_ms: u64,
+    /// Ce que ce téléphone a le droit de faire ; absent d'un fichier de la 0.1 : les droits par
+    /// défaut.
+    #[serde(default = "default_granted")]
+    pub granted: Vec<String>,
+}
+
+/// Droits qui existent. `battery` ne se retire pas ; `input` n'est jamais accordé d'office.
+pub const RIGHTS: &[&str] = &["battery", "media", "sound", "input"];
+
+/// Droits d'un téléphone qui vient d'être appairé.
+pub fn default_granted() -> Vec<String> {
+    ["battery", "media", "sound"].iter().map(|s| (*s).to_owned()).collect()
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,7 +63,7 @@ impl Registry {
     /// Appaire le téléphone `id` ; un téléphone déjà connu reçoit son nouveau jeton.
     pub fn add(&mut self, id: &str, name: &str, token: &str, now_ms: u64) {
         self.phones.retain(|p| p.id != id);
-        self.phones.push(Phone { id: id.to_owned(), name: short_name(name), token_hash: hash_token(token), paired_ms: now_ms, last_seen_ms: now_ms });
+        self.phones.push(Phone { id: id.to_owned(), name: short_name(name), token_hash: hash_token(token), paired_ms: now_ms, last_seen_ms: now_ms, granted: default_granted() });
         while self.phones.len() > MAX_PHONES {
             let oldest = self.phones.iter().enumerate().min_by_key(|(_, p)| p.last_seen_ms).map(|(i, _)| i).expect("liste non vide");
             self.phones.remove(oldest);
@@ -66,6 +78,31 @@ impl Registry {
         }
         phone.last_seen_ms = now_ms;
         Ok(())
+    }
+
+    /// Droits du téléphone `id`, dans l'ordre de [`RIGHTS`] ; vide s'il n'est pas connu.
+    pub fn granted(&self, id: &str) -> Vec<String> {
+        let Some(phone) = self.phones.iter().find(|p| p.id == id) else { return Vec::new() };
+        RIGHTS.iter().filter(|r| phone.granted.iter().any(|g| g == *r)).map(|r| (*r).to_owned()).collect()
+    }
+
+    /// Accorde (`on`) ou retire le droit `right` au téléphone `id` ; vrai si quelque chose a
+    /// changé. `battery` ne se retire pas, un droit inconnu n'existe pas.
+    pub fn set_granted(&mut self, id: &str, right: &str, on: bool) -> bool {
+        if !RIGHTS.contains(&right) || (right == "battery" && !on) {
+            return false;
+        }
+        let Some(phone) = self.phones.iter_mut().find(|p| p.id == id) else { return false };
+        let had = phone.granted.iter().any(|g| g == right);
+        if had == on {
+            return false;
+        }
+        if on {
+            phone.granted.push(right.to_owned());
+        } else {
+            phone.granted.retain(|g| g != right);
+        }
+        true
     }
 
     /// Retire le téléphone `id` ; faux s'il n'était pas connu.
@@ -114,5 +151,36 @@ mod tests {
         assert_eq!(r.phones[0].name, "Pixel 9");
         assert_eq!(r.check("tel-1", "ancien", 3), Err("bad_token"));
         assert_eq!(r.check("tel-1", "nouveau", 3), Ok(()));
+    }
+
+    #[test]
+    fn an_old_registry_gets_the_default_rights() {
+        let old = r#"{"pc_id":"pc-1","phones":[{"id":"tel-1","name":"Pixel","token_hash":"ab","paired_ms":1,"last_seen_ms":2}]}"#;
+        let r = Registry::load(old);
+        assert_eq!(r.granted("tel-1"), vec!["battery", "media", "sound"]);
+        assert!(r.granted("inconnu").is_empty());
+    }
+
+    #[test]
+    fn input_is_never_granted_by_default() {
+        let mut r = Registry::default();
+        r.add("tel-1", "Pixel", "s", 1);
+        assert!(!r.granted("tel-1").contains(&"input".to_owned()));
+        assert!(r.set_granted("tel-1", "input", true));
+        assert!(!r.set_granted("tel-1", "input", true), "rien de changé");
+        assert!(Registry::load(&r.to_json()).granted("tel-1").contains(&"input".to_owned()), "enregistré");
+        r.add("tel-1", "Pixel", "s2", 2);
+        assert!(!r.granted("tel-1").contains(&"input".to_owned()), "un nouvel appairage repart des droits par défaut");
+    }
+
+    #[test]
+    fn battery_cannot_be_withdrawn_and_unknown_rights_do_not_exist() {
+        let mut r = Registry::default();
+        r.add("tel-1", "Pixel", "s", 1);
+        assert!(!r.set_granted("tel-1", "battery", false));
+        assert!(!r.set_granted("tel-1", "tout", true));
+        assert!(!r.set_granted("inconnu", "media", false));
+        assert!(r.set_granted("tel-1", "media", false));
+        assert_eq!(r.granted("tel-1"), vec!["battery", "sound"]);
     }
 }
