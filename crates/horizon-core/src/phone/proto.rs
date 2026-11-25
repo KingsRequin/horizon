@@ -86,7 +86,8 @@ pub enum ToPhone {
     Rights { granted: Vec<String> },
     /// Lecture en cours (`None` : rien ne joue) et lectures entre lesquelles choisir.
     #[serde(rename = "media.state")]
-    MediaState { media: Option<MediaView>, sessions: Vec<SessionView> },
+    /// (Dans une boîte : le message reste petit, un refus de connexion aussi.)
+    MediaState { media: Option<Box<MediaView>>, sessions: Vec<SessionView> },
     /// Pochette du morceau `art_key` : JPEG en base64.
     #[serde(rename = "media.art")]
     MediaArt { art_key: String, jpeg: String },
@@ -222,7 +223,7 @@ mod tests {
             art_key: Some("9f2c1e0a7b3d4c55".into()),
         };
         let sessions = vec![SessionView { app_id: "Spotify.exe".into(), name: "Spotify".into() }, SessionView { app_id: "Chrome".into(), name: "Google Chrome".into() }];
-        same(ToPhone::MediaState { media: Some(media), sessions }, "media.state.json");
+        same(ToPhone::MediaState { media: Some(Box::new(media)), sessions }, "media.state.json");
         same(ToPhone::MediaState { media: None, sessions: Vec::new() }, "media.state-vide.json");
         same(ToPhone::MediaArt { art_key: "9f2c1e0a7b3d4c55".into(), jpeg: "/9j/4AAQSkZJRgABAQAAAQABAAD/2w==".into() }, "media.art.json");
         same(ToPhone::VolumeState { volume: 0.5, muted: false }, "volume.state.json");

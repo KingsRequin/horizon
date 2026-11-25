@@ -86,7 +86,7 @@ pub fn art_key(app_id: &str, title: &str, artist: &str) -> String {
 /// État du média pour le téléphone, position extrapolée à `now_ms`. `has_art` : une pochette
 /// est connue pour ce morceau.
 pub fn media_message(info: Option<&MediaInfo>, app_name: &str, sessions: &[(String, String)], now_ms: u64, has_art: bool) -> ToPhone {
-    let media = info.map(|i| MediaView {
+    let media = info.map(|i| Box::new(MediaView {
         app_id: i.app_id.clone(),
         app_name: app_name.to_owned(),
         title: i.title.clone(),
@@ -95,7 +95,7 @@ pub fn media_message(info: Option<&MediaInfo>, app_name: &str, sessions: &[(Stri
         position_ms: position_at(i, now_ms),
         duration_ms: i.duration_ms,
         art_key: has_art.then(|| art_key(&i.app_id, &i.title, &i.artist)),
-    });
+    }));
     let sessions = sessions.iter().map(|(app_id, name)| SessionView { app_id: app_id.clone(), name: name.clone() }).collect();
     ToPhone::MediaState { media, sessions }
 }
