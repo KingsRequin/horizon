@@ -302,7 +302,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "audio-commun"
-version = "0.2.0"
+version = "0.7.3"
 dependencies = [
  "anyhow",
  "log",
@@ -1160,7 +1160,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "faux-telephone"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -1566,7 +1566,7 @@ dependencies = [
  "log",
  "presser",
  "thiserror 2.0.21",
- "windows 0.62.2",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -1684,7 +1684,7 @@ dependencies = [
 
 [[package]]
 name = "horizon-core"
-version = "0.7.5"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1701,14 +1701,14 @@ dependencies = [
 
 [[package]]
 name = "horizon-hook"
-version = "0.7.5"
+version = "0.8.0"
 dependencies = [
  "windows 0.62.2",
 ]
 
 [[package]]
 name = "horizon-natif"
-version = "0.7.5"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -1747,7 +1747,7 @@ dependencies = [
 
 [[package]]
 name = "horizon-sys"
-version = "0.7.5"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "audio-commun",
@@ -2110,7 +2110,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
