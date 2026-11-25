@@ -57,6 +57,11 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Couleur posée en ce moment dans les fenêtres (pendant un fondu : celle de l'instant).
+pub fn shown() -> [u8; 3] {
+    STATE.with_borrow(|s| s.shown)
+}
+
 /// Une fenêtre s'ouvre : elle prend l'accent courant, puis suit ses changements. `set` pose la
 /// couleur dans son global `Theme` (renvoie faux quand la fenêtre a disparu).
 pub fn register(set: impl Fn(Color) -> bool + 'static) {

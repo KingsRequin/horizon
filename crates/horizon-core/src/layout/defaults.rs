@@ -66,6 +66,7 @@ impl BarLayout {
             height: super::BAND_HEIGHT,
             // Nouvelle barre : tuiles dans un volet (rien de réservé sous la bande).
             tiles_mode: TilesMode::Click,
+            music: super::BarMusic::for_style(style),
             left,
             center,
             right,
@@ -82,7 +83,7 @@ impl Layout {
                 .iter()
                 .map(|m| BarLayout::default_for(m, role_of(m, monitors)))
                 .collect(),
-            migrations: MIGRATIONS.iter().map(|(mark, _)| (*mark).to_owned()).collect(),
+            migrations: MIGRATIONS.iter().map(|(mark, _)| *mark).chain([super::MIGRATION_MUSIC]).map(str::to_owned).collect(),
             profiles: vec![Profile::default_profile()],
             active_profile: DEFAULT_PROFILE.into(),
             auto_from: None,

@@ -1,0 +1,26 @@
+// Capsules (fond « Capsules » de `[music] backdrop`) : cinq capsules centrées à côté du titre,
+// une par groupe de bandes (`horizon_core::music::capsules`, posées par Rust au plus 20 fois par
+// seconde). Entre deux images de son, la hauteur glisse (sauf interface en retard sur le son,
+// `PulseState.sound`) ; hors lecture, cinq points.
+
+import { Theme } from "../../theme.slint";
+import { PulseState } from "../../pulse.slint";
+
+export component Capsules inherits Rectangle {
+    in property <[float]> levels;
+    in property <bool> playing;
+    property <length> dot: 3px;
+    property <length> gap: 3px;
+    width: root.levels.length * (root.dot + root.gap) - root.gap;
+    height: 22px;
+    for v[i] in root.levels: Rectangle {
+        x: i * (root.dot + root.gap);
+        y: (root.height - self.height) / 2;
+        width: root.dot;
+        height: root.dot + (root.height - root.dot) * (root.playing ? v : 0);
+        border-radius: root.dot / 2;
+        background: Theme.accent.mix(Colors.white, 0.85);
+        opacity: root.playing ? 0.95 : Theme.o-stale;
+        animate height { duration: PulseState.sound; easing: linear; }
+    }
+}

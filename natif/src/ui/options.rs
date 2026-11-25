@@ -13,7 +13,7 @@ use crate::options::{self, Capture, Edit, OptionsView};
 use crate::settings_window::{LABEL, SettingsPage};
 use crate::ui::menu::{self, Entry};
 use horizon_core::layout::{BAND_HEIGHT, BarOptionsPatch, BarStyle, Interaction, MAX_BAR_HEIGHT, TilesMode};
-use horizon_core::settings::Settings;
+use horizon_core::settings::{Backdrop, Progress, Pulse, Settings};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -239,6 +239,13 @@ fn fill() {
             .into(),
             tiles: tiles_name(b.tiles_mode).into(),
             tiles_hint: TILES_HINTS[b.tiles_mode as usize].into(),
+            has_media: b.has_media,
+            music_backdrop: b.music.backdrop.label().into(),
+            music_backdrop_hint: b.music.backdrop.hint().into(),
+            music_progress: b.music.progress.label().into(),
+            music_progress_hint: b.music.progress.hint().into(),
+            music_pulse: b.music.pulse.label(b.style == BarStyle::Graphic).into(),
+            music_pulse_hint: pulse_hint(b).into(),
         })
         .collect();
     super::model::sync_rc(&g.get_bars(), bars, |m| g.set_bars(m));
@@ -275,7 +282,6 @@ fn fill() {
     g.set_headset_switch(f.headset_switch);
     g.set_osd(f.osd);
     g.set_osd_track(f.osd_track);
-    g.set_bar_pulse(f.bar_pulse);
     g.set_wallpaper_accent(f.wallpaper_accent);
     g.set_windows_accent(f.windows_accent);
     g.set_game_mode(f.game_mode);
@@ -296,6 +302,14 @@ fn fill() {
     if g.get_hotkey_error().is_empty() {
         g.set_hotkey_error(view.hotkey_error.clone().unwrap_or_default().into());
     }
+}
+
+/// Explication de la pulsation d'une barre ; la lumière qui tourne sans widget Lecture en cours
+/// le dit.
+fn pulse_hint(b: &options::BarOptions) -> String {
+    let p = b.music.pulse;
+    let hint = p.hint(b.style == BarStyle::Graphic);
+    if p == Pulse::Comet && !b.has_media { format!("{hint} Cette barre n’a pas de widget Lecture en cours : rien ne tourne.") } else { hint.to_owned() }
 }
 
 fn style_name(s: BarStyle) -> &'static str {
@@ -412,6 +426,9 @@ fn set_bar(monitor: &str, key: &str, value: &str) {
         "interaction" => patch.interaction = serde_json::from_value(serde_json::Value::String(value.into())).ok(),
         "autohide" => patch.autohide = Some(value == "true"),
         "tiles" => patch.tiles_mode = serde_json::from_value(serde_json::Value::String(value.into())).ok(),
+        "backdrop" => patch.backdrop = Backdrop::parse(value),
+        "progress" => patch.progress = Progress::parse(value),
+        "pulse" => patch.pulse = Pulse::parse(value),
         "height" if value == "custom" => {
             with(|s| s.custom.insert(monitor.to_owned()));
             return fill();
@@ -457,16 +474,42 @@ fn pick(id: &str, x: f32, y: f32) {
             }
             list
         }
+        // Animations de la musique d'une barre : « bar.<clé>|<écran> ».
+        _ if id.starts_with("bar.") => {
+            let Some((key, monitor)) = id.trim_start_matches("bar.").split_once('|') else { return };
+            let Some(b) = view.bars.iter().find(|b| b.monitor_id == monitor) else { return };
+            let entries = music_entries(key, b.music, b.style == BarStyle::Graphic, b.has_media);
+            let (key, monitor) = (key.to_owned(), monitor.to_owned());
+            return show_pick(&w, hwnd, x, y, entries, move |value| set_bar(&monitor, &key, &value));
+        }
         _ => return,
     };
+    let key = id.to_owned();
+    show_pick(&w, hwnd, x, y, entries, move |value| edit(&key, Edit::Text(value)));
+}
+
+/// Choix d'une liste des animations de la musique d'une barre (`key` : backdrop, progress,
+/// pulse) ; ce qui n'a pas de sens sur cette barre est grisé. Aussi pour le menu de la barre.
+pub fn music_entries(key: &str, music: horizon_core::layout::BarMusic, graphic: bool, has_media: bool) -> Vec<Entry> {
+    match key {
+        "backdrop" => Backdrop::ALL.iter().map(|b| Entry::check(b.id(), b.label(), *b == music.backdrop)).collect(),
+        "progress" => Progress::ALL.iter().map(|p| Entry::check(p.id(), p.label(), *p == music.progress)).collect(),
+        "pulse" => Pulse::ALL
+            .iter()
+            .filter(|p| p.fits(graphic))
+            .map(|p| Entry::check(p.id(), p.label(graphic), *p == music.pulse).enabled(*p != Pulse::Comet || has_media))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Menu Windows d'une liste déroulante, sous le champ (point logique de la fenêtre).
+fn show_pick(w: &SettingsWindow, hwnd: isize, x: f32, y: f32, entries: Vec<Entry>, chosen: impl FnOnce(String) + 'static) {
     let scale = w.window().scale_factor();
     let mut p = windows::Win32::Foundation::POINT { x: (x * scale).round() as i32, y: (y * scale).round() as i32 };
     // SAFETY : fenêtre de ce fil, point local.
     let _ = unsafe { windows::Win32::Graphics::Gdi::ClientToScreen(windows::Win32::Foundation::HWND(hwnd as *mut _), &mut p) };
-    let key = id.to_owned();
-    menu::show_at(hwnd, entries, true, Some((p.x, p.y)), move |value| {
-        edit(&key, Edit::Text(value));
-    });
+    menu::show_at(hwnd, entries, true, Some((p.x, p.y)), chosen);
 }
 
 // ---- Raccourci de la palette ----

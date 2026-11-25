@@ -1,8 +1,10 @@
 // Lecture en cours (app/src/widgets/media/Widget.svelte) : pochette, titre défilant, artiste,
-// commandes, progression. Style îlots : halo qui suit le son et filet dans l'accent pendant la
-// lecture ; style graphique : spectre derrière la zone. Molette = ±10 s (bulle de la barre).
-// Survol = panneau Lecture en cours. Îlot dynamique (style îlots) : une alerte ou un appel
-// remplace un instant le contenu (ui/flash.slint), qui revient ensuite en fondu.
+// commandes, progression. Le fond suit le son (`[music] backdrop` : halo, aurore, spectre, ruban
+// ou points derrière le titre, capsules à côté de lui, ou rien ; d'office, halo en style îlots
+// et spectre en style graphique). Ce qui ne se dessine pas en rectangles est une image de l'îlot
+// faite par Rust. Style îlots : filet dans l'accent pendant la lecture. Molette = ±10 s (bulle de la
+// barre). Survol = panneau Lecture en cours. Îlot dynamique (style îlots) : une alerte ou un
+// appel remplace un instant le contenu (ui/flash.slint), qui revient ensuite en fondu.
 
 import { Theme, StyleTokens } from "../../theme.slint";
 import { Icon, Island, Slot } from "../../components.slint";
@@ -10,8 +12,10 @@ import { FlashCard, FlashData, FlashGlow } from "../../flash.slint";
 import { BarButton } from "../../widget-frame.slint";
 import { Eyebrow } from "../../gauge.slint";
 import { PanelArea } from "../../panels.slint";
+import { PulseState, Kick } from "../../pulse.slint";
 import { Marquee } from "marquee.slint";
 import { Spectrum } from "spectrum.slint";
+import { Capsules } from "capsules.slint";
 
 // Lecture en cours d'une barre (src/widgets/media/ui.rs).
 export global MediaData {
@@ -31,12 +35,26 @@ export global MediaData {
     in-out property <bool> has-duration;
     // Part lue (0–1), posée chaque seconde pendant la lecture.
     in-out property <float> progress;
-    // Halo des îlots (opacité), qui suit le niveau du son.
-    in-out property <float> glow: 0.12;
-    // Spectre du style graphique (24 bandes, 0–1).
+    // Fond qui suit le son sur cette barre (`BarLayout::music.backdrop`) ; vide : aucun.
+    // « spectrum » et « capsules » sont dessinés ici, les autres dans l'image de l'îlot.
+    in-out property <string> backdrop: "halo";
+    // Le son est suivi : lecture en cours, ou retombée après la pause pas encore finie.
+    in-out property <bool> live;
+    // Spectre (24 bandes, 0–1).
     in-out property <[float]> bands;
-    // Masque du halo (dégradé radial), dessiné une fois par Rust.
-    in-out property <image> glow-mask;
+    // Capsules (cinq groupes de bandes, 0–1).
+    in-out property <[float]> capsules;
+    // Image de l'îlot, dessinée par Rust à chaque image de son (halo, ruban, aurore, points,
+    // progression qui ondule, lumière qui tourne) ; `canvas-on` : il y a quelque chose à montrer.
+    in-out property <image> canvas;
+    in-out property <bool> canvas-on;
+    // La progression ondule (`[music] progress`) : elle est dans l'image, pas dessinée ici.
+    in-out property <bool> progress-wave;
+    // Taille et rayon de l'îlot, annoncés à Rust pour son image ; `resized` : ils ont changé.
+    in-out property <length> island-w;
+    in-out property <length> island-h;
+    in-out property <length> island-radius;
+    callback resized();
     callback previous();
     callback play-pause();
     callback next();
@@ -61,7 +79,7 @@ component Control inherits BarButton {
     }
 }
 
-// Forme propre (spectre derrière, halo et progression dans l'îlot) : pas de `WidgetFrame`, mais
+// Forme propre (fond qui suit le son et progression dans l'îlot) : pas de `WidgetFrame`, mais
 // les mêmes propriétés (passées par `WidgetView`) et la même accroche (`PanelArea`).
 export component MediaWidget inherits Rectangle {
     in property <StyleTokens> t;
@@ -82,7 +100,20 @@ export component MediaWidget inherits Rectangle {
     property <string> sub: MediaData.artist == "" ? MediaData.app
         : root.t.graphic ? MediaData.artist + " · " + MediaData.app : MediaData.artist;
     property <int> art-seq: MediaData.art-seq;
+    property <length> art-size: root.t.graphic ? 28px : 24px;
+    property <length> graphic-pad: 8px;
+    // Centre du widget dans la barre : la ligne d'horizon de la pulsation part de là.
+    property <length> centre-x: area.absolute-position.x + root.width / 2;
     width: island.width;
+
+    // Masqué (barre trop chargée), il ne compte plus : la ligne part du milieu de la barre.
+    property <length> origin: root.slot.hidden ? -1px : root.centre-x;
+    init => {
+        PulseState.origin-x = root.origin;
+    }
+    changed origin => {
+        PulseState.origin-x = root.origin;
+    }
 
     // Retour du contenu (au début d'une lecture) et nouvelle pochette : en fondu.
     changed content => {
@@ -127,19 +158,15 @@ export component MediaWidget inherits Rectangle {
             reject
         }
 
-        if root.t.graphic && MediaData.playing: Spectrum {
-            y: 4px;
-            width: root.width;
-            height: root.height - 8px;
-            t: root.t;
-            bands: MediaData.bands;
-        }
-
         island := Island {
             y: (parent.height - self.height) / 2;
             t: root.t;
             dim: root.dim;
             gap: 0;
+            // En style graphique, une marge : le fond qui suit le son ne colle pas au contenu.
+            graphic-padding: root.graphic-pad;
+            // Pas de pulsation par-dessus une alerte de l'îlot dynamique.
+            pulse: !root.flash;
 
             // Îlot dynamique : teinte de la gravité sur tout l'îlot (sans largeur dans la rangée),
             // puis l'alerte.
@@ -171,26 +198,51 @@ export component MediaWidget inherits Rectangle {
                 }
             }
 
-            // Fond de l'îlot (sans largeur dans la rangée) : halo, filet, progression, coupés à la
-            // forme de l'îlot.
+            // Fond de l'îlot (sans largeur dans la rangée) : ce qui suit le son, filet,
+            // progression, coupés à la boîte de l'îlot.
             if !root.flash && root.content: Rectangle {
                 width: 0;
                 Rectangle {
-                    x: root.t.graphic ? 0 : -12px;
+                    x: root.t.graphic ? -root.graphic-pad : -12px;
                     width: island.width;
                     height: island.height;
                     border-radius: root.t.island-radius;
                     clip: true;
-                    // Halo : ellipse de 70 % × 140 % centrée à 18 % du bord gauche, en bas.
-                    if !root.t.graphic: Image {
-                        x: -0.52 * parent.width;
-                        y: -0.4 * parent.height;
-                        width: 1.4 * parent.width;
-                        height: 2.8 * parent.height;
-                        source: MediaData.glow-mask;
+                    property <length> radius: root.t.island-radius;
+                    function announce() {
+                        MediaData.island-w = self.width;
+                        MediaData.island-h = self.height;
+                        MediaData.island-radius = self.radius;
+                        MediaData.resized();
+                    }
+                    init => {
+                        self.announce();
+                    }
+                    changed width => {
+                        self.announce();
+                    }
+                    changed height => {
+                        self.announce();
+                    }
+                    changed radius => {
+                        self.announce();
+                    }
+                    // Spectre : derrière tout le widget, pendant la lecture et sa retombée ;
+                    // en îlots, rentré des coins (la découpe ne les arrondit pas).
+                    if MediaData.backdrop == "spectrum" && MediaData.live: Spectrum {
+                        y: 1px;
+                        width: parent.width;
+                        height: parent.height - 2px;
+                        t: root.t;
+                        pad: root.t.graphic ? 6px : root.t.island-radius - 2px;
+                        bands: MediaData.bands;
+                    }
+                    // Image de l'îlot (à sa taille en pixels de l'écran, coins compris).
+                    if MediaData.canvas-on: Image {
+                        width: parent.width;
+                        height: parent.height;
+                        source: MediaData.canvas;
                         image-fit: fill;
-                        colorize: Theme.accent;
-                        opacity: MediaData.glow;
                     }
                     // Filet supérieur dans l'accent pendant la lecture.
                     if !root.t.graphic && MediaData.playing: Rectangle {
@@ -200,7 +252,7 @@ export component MediaWidget inherits Rectangle {
                         height: 1px;
                         background: @linear-gradient(90deg, Theme.accent.with-alpha(0) 0%, Theme.accent 50%, Theme.accent.with-alpha(0) 100%);
                     }
-                    if MediaData.has-duration: Rectangle {
+                    if MediaData.has-duration && !MediaData.progress-wave: Rectangle {
                         x: 10px;
                         y: parent.height - 2px - self.height;
                         width: parent.width - 20px;
@@ -230,32 +282,46 @@ export component MediaWidget inherits Rectangle {
                     spacing: 10px;
                     VerticalLayout {
                         alignment: center;
+                        // Place de la pochette dans la rangée. Pulsation « breath » : la pochette
+                        // grossit de 2 px à chaque grosse caisse puis revient (le rendu logiciel
+                        // ne transforme pas : la taille suit), sans déplacer ses voisins.
                         Rectangle {
-                            width: root.t.graphic ? 28px : 24px;
-                            height: self.width;
-                            border-radius: root.t.inner-radius;
-                            clip: true;
-                            background: MediaData.has-art ? transparent : root.t.surface-2;
-                            if MediaData.has-art: Image {
-                                width: parent.width;
-                                height: parent.height;
-                                source: MediaData.art;
-                                image-fit: cover;
-                                states [
-                                    fading when root.art-fading: {
-                                        opacity: 0;
-                                        out {
-                                            animate opacity { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
-                                        }
-                                    }
-                                ]
+                            width: root.art-size;
+                            height: root.art-size;
+                            bump := Kick {
+                                seq: PulseState.style == "breath" ? PulseState.beat : 0;
+                                duration: Theme.dur-slow;
                             }
-                            if !MediaData.has-art: Icon {
-                                x: (parent.width - self.width) / 2;
-                                y: (parent.height - self.height) / 2;
-                                source: @image-url("../../../icons/phosphor/musicNotes.svg");
-                                size: 13px;
-                                color: root.t.text-dim;
+                            Rectangle {
+                                property <length> grow: 2px * (1 - bump.eased);
+                                x: -self.grow / 2;
+                                y: -self.grow / 2;
+                                width: root.art-size + self.grow;
+                                height: root.art-size + self.grow;
+                                border-radius: root.t.inner-radius;
+                                clip: true;
+                                background: MediaData.has-art ? transparent : root.t.surface-2;
+                                if MediaData.has-art: Image {
+                                    width: parent.width;
+                                    height: parent.height;
+                                    source: MediaData.art;
+                                    image-fit: cover;
+                                    states [
+                                        fading when root.art-fading: {
+                                            opacity: 0;
+                                            out {
+                                                animate opacity { duration: Theme.dur-fast; easing: cubic-bezier(0.2, 0.8, 0.2, 1); }
+                                            }
+                                        }
+                                    ]
+                                }
+                                if !MediaData.has-art: Icon {
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: @image-url("../../../icons/phosphor/musicNotes.svg");
+                                    size: 13px;
+                                    color: root.t.text-dim;
+                                }
                             }
                         }
                     }
@@ -282,6 +348,13 @@ export component MediaWidget inherits Rectangle {
                             t: root.t;
                             label: root.sub;
                             overflow: elide;
+                        }
+                    }
+                    if MediaData.backdrop == "capsules": VerticalLayout {
+                        alignment: center;
+                        Capsules {
+                            levels: MediaData.capsules;
+                            playing: MediaData.playing;
                         }
                     }
                     if root.clickable: HorizontalLayout {

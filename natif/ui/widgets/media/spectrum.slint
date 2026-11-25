@@ -1,14 +1,17 @@
-// Spectre en barres (Spectrum.svelte), style graphique, derrière la zone média : 24 bandes
-// posées par Rust au plus 20 fois par seconde (et seulement si elles changent). Couleur =
-// accent, vers la teinte du style en haut.
+// Spectre en barres (Spectrum.svelte), derrière la zone média : 24 bandes posées par Rust au plus
+// 20 fois par seconde (et seulement si elles changent) ; entre deux images de son, la hauteur
+// glisse (sauf interface en retard sur le son, `PulseState.sound`). En pause, Rust les fait
+// retomber. Couleur = accent, vers la teinte du style en haut.
 
 import { Theme, StyleTokens } from "../../theme.slint";
+import { PulseState } from "../../pulse.slint";
 
 export component Spectrum inherits Rectangle {
     in property <StyleTokens> t;
     in property <[float]> bands;
+    // Marge des bords (en îlots, de quoi laisser passer les coins arrondis).
+    in property <length> pad: 6px;
     property <int> count: 24;
-    property <length> pad: 6px;
     property <length> gap: 3px;
     property <length> bar-w: (self.width - 2 * self.pad - (self.count - 1) * self.gap) / self.count;
     opacity: 0.28;
@@ -20,5 +23,6 @@ export component Spectrum inherits Rectangle {
         border-top-left-radius: Theme.r-xs;
         border-top-right-radius: Theme.r-xs;
         background: @linear-gradient(0deg, Theme.accent 0%, Theme.accent.mix(root.t.spectrum-tint, 0.4) 100%);
+        animate height { duration: PulseState.sound; easing: linear; }
     }
 }

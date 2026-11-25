@@ -76,6 +76,14 @@ impl Entry {
         }
     }
 
+    /// La même entrée sous un autre identifiant (sans effet sur un séparateur ou un sous-menu).
+    pub fn with_id(mut self, new: String) -> Entry {
+        if let Entry::Item { id, .. } = &mut self {
+            *id = new;
+        }
+        self
+    }
+
     /// Identifiant d'une entrée (vide pour un séparateur ou un sous-menu).
     pub fn id(&self) -> &str {
         match self {

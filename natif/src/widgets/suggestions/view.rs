@@ -68,6 +68,7 @@ mod tests {
             autohide: true,
             height: horizon_core::layout::BAND_HEIGHT,
             tiles_mode: horizon_core::layout::TilesMode::Fixed,
+            music: horizon_core::layout::BarMusic::default(),
             left: vec![shortcuts],
             center: vec![],
             right: vec![],

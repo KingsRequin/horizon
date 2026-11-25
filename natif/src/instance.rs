@@ -100,6 +100,15 @@ fn received(args: &[String]) {
     if let Some(i) = args.iter().position(|a| a == "--alerte-essai") {
         crate::alerts::essai(&app, args.get(i + 1).map_or("", String::as_str));
     }
+    // Lecture et son d'essai, pour voir les animations de la musique
+    // (`--musique-essai [secondes] [mix|kick|bass|level]`, 20 s d'un morceau entier sans
+    // précision ; `kick`, `bass`, `level` : cet ingrédient seul).
+    if let Some(i) = args.iter().position(|a| a == "--musique-essai") {
+        let rest = &args[i + 1..];
+        let secs = rest.iter().find_map(|s| s.parse().ok()).unwrap_or(20);
+        let kind = rest.iter().take(2).find_map(|s| horizon_core::music::Essai::parse(s)).unwrap_or_default();
+        crate::widgets::media::essai(&app, secs, kind);
+    }
     // Fenêtre des réglages (`--reglages [page]`) et palette d'essai, sans action
     // (`--palette-essai`).
     if let Some(i) = args.iter().position(|a| a == "--reglages") {

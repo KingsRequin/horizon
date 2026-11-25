@@ -1,25 +1,78 @@
 //! Lecture en cours dans les barres (global `MediaData` de `ui/widgets/media/widget.slint`) :
 //! état et pochette reçus du service, position qui avance chaque seconde pendant la lecture,
-//! abonnement au son (halo des îlots, spectre du style graphique), commandes et molette ±10 s
-//! avec la bulle de la barre. Fil de l'interface.
+//! abonnement au son pour ce que la barre demande (`BarLayout::music`), commandes et molette
+//! ±10 s avec la bulle de la barre. Fil de l'interface.
+//!
+//! Ce qui suit le son : le spectre et les capsules sont des rectangles de l'interface, qui
+//! reçoivent leurs valeurs ; le halo, le ruban, l'aurore, les points, la progression qui ondule
+//! et la lumière qui tourne (pulsation « comet ») sont une image de l'îlot
+//! (`horizon_core::music::canvas`), redessinée à chaque image de son. En pause, dans un silence
+//! ou quand le hub cesse d'envoyer (mode jeu, absence), tout retombe en douceur, au rythme des
+//! images de son, puis plus rien ne tourne.
 
 use super::audio::{AudioFrame, AudioHub, BANDS, EV_AUDIO};
 use super::{Art, EV_MEDIA, EV_MEDIA_ART, MediaPayload, SEEK_MS};
+use crate::events::EV_OPTIONS;
 use crate::host::{self, AppHandle, Manager};
 use crate::ui::{BarWindow, MediaData, format, hint};
-use horizon_core::layout::{BarLayout, BarStyle};
+use horizon_core::layout::{BarLayout, BarMusic, BarStyle};
 use horizon_core::media::MediaInfo;
+use horizon_core::music::canvas::{Canvas, Palette, Scene, Sound};
+use horizon_core::music::{CAPSULES, capsules};
+use horizon_core::settings::{Backdrop, Progress, Pulse};
 use slint::{ComponentHandle, Model, ModelRc, SharedPixelBuffer, VecModel};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
+
+/// Écart entre deux images de son (secondes).
+const FRAME: f32 = 0.05;
+/// Sans image de son depuis ce délai, ce qui suit le son retombe (comme la pulsation).
+const QUIET: Duration = Duration::from_millis(400);
+/// Une image de son reçue depuis moins que ce délai redessine de toute façon l'îlot.
+const FRESH: Duration = Duration::from_millis(150);
+
+/// Ce que la barre demande au widget.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Look {
+    backdrop: Backdrop,
+    /// La progression ondule.
+    wave: bool,
+    /// Lumière qui tourne autour de l'îlot (pulsation « comet », barre en îlots).
+    comet: bool,
+}
+
+impl Look {
+    /// Choix de la barre, rien si Windows demande moins d'animations.
+    fn of(music: BarMusic, graphic: bool) -> Look {
+        let m = music.effective(crate::motion::reduced());
+        Look { backdrop: m.backdrop, wave: m.progress == Progress::Wave, comet: m.pulse == Pulse::Comet && !graphic }
+    }
+
+    /// Quelque chose suit le son.
+    fn follows_sound(&self) -> bool {
+        self.backdrop != Backdrop::Off || self.wave || self.comet
+    }
+}
 
 /// Barre qui montre le widget.
 struct Bar {
     label: String,
     window: slint::Weak<BarWindow>,
     graphic: bool,
+    music: BarMusic,
+    look: Look,
     bands: Rc<VecModel<f32>>,
+    capsules: Rc<VecModel<f32>>,
+    /// Son adouci pour l'image de l'îlot, et cette image (refaite quand l'îlot change de taille).
+    sound: Sound,
+    canvas: Option<Canvas>,
+    /// Dernière image de son reçue.
+    last_frame: Option<Instant>,
+    /// Plus d'image de son depuis `QUIET` : la retombée commence.
+    quiet: slint::Timer,
+    /// Retombée en cours (une image de silence toutes les 50 ms).
+    fade: Rc<slint::Timer>,
     /// Abonnée au son.
     subscribed: bool,
     /// Avance cumulée des crans de molette rapprochés (ms).
@@ -65,38 +118,98 @@ thread_local! {
     static NOW: RefCell<Now> = RefCell::default();
     /// Avance de la progression, chaque seconde pendant la lecture.
     static TICK: slint::Timer = slint::Timer::default();
-    /// Masque du halo (dessiné une fois) et dernière pochette convertie (partagée par les barres).
-    static GLOW_MASK: slint::Image = glow_mask();
+    /// Dernière pochette convertie (partagée par les barres).
     static ART: RefCell<Option<(std::sync::Arc<Vec<u8>>, slint::Image)>> = RefCell::default();
+    /// Les images des îlots suivent déjà la couleur d'accent.
+    static ACCENT_FOLLOWED: Cell<bool> = const { Cell::new(false) };
+    static APP: RefCell<Option<AppHandle>> = RefCell::default();
 }
 
-/// Masque du halo : `radial-gradient(… , accent 55 %, transparent 72 %)` sur l'ellipse entière
-/// (étirée par `image-fit: fill`), en blanc à recolorer (`colorize`).
-fn glow_mask() -> slint::Image {
-    const N: u32 = 128;
-    let mut buf = SharedPixelBuffer::<slint::Rgba8Pixel>::new(N, N);
-    for (i, px) in buf.make_mut_slice().iter_mut().enumerate() {
-        let (x, y) = ((i as u32 % N) as f32, (i as u32 / N) as f32);
-        let a = glow_alpha((x + 0.5) / N as f32 * 2.0 - 1.0, (y + 0.5) / N as f32 * 2.0 - 1.0);
-        *px = slint::Rgba8Pixel { r: 255, g: 255, b: 255, a: (a * 255.0).round() as u8 };
+/// Les images des îlots sont redessinées quand l'accent change (à chaque pas de son fondu),
+/// sauf celles qui le sont déjà par les images de son, et celles des barres masquées.
+fn follow_accent(app: &AppHandle) {
+    if !ACCENT_FOLLOWED.replace(true) {
+        let app = app.clone();
+        crate::ui::accent::register(move |_| {
+            let hub = app.state::<AudioHub>();
+            BARS.with_borrow_mut(|bars| {
+                for bar in bars.iter_mut() {
+                    let fresh = bar.last_frame.is_some_and(|t| t.elapsed() < FRESH);
+                    if let (false, false, Some(w)) = (fresh, hub.is_hidden(&bar.label), bar.window.upgrade()) {
+                        repaint(bar, &w);
+                    }
+                }
+            });
+            true
+        });
     }
-    slint::Image::from_rgba8(buf)
 }
 
-/// Opacité du halo au point (`dx`, `dy`) de l'ellipse (−1 à 1 sur chaque axe).
-fn glow_alpha(dx: f32, dy: f32) -> f32 {
-    let r = (dx * dx + dy * dy).sqrt();
-    0.55 * (1.0 - r / 0.72).max(0.0)
+/// Redessine l'image de l'îlot d'une barre (fond en image, progression qui ondule, lumière qui
+/// tourne) à la taille que l'interface annonce, ou la retire s'il n'y a rien à dessiner.
+fn repaint(bar: &mut Bar, w: &BarWindow) {
+    let g = w.global::<MediaData>();
+    let (progress, track) = NOW.with_borrow(|n| {
+        let known = n.info.as_ref().is_some_and(|i| i.duration_ms > 0);
+        ((known && bar.look.wave).then(|| n.progress(Instant::now())), known && !bar.look.wave)
+    });
+    let scene = Scene { backdrop: bar.look.backdrop, progress, comet: bar.look.comet, track };
+    let scale = w.window().scale_factor();
+    let (width, height) = ((g.get_island_w() * scale).round() as u32, (g.get_island_h() * scale).round() as u32);
+    if scene.is_empty() || width == 0 || height == 0 {
+        if g.get_canvas_on() {
+            g.set_canvas_on(false);
+        }
+        return;
+    }
+    let radius = g.get_island_radius();
+    if !bar.canvas.as_ref().is_some_and(|c| c.fits(width, height, scale, radius)) {
+        bar.canvas = Some(Canvas::new(width, height, scale, radius));
+    }
+    let Some(canvas) = bar.canvas.as_mut() else { return };
+    let pixels = canvas.paint(&scene, &bar.sound, &Palette::from_accent(crate::ui::accent::shown()));
+    let buf = SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(pixels, width, height);
+    g.set_canvas(slint::Image::from_rgba8_premultiplied(buf));
+    if !g.get_canvas_on() {
+        g.set_canvas_on(true);
+    }
 }
 
-/// Halo des îlots : suit le niveau, avec un éclat sur les battements ; au repos, faible.
-fn glow(playing: bool, frame: Option<&AudioFrame>) -> f32 {
-    let v = match frame {
-        Some(f) if playing => (0.2 + f.level * 0.9 + if f.beat { 0.15 } else { 0.0 }).min(1.0),
-        _ => 0.12,
-    };
-    // Au centième : une variation invisible ne redessine pas l'îlot.
-    (v * 100.0).round() / 100.0
+/// Une image de silence : le son adouci, les bandes et les capsules retombent, l'image est
+/// redessinée ; vrai quand tout est retombé.
+fn fade_step(bar: &mut Bar, w: &BarWindow) -> bool {
+    bar.sound.fade(FRAME);
+    let mut still = false;
+    for model in [&bar.bands, &bar.capsules] {
+        for i in 0..model.row_count() {
+            let v = model.row_data(i).unwrap_or(0.0) * 0.6;
+            put(model, i, if v < 0.02 { 0.0 } else { v });
+            still |= model.row_data(i).unwrap_or(0.0) > 0.0;
+        }
+    }
+    repaint(bar, w);
+    let done = bar.sound.is_quiet() && !still;
+    if done {
+        bar.sound.rest();
+        w.global::<MediaData>().set_live(NOW.with_borrow(Now::playing));
+    }
+    done
+}
+
+/// Plus de son (pause, silence, hub muet) : tout retombe en douceur, puis s'arrête.
+fn fade_out(bar: &mut Bar) {
+    bar.quiet.stop();
+    if bar.fade.running() {
+        return;
+    }
+    let label = bar.label.clone();
+    bar.fade.start(slint::TimerMode::Repeated, Duration::from_secs_f32(FRAME), move || {
+        with_bar(&label, |bar, w| {
+            if fade_step(bar, w) {
+                bar.fade.stop();
+            }
+        });
+    });
 }
 
 fn art_image(art: &Art) -> slint::Image {
@@ -129,21 +242,93 @@ fn live_bars() -> Vec<(String, BarWindow)> {
     })
 }
 
+/// Identifiant du fond pour l'interface (`MediaData.backdrop`) ; vide : aucun.
+fn backdrop_id(b: Backdrop) -> &'static str {
+    if b == Backdrop::Off { "" } else { b.id() }
+}
+
+/// Valeur d'une bande ou d'une capsule, au centième, posée seulement si elle a bougé.
+fn put(model: &VecModel<f32>, i: usize, v: f32) {
+    let v = (v.clamp(0.0, 1.0) * 100.0).round() / 100.0;
+    if model.row_data(i) != Some(v) {
+        model.set_row_data(i, v);
+    }
+}
+
+/// Pose dans l'interface ce que les réglages demandent au widget.
+fn show_look(g: &MediaData, look: Look) {
+    g.set_backdrop(backdrop_id(look.backdrop).into());
+    g.set_progress_wave(look.wave);
+}
+
+/// Le widget a quitté la barre `label` : plus d'abonnement au son, plus rien n'y tourne.
+pub(super) fn unbind(app: &AppHandle, label: &str) {
+    let gone = BARS.with_borrow_mut(|bars| {
+        let i = bars.iter().position(|b| b.label == label)?;
+        let b = bars.remove(i);
+        b.quiet.stop();
+        b.fade.stop();
+        Some(b.subscribed)
+    });
+    if gone == Some(true) {
+        app.state::<AudioHub>().subscribe(label, "media", false, false);
+    }
+}
+
 pub(super) fn bind(app: &AppHandle, window: &BarWindow, label: &str, bar: &BarLayout) {
+    APP.set(Some(app.clone()));
+    follow_accent(app);
     let g = window.global::<MediaData>();
-    g.set_glow_mask(GLOW_MASK.with(Clone::clone));
     let bands = Rc::new(VecModel::from(vec![0.0f32; BANDS]));
     g.set_bands(ModelRc::from(bands.clone()));
+    let caps = Rc::new(VecModel::from(vec![0.0f32; CAPSULES]));
+    g.set_capsules(ModelRc::from(caps.clone()));
+    let graphic = bar.style == BarStyle::Graphic;
+    let look = Look::of(bar.music, graphic);
+    show_look(&g, look);
+    // Relié de nouveau (autre réglage, autre style) : l'ancien abonnement est remplacé.
+    let was_subscribed = BARS.with_borrow_mut(|b| {
+        let old = b.iter().position(|x| x.label == label).map(|i| b.remove(i));
+        old.is_some_and(|o| {
+            o.quiet.stop();
+            o.fade.stop();
+            o.subscribed
+        })
+    });
+    if was_subscribed {
+        app.state::<AudioHub>().subscribe(label, "media", false, false);
+    }
     BARS.with_borrow_mut(|b| {
-        b.retain(|x| x.label != label);
         b.push(Bar {
             label: label.to_owned(),
             window: window.as_weak(),
-            graphic: bar.style == BarStyle::Graphic,
+            graphic,
+            music: bar.music,
+            look,
             bands,
+            capsules: caps,
+            sound: Sound::default(),
+            canvas: None,
+            last_frame: None,
+            quiet: slint::Timer::default(),
+            fade: Rc::default(),
             subscribed: false,
             seek_total: 0,
         })
+    });
+    // L'îlot a changé de taille (autre titre, barre resserrée) : son image est à refaire. Une
+    // annonce de l'interface arrive à un tour de boucle suivant, jamais pendant une mise à jour
+    // de `BARS` : l'emprunt raté ne peut être qu'une précaution.
+    let l = label.to_owned();
+    g.on_resized(move || {
+        BARS.with(|bars| {
+            let Ok(mut bars) = bars.try_borrow_mut() else { return };
+            if let Some(bar) = bars.iter_mut().find(|b| b.label == l)
+                && let Some(w) = bar.window.upgrade()
+            {
+                repaint(bar, &w);
+            }
+        });
     });
 
     let full = super::media_state(app);
@@ -156,6 +341,8 @@ pub(super) fn bind(app: &AppHandle, window: &BarWindow, label: &str, bar: &BarLa
             on_media(&a, &l, p);
         }
     });
+    let (a, l) = (app.clone(), label.to_owned());
+    host::listen(EV_OPTIONS, Some(label), move |_| on_options(&a, &l));
     let l = label.to_owned();
     host::listen(EV_MEDIA_ART, Some(label), move |e| {
         if let Some(art) = e.payload::<Option<Art>>() {
@@ -205,16 +392,49 @@ fn on_media(app: &AppHandle, label: &str, p: &MediaPayload) {
             g.set_has_duration(i.duration_ms > 0);
         }
         g.set_progress(NOW.with_borrow(|n| n.progress(Instant::now())));
-        if !playing {
-            g.set_glow(glow(false, None));
+        follow_sound(app, bar, playing);
+        if playing {
+            g.set_live(true);
+        } else {
+            fade_out(bar);
         }
-        // Le son n'est suivi que pendant la lecture (le hub ne sert pas les barres masquées).
-        if bar.subscribed != playing {
-            bar.subscribed = playing;
-            app.state::<AudioHub>().subscribe(label, "media", playing, bar.graphic);
-        }
+        repaint(bar, w);
     });
     sync_tick();
+}
+
+/// Le son n'est suivi que pendant la lecture, et seulement si quelque chose le montre (le hub
+/// ne sert pas les barres masquées) ; les bandes ne sont demandées que pour un fond qui les
+/// dessine.
+fn follow_sound(app: &AppHandle, bar: &mut Bar, playing: bool) {
+    let want = playing && bar.look.follows_sound();
+    if bar.subscribed != want {
+        bar.subscribed = want;
+        app.state::<AudioHub>().subscribe(&bar.label, "media", want, bar.look.backdrop.wants_bands());
+    }
+}
+
+/// Réglages relus (« Effets d'animation » de Windows a pu changer) : ce que la barre `label`
+/// montre est revu, et son abonnement au son refait si cela a changé (les choix de la barre,
+/// eux, arrivent par une nouvelle liaison du widget).
+fn on_options(app: &AppHandle, label: &str) {
+    let playing = NOW.with_borrow(Now::playing);
+    with_bar(label, |bar, w| {
+        let look = Look::of(bar.music, bar.graphic);
+        if look == bar.look {
+            return;
+        }
+        bar.fade.stop();
+        bar.sound.rest();
+        bar.look = look;
+        show_look(&w.global::<MediaData>(), look);
+        if bar.subscribed {
+            bar.subscribed = false;
+            app.state::<AudioHub>().subscribe(label, "media", false, false);
+        }
+        follow_sound(app, bar, playing);
+        repaint(bar, w);
+    });
 }
 
 fn on_art(label: &str, art: Option<&Art>) {
@@ -230,18 +450,27 @@ fn on_art(label: &str, art: Option<&Art>) {
 
 fn on_audio(label: &str, f: &AudioFrame) {
     let playing = NOW.with_borrow(Now::playing);
+    if !playing {
+        return;
+    }
     with_bar(label, |bar, w| {
-        if bar.graphic {
-            for (i, v) in f.bands.iter().take(BANDS).enumerate() {
-                // Au centième, et seulement si la bande a bougé.
-                let v = (v.clamp(0.0, 1.0) * 100.0).round() / 100.0;
-                if bar.bands.row_data(i) != Some(v) {
-                    bar.bands.set_row_data(i, v);
-                }
-            }
-        } else {
-            w.global::<MediaData>().set_glow(glow(playing, Some(f)));
+        if !bar.subscribed {
+            return;
         }
+        bar.fade.stop();
+        bar.last_frame = Some(Instant::now());
+        match bar.look.backdrop {
+            Backdrop::Spectrum => f.bands.iter().take(BANDS).enumerate().for_each(|(i, v)| put(&bar.bands, i, *v)),
+            Backdrop::Capsules => capsules(&f.bands).iter().enumerate().for_each(|(i, v)| put(&bar.capsules, i, *v)),
+            _ => {}
+        }
+        bar.sound.feed(f.level, f.bass, &f.bands, f.beat, FRAME);
+        repaint(bar, w);
+        // Le hub se tait (silence, mode jeu, absence) : tout retombera.
+        let l = label.to_owned();
+        bar.quiet.start(slint::TimerMode::SingleShot, QUIET, move || {
+            with_bar(&l, |bar, _| fade_out(bar));
+        });
     });
 }
 
@@ -257,6 +486,18 @@ fn sync_tick() {
                 for (_, w) in live_bars() {
                     w.global::<MediaData>().set_progress(p);
                 }
+                // La progression qui ondule est dans l'image de l'îlot : elle avance avec lui,
+                // même quand aucune image de son n'arrive (silence), sauf sur une barre masquée.
+                let app = APP.with_borrow(Clone::clone);
+                BARS.with_borrow_mut(|bars| {
+                    for bar in bars.iter_mut().filter(|b| b.look.wave && !b.fade.running()) {
+                        let fresh = bar.last_frame.is_some_and(|t| t.elapsed() < Duration::from_millis(900));
+                        let hidden = app.as_ref().is_some_and(|a| a.state::<AudioHub>().is_hidden(&bar.label));
+                        if let (false, false, Some(w)) = (fresh, hidden, bar.window.upgrade()) {
+                            repaint(bar, &w);
+                        }
+                    }
+                });
             });
         }
     });
@@ -311,24 +552,6 @@ mod tests {
         assert_eq!(paused.position(t0 + Duration::from_secs(90)), 10_000);
         assert!((paused.progress(t0) - 1.0 / 6.0).abs() < 1e-6);
         assert_eq!(Now::default().position(t0), 0);
-    }
-
-    #[test]
-    fn glow_follows_the_sound() {
-        let f = |level, beat| AudioFrame { level, bass: 0.0, bands: Vec::new(), beat };
-        assert_eq!(glow(false, Some(&f(1.0, true))), 0.12);
-        assert_eq!(glow(true, None), 0.12);
-        assert_eq!(glow(true, Some(&f(0.5, false))), 0.65);
-        assert_eq!(glow(true, Some(&f(0.5, true))), 0.8);
-        assert_eq!(glow(true, Some(&f(1.0, true))), 1.0);
-    }
-
-    #[test]
-    fn glow_mask_fades_from_the_centre() {
-        assert!((glow_alpha(0.0, 0.0) - 0.55).abs() < 1e-6);
-        assert_eq!(glow_alpha(0.72, 0.0), 0.0);
-        assert_eq!(glow_alpha(1.0, 1.0), 0.0);
-        assert!((glow_alpha(0.0, 0.36) - 0.275).abs() < 1e-6);
     }
 
     #[test]

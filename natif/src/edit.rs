@@ -188,6 +188,22 @@ pub fn menu_bar(app: &AppHandle, monitor_id: &str, widget_id: Option<&str>) -> V
             Entry::check(format!("style|{monitor_id}|graphic"), "Graphique", style == Some(BarStyle::Graphic)),
         ],
     );
+    // Animations de la musique de cette barre (comme dans Réglages › Barres).
+    let music = bar.as_ref().map(|b| {
+        let graphic = b.style == BarStyle::Graphic;
+        let has_media = b.widgets().any(|w| w.kind == WidgetKind::MEDIA);
+        let list = |key: &str, title: &str| {
+            let items = crate::ui::options::music_entries(key, b.music, graphic, has_media)
+                .into_iter()
+                .map(|e| {
+                    let id = format!("music|{monitor_id}|{key}|{}", e.id());
+                    e.with_id(id)
+                })
+                .collect();
+            Entry::sub(title, items).enabled(has_media || key == "pulse")
+        };
+        Entry::sub("Musique", vec![list("pulse", "Animation"), list("backdrop", "Fond de la lecture en cours"), list("progress", "Barre de progression")])
+    });
     let mode = bar.as_ref().map(|b| b.tiles_mode);
     let tiles = Entry::sub(
         "Tuiles",
@@ -217,6 +233,7 @@ pub fn menu_bar(app: &AppHandle, monitor_id: &str, widget_id: Option<&str>) -> V
         tiles,
     ]);
     menu.extend(heights);
+    menu.extend(music);
     menu.extend([
         Entry::sub("Profil", profile_items),
         Entry::check("dnd", "Ne pas déranger", crate::dnd::is_active(app)),
@@ -288,6 +305,8 @@ pub enum MenuAction {
     Style(String, BarStyle),
     Height(String, u32),
     Tiles(String, TilesMode),
+    /// Animation de la musique d'une barre : écran, option (backdrop, progress, pulse), choix.
+    Music(String, BarOptionsPatch),
     Move(String, String),
     Remove(String),
     SuggestionBlock(String),
@@ -300,6 +319,19 @@ pub enum MenuAction {
 
 fn parse<T: serde::de::DeserializeOwned>(s: &str) -> Option<T> {
     serde_json::from_value(Value::String(s.to_owned())).ok()
+}
+
+/// Choix d'une animation de la musique : `key` (backdrop, progress, pulse) et identifiant.
+fn music_patch(key: &str, value: &str) -> Option<BarOptionsPatch> {
+    use horizon_core::settings::{Backdrop, Progress, Pulse};
+    let mut p = BarOptionsPatch::default();
+    match key {
+        "backdrop" => p.backdrop = Some(Backdrop::parse(value)?),
+        "progress" => p.progress = Some(Progress::parse(value)?),
+        "pulse" => p.pulse = Some(Pulse::parse(value)?),
+        _ => return None,
+    }
+    Some(p)
 }
 
 impl MenuAction {
@@ -317,6 +349,7 @@ impl MenuAction {
             ["style", monitor, style] => MenuAction::Style((*monitor).into(), parse(style)?),
             ["height", monitor, h] => MenuAction::Height((*monitor).into(), h.parse().ok()?),
             ["tiles", monitor, mode] => MenuAction::Tiles((*monitor).into(), parse(mode)?),
+            ["music", monitor, key, value] => MenuAction::Music((*monitor).into(), music_patch(key, value)?),
             ["move", widget, monitor] => MenuAction::Move((*widget).into(), (*monitor).into()),
             ["remove", widget] => MenuAction::Remove((*widget).into()),
             ["sblock", key] => MenuAction::SuggestionBlock((*key).into()),
@@ -368,6 +401,7 @@ pub fn on_menu(app: &AppHandle, id: &str) {
         MenuAction::Tiles(monitor, m) => {
             mutate(app, |l| l.set_bar_options(&monitor, BarOptionsPatch { tiles_mode: Some(m), ..Default::default() }))
         }
+        MenuAction::Music(monitor, patch) => mutate(app, |l| l.set_bar_options(&monitor, patch)),
         MenuAction::Move(widget, monitor) => mutate(app, |l| l.move_to_monitor(&widget, &monitor)),
         MenuAction::Remove(widget) => mutate(app, |l| l.remove_widget(&widget).map(|_| ())),
         MenuAction::SuggestionBlock(key) => {
@@ -413,6 +447,12 @@ pub(crate) mod tests {
         assert_eq!(MenuAction::parse("height|m1|x"), None);
         assert_eq!(MenuAction::parse("tiles|m1|hover"), Some(MenuAction::Tiles("m1".into(), TilesMode::Hover)));
         assert_eq!(MenuAction::parse("tiles|m1|x"), None);
+        assert_eq!(
+            MenuAction::parse("music|m1|pulse|horizon"),
+            Some(MenuAction::Music("m1".into(), BarOptionsPatch { pulse: Some(horizon_core::settings::Pulse::Horizon), ..Default::default() }))
+        );
+        assert_eq!(MenuAction::parse("music|m1|pulse|stroboscope"), None);
+        assert_eq!(MenuAction::parse("music|m1|couleur|halo"), None);
         assert_eq!(
             MenuAction::parse("add|m1|tiles|weather"),
             Some(MenuAction::Add("m1".into(), Zone::Tiles, WidgetKind::WEATHER))

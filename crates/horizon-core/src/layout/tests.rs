@@ -72,11 +72,46 @@ fn default_layout_matches_spec_screens() {
 #[test]
 fn new_layout_has_every_migration_and_migrate_changes_nothing() {
     let l = Layout::default_for(&real_monitors());
-    let marks: Vec<&str> = MIGRATIONS.iter().map(|(m, _)| *m).collect();
+    let marks: Vec<&str> = MIGRATIONS.iter().map(|(m, _)| *m).chain([super::MIGRATION_MUSIC]).collect();
     assert_eq!(l.migrations, marks);
     let mut again = l.clone();
     again.migrate();
-    assert_eq!(again, l);
+    let legacy = crate::settings::MusicSettings { backdrop: Some("ribbon".into()), progress: None, pulse: None };
+    again.adopt_music(&legacy, Some(false));
+    assert_eq!(again, l, "une disposition neuve ne reprend pas les anciens réglages");
+}
+
+#[test]
+fn music_is_set_per_bar_and_follows_the_style_preset() {
+    use crate::settings::{Backdrop, Pulse};
+    let mut l = unmigrated();
+    let legacy = crate::settings::MusicSettings { backdrop: Some("auto".into()), progress: Some("wave".into()), pulse: Some("comet".into()) };
+    l.adopt_music(&legacy, None);
+    for b in &l.bars {
+        let graphic = b.style == BarStyle::Graphic;
+        assert_eq!(b.music.backdrop, if graphic { Backdrop::Spectrum } else { Backdrop::Halo }, "« auto » traduit une fois");
+        assert_eq!(b.music.pulse, if graphic { Pulse::Edges } else { Pulse::Comet });
+    }
+    let snapshot = l.clone();
+    l.adopt_music(&crate::settings::MusicSettings::default(), Some(false));
+    assert_eq!(l, snapshot, "reprise faite une seule fois");
+    // Une barre par écran : ses propres choix.
+    let id = l.bars[0].monitor_id.clone();
+    l.set_bar_options(&id, BarOptionsPatch { pulse: Some(Pulse::Horizon), backdrop: Some(Backdrop::Aurora), ..Default::default() }).unwrap();
+    assert_eq!((l.bars[0].music.pulse, l.bars[0].music.backdrop), (Pulse::Horizon, Backdrop::Aurora));
+    assert!(l.bars[1..].iter().all(|b| b.music.pulse != Pulse::Horizon || b.music.backdrop != Backdrop::Aurora));
+    // Préréglage suivi au changement de style s'il n'a pas été touché, gardé sinon.
+    l.bars[0].music = crate::layout::BarMusic::for_style(l.bars[0].style);
+    let other = if l.bars[0].style == BarStyle::Graphic { BarStyle::Islands } else { BarStyle::Graphic };
+    l.set_style(&id, other).unwrap();
+    assert_eq!(l.bars[0].music, crate::layout::BarMusic::for_style(other));
+    l.set_bar_options(&id, BarOptionsPatch { style: Some(BarStyle::Islands), pulse: Some(Pulse::Comet), ..Default::default() }).unwrap();
+    l.set_style(&id, BarStyle::Graphic).unwrap();
+    assert_eq!(l.bars[0].music.pulse, Pulse::Edges, "pas de lumière qui tourne sur une barre graphique");
+    assert!(l.set_bar_options(&id, BarOptionsPatch { pulse: Some(Pulse::Comet), ..Default::default() }).is_err());
+    // Enregistrée et relue.
+    let back: Layout = serde_json::from_str(&serde_json::to_string(&l).unwrap()).unwrap();
+    assert_eq!(back.bars[0].music, l.bars[0].music);
 }
 
 /// Disposition enregistrée par une version d'avant les migrations (aucune marque).
@@ -92,6 +127,7 @@ fn migrate_never_adds_a_widget() {
     let mut l = unmigrated();
     let before: Vec<String> = l.widgets().map(|w| w.id.clone()).collect();
     l.migrate();
+    l.adopt_music(&crate::settings::MusicSettings::default(), None);
     assert_eq!(l.widgets().map(|w| w.id.clone()).collect::<Vec<_>>(), before);
     assert_eq!(l.migrations, Layout::default_for(&real_monitors()).migrations);
 }

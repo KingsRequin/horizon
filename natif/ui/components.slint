@@ -1,7 +1,7 @@
 // Briques communes des barres : icône, îlot, emplacement nommé d'un widget.
 
 import { Theme, StyleTokens } from "theme.slint";
-import { PulseLayers } from "pulse.slint";
+import { PulseLayers, PulseState, HorizonLine } from "pulse.slint";
 
 // Icône Phosphor (SVG embarqué, voir src/ui/icons.rs), de la couleur du texte.
 export component Icon inherits Image {
@@ -19,7 +19,11 @@ export component Island inherits Rectangle {
     in property <StyleTokens> t;
     in property <float> dim;
     in property <length> padding-x: 12px;
+    // Marge intérieure en style graphique (aucune d'ordinaire : simple groupe en ligne).
+    in property <length> graphic-padding: 0;
     in property <length> gap: 10px;
+    // La pulsation se montre dans l'îlot (coupée pendant une alerte de l'îlot dynamique).
+    in property <bool> pulse: true;
     height: t.island-h;
     width: row.preferred-width;
     border-radius: t.island-radius;
@@ -46,22 +50,29 @@ export component Island inherits Rectangle {
         background: t.island-highlight;
     }
 
-    row := HorizontalLayout {
-        padding-left: t.graphic ? 0 : root.padding-x;
-        padding-right: t.graphic ? 0 : root.padding-x;
-        spacing: root.gap;
-        alignment: center;
-        @children
-    }
-
-    // Pulsation pendant la lecture (ui/pulse.slint) : lueur de la basse, flash du kick, au
-    // bord intérieur de l'îlot.
-    if !t.graphic: PulseLayers {
+    // Pulsation pendant la lecture (ui/pulse.slint), sous le contenu : au bord intérieur de
+    // l'îlot, et le morceau de ligne d'horizon de cet îlot.
+    if !t.graphic && root.pulse: PulseLayers {
         x: 1px;
         y: 1px;
         width: parent.width - 2px;
         height: parent.height - 2px;
         radius: t.island-radius - 1px;
+    }
+    if !t.graphic && root.pulse && PulseState.style == "horizon": HorizonLine {
+        x: t.island-radius;
+        // Contre le bord bas, sous la barre de progression de la lecture en cours.
+        y: parent.height - 2px;
+        width: parent.width - 2 * t.island-radius;
+        offset-x: self.absolute-position.x;
+    }
+
+    row := HorizontalLayout {
+        padding-left: t.graphic ? root.graphic-padding : root.padding-x;
+        padding-right: t.graphic ? root.graphic-padding : root.padding-x;
+        spacing: root.gap;
+        alignment: center;
+        @children
     }
 
     // Nuit (barre non cliquable) : un voile noir assombrit comme brightness(), sans filtre.

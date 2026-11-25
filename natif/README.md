@@ -176,9 +176,65 @@ déranger », recharger, démarrage avec Windows, journal, quitter) ; `state.rs`
   `OsdData`) : barre principale seulement, centré dans la bande ; l'îlot de Windows est masqué
   pendant ce temps et remis à la fermeture (`osd::exit`, aussi en cas de panique), en plein
   écran sur l'écran principal et quand `[features] osd` est coupé.
-- **Pulsation** (`src/ui/pulse.rs`, `ui/pulse.slint`, global `PulseState`) : couches dans
-  `Island` (style A) et sur la bande (style C). Le son est demandé au hub par utilisateur
-  (`AudioHub::subscribe(barre, "pulse" | "media", …)`).
+- **Animations de la musique, par barre** : `BarLayout::music` (`horizon_core::layout::BarMusic` :
+  `backdrop`, `progress`, `pulse`, dans `layout.json`), réglées par `BarOptionsPatch` (Réglages ›
+  Barres, `ui::options::music_entries` ; menu de la barre › Musique, `MenuAction::Music`).
+  Préréglage du style à la création (`BarMusic::for_style`), suivi au changement de style s'il
+  n'a pas été touché (`BarLayout::restyle`) ; « lumière qui tourne » refusée sur une barre
+  graphique (`Pulse::fits`). Reprise une fois des réglages globaux de 0.7.2 et 0.7.3
+  (`Layout::adopt_music`, marque `music-per-bar`, au chargement de `AppState::load`).
+  `BarMusic::effective` coupe tout si Windows demande moins d'animations (relu toutes les 5 s
+  par `options.rs`, qui émet alors `EV_OPTIONS`).
+- **Pulsation** (`src/ui/pulse.rs`, `ui/pulse.slint`, global `PulseState`) : Rust pose les
+  valeurs du son (basse, niveau, flash, compteur de grosses caisses), l'animation de la barre
+  (`pulse::set_bar`, à chaque disposition) les dessine : `PulseLayers` dans `Island` (style A,
+  sous le contenu) et sur la bande (style C) pour « edges », « breath » et « wave », `HorizonLine`
+  au bas de chaque îlot (style A) ou de la bande (style C) pour « horizon » (elle part du widget
+  Lecture en cours, qui pose `PulseState.origin-x` ; la barre pose `PulseState.span`). Une
+  animation déclenchée par une grosse caisse passe par `Kick` (`p` de 0 à 1 à chaque
+  changement de `beat`) et se termine d'elle-même ; si elle dure plus que l'écart entre deux
+  coups, deux exemplaires se relaient selon la parité du coup (`WaveRun`, `Sparks`). Un dégradé
+  est peint en rectangle, coins ignorés : la vague est faite de bandes unies rentrées à la
+  courbe des coins, à l'échelle de l'îlot (traîne d'au plus la moitié de sa largeur, même
+  vitesse partout : sur l'îlot d'une seule icône, une vague fixe de 48 px devenait un bloc en
+  escalier qui rampait). Les îlots des plugins (image rendue à part, qui ne voit pas
+  `PulseState`) reçoivent la pulsation de l'hôte, posée par-dessus leur image à la place de
+  l'îlot de `@horizon` (`PluginWidget`, `ui/plugin-view.slint`). En pause ou dans un silence, les valeurs retombent au rythme des images de
+  son (`fade_out`), pas d'un coup. Une valeur qui suit
+  le son glisse d'une image de son à la suivante par un `animate` de durée `PulseState.sound`,
+  jamais d'une durée fixe : relancée à chaque image, une transition ne progresse que pendant
+  les tours de boucle sans image, et se fige dès que l'interface est chargée (vu sur l'exe de
+  debug). `Lateness` (`widgets/media/audio.rs`) relève le retard de chaque image et annule
+  alors cette durée : les valeurs sont posées telles quelles. Mieux, quand c'est possible :
+  adoucir la valeur en Rust et la poser sans transition (le niveau de la respiration,
+  `Meter::frame`), ce qui ne fait redessiner que 20 fois par seconde. Le son est demandé au
+  hub par utilisateur (`AudioHub::subscribe(barre, "pulse" | "media", …)`). Ajouter une
+  animation : une variante de `Pulse` (identifiant, libellé, explication), ce que `Meter::frame`
+  lui envoie, son composant dans `ui/pulse.slint`.
+- **Fond de la lecture en cours** (`BarMusic::backdrop`, `horizon_core::settings::Backdrop`,
+  `src/widgets/media/ui.rs`, relié de nouveau quand la musique de la barre change : elle est
+  dans la `signature` du widget) : `MediaData.backdrop`. Le spectre et les capsules sont des
+  rectangles de l'interface (`Spectrum`, `Capsules`), qui reçoivent leurs valeurs et retombent
+  en pause (`MediaData.live`). Le halo, l'aurore, le ruban, les points, la progression qui
+  ondule (`progress = "wave"`) et la lumière qui tourne (`pulse = "comet"`) sont
+  une **image de l'îlot** (`horizon_core::music::canvas` : `Canvas::paint(scène, son, couleurs)`,
+  pixel par pixel, coins arrondis compris, testée sans Windows), refaite à chaque image de son
+  à la taille que le widget annonce (`MediaData.island-w/h/radius`, `resized`) et posée dans
+  `MediaData.canvas`. Le mouvement y est adouci par `Sound::feed` (montée vive, retombée
+  lente), pas par une transition ; sans son (pause, silence de 400 ms, hub muet en mode jeu),
+  `Sound::fade` fait tout retomber puis le minuteur s'arrête. Ajouter un fond en image : une
+  variante de `Backdrop` rangée dans `is_painted`, sa fonction de dessin dans `Canvas`. Les
+  bandes ne sont demandées au hub que pour un fond qui les dessine. Le widget retiré d'une
+  barre s'arrête (`Backend::unbind` : écouteurs, abonnement, minuteurs).
+- **Son d'essai** : `horizon.exe --musique-essai [secondes]` (20 sans précision) montre un
+  morceau en lecture sur les barres et remplace la capture par un son fabriqué
+  (`horizon_core::music::essai_frame` : une grosse caisse par demi-seconde), mode jeu compris,
+  pour voir et capturer les animations sans rien jouer. Un autre morceau qui démarre l'arrête ;
+  relancé, il prolonge le précédent. `--musique-essai 8 kick` (ou `bass`, `level`) ne joue
+  qu'un ingrédient (`horizon_core::music::Essai`) : chaque animation se juge seule, sur ce qui
+  la fait bouger (bords et ligne d'horizon : `bass` puis `kick` ; onde : `kick` ; respiration et
+  lumière qui tourne : `level`), filmée par `film.ps1` (champ 4 : l'ingrédient), en mesurant
+  la couleur image par image plutôt qu'à l'œil.
 - **Mode nuit** (style C) : le voile couvre toute la bande, widgets et affichage du volume
   compris (au-dessus d'eux, comme `.dimmable.graphic .band::after`).
 
@@ -338,8 +394,8 @@ Une seule brique par rôle ; tout widget passe par elles.
   (rien à montrer), `padding-x`, `gap`, `panel` / `pin` / `tip` / `has-action` / `activated`
   (voir Panneaux), `hovered`. `BarButton` : bouton intérieur (`enabled`, `tip`, `rest`,
   `hover`, `pressed`) ; désactivé, son clic passe au cadre. `StatusDot` : pastille d'état.
-  Lecture en cours garde sa forme propre (spectre derrière l'îlot) avec les mêmes propriétés et
-  `PanelArea`.
+  Lecture en cours garde sa forme propre (fond qui suit le son dans l'îlot) avec les mêmes
+  propriétés et `PanelArea`.
 - **Accroche des panneaux** `ui/panels.slint` + `src/ui/panels.rs` : global `Panels`
   (`hover(genre, entré, x, l)`, `pin(genre, x, l)`, `settings(id)`) et `PanelArea` (zone qui
   l'appelle : survol si `interactive`, épinglage au clic si `clickable` hors des boutons actifs,

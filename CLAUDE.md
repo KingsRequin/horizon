@@ -67,7 +67,8 @@ crates/
 packaging/                  paquet « sparse » (identité de paquet) et ses icônes ; installateur
                             (horizon.iss, Inno Setup 6)
 scripts/                    installation, désinstallation, paquet d'une Release, hooks Claude,
-                            icônes (icones.ps1 redessine le symbole à chaque taille)
+                            icônes (icones.ps1 redessine le symbole à chaque taille), logo
+                            animé du README (logo-anime.ps1 écrit docs/images/logo-anime.svg)
 .github/workflows/          vérification (ci.yml) et publication d'une Release (release.yml)
 ```
 
@@ -94,9 +95,11 @@ activé dans la page Plugins.
 
 ## Pièges connus
 
-- Une seule édition. Ce qui ne sert qu'à une appli de l'auteur ou à un usage particulier (Prisme,
-  SharkApp, Essaim, Serveurs, Quota Claude) est un plugin de la bibliothèque
-  (`KingsRequin/horizon-plugins`), pas du code d'Horizon : `docs/PLUGINS.md`. Le relais
+- Une seule édition. Ce qui ne sert qu'à une appli de l'auteur ou à un usage particulier est un
+  plugin, pas du code d'Horizon (`docs/PLUGINS.md`) : dans la bibliothèque publique
+  (`KingsRequin/horizon-plugins` : Essaim, Serveurs, Quota Claude) s'il peut servir à d'autres,
+  sinon dans le dépôt privé `KingsRequin/horizon-plugins-prives` (Prisme, SharkApp, Livraison
+  Shopopop ; installé par son `scripts\installer.ps1`, sans mise à jour automatique). Le relais
   BetterDiscord (KrispBridge, port 28642) reste un repli de Discord vocal et donne Krisp.
 - Un widget intégré qui devient un plugin : migration qui change son genre en `plugin:<id>` à la
   même place (`layout/migrations.rs`) ; le plugin est alors noté dans `Layout::pending_plugins`
@@ -114,6 +117,16 @@ activé dans la page Plugins.
 - Aucune animation sans fin ; ce qui suit le son est posé au plus 20 fois par seconde et
   seulement si la valeur change ; rien ne tourne quand c'est inutile (barre cachée, plein écran,
   session verrouillée).
+- Une valeur qui suit le son ne se lisse que par `animate … { duration: PulseState.sound; }`
+  (`ui/pulse.slint`) : une transition de durée fixe, relancée à chaque image de son, se fige
+  quand l'interface est chargée. Les animations de la musique se contrôlent sans rien jouer :
+  `horizon.exe --musique-essai [secondes] [kick|bass|level]` (un ingrédient seul pour juger
+  chaque effet séparément, pas la musique réelle), filmées sur deux grosses caisses
+  (`.superpowers/sdd/animations-musique/film.ps1`, non suivi) : une capture isolée ne montre
+  pas un effet qui se coupe ou s'arrête net.
+- Un dégradé est peint en rectangle par le rendu logiciel (coins arrondis ignorés, comme
+  `clip`) : dans un îlot, il naît et meurt transparent entre les coins, ou il est remplacé par
+  des bandes unies rentrées à la courbe des coins.
 - Jamais de `PopupWindow` Slint (coupée par la barre) : panneau = fenêtre surgissante.
 - Rendu logiciel : ni ombre, ni masque, ni transformation (rotation, échelle animée) ; une mise
   en page dont la taille dépend de la largeur de la fenêtre fait une boucle de liaison (poser à la

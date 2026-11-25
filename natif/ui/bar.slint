@@ -10,8 +10,7 @@ import { WidgetView } from "widget-view.slint";
 import { WheelHint } from "wheel-hint.slint";
 import { BarStatus } from "bar-status.slint";
 import { Osd, OsdData } from "osd.slint";
-import { PulseLayers } from "pulse.slint";
-import { Icon } from "components.slint";
+import { PulseLayers, PulseState, HorizonLine } from "pulse.slint";
 import { DashedBox } from "dashed.slint";
 
 // Bouton « + » d'une zone en mode édition (`.add` d'App.svelte) : 22 × 22, après un écart s'il y
@@ -263,6 +262,9 @@ export component BarWindow inherits Window {
     default-font-weight: 500;
 
     changed inner-width => { root.refit(); }
+    // Largeur de la barre, pour la ligne d'horizon de ses îlots.
+    init => { PulseState.span = root.width; }
+    changed width => { PulseState.span = root.width; }
     changed tiles-width => { root.tiles-resized(); }
     changed tiles-height => { root.tiles-resized(); }
     changed tiles-max-scroll => { root.tiles-scroll = min(root.tiles-scroll, root.tiles-max-scroll); }
@@ -299,6 +301,14 @@ export component BarWindow inherits Window {
             width: parent.width - 8px;
             height: parent.height - 6px;
             radius: t.island-radius;
+        }
+        // Ligne d'horizon du style graphique : au bas de la bande sombre, entre ses coins (en
+        // style îlots, chaque îlot porte son morceau : components.slint).
+        if t.graphic && PulseState.style == "horizon": HorizonLine {
+            x: 4px + t.island-radius;
+            y: parent.height - 5px;
+            width: parent.width - 2 * self.x;
+            offset-x: self.x;
         }
 
         if root.editing: EditZone {

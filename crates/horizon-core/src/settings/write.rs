@@ -106,8 +106,6 @@ impl Settings {
              # Windows ; osd_track : titre de chaque nouveau morceau.
              osd = {}
              osd_track = {}
-             # Pendant la lecture : îlots éclairés par la basse, flash à chaque grosse caisse.
-             bar_pulse = {}
              # Versions publiées : nouvelle version cherchée sur GitHub, installée au démarrage suivant.
              auto_update = {}
              # Module « Sessions Claude Code » (page Plugins des réglages). Non réglé : activé
@@ -121,10 +119,11 @@ impl Settings {
             f.windows_accent,
             f.osd,
             f.osd_track,
-            f.bar_pulse,
             f.auto_update,
         );
         line(&mut o, "claude_sessions", f.claude_sessions, "true");
+        // Les animations de la musique se règlent barre par barre (layout.json) : ni [music] ni
+        // bar_pulse ne sont plus écrits.
         let _ = write!(
             o,
             "

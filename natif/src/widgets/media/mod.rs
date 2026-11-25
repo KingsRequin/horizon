@@ -45,6 +45,7 @@ pub const BACKEND: Backend = Backend {
     },
     start: Some(|app| crate::widgets::start_each(app, &[("lecture", start), ("son en cours", audio::start)])),
     bind: Some(ui::bind),
+    unbind: Some(ui::unbind),
     panel: Some(panel::PANEL),
     ..Backend::NONE
 };
@@ -154,6 +155,16 @@ fn cover_square(w: u32, h: u32, px: &[u8], size: u32) -> Option<Vec<u8>> {
 }
 
 fn on_snapshot(app: &AppHandle, s: MediaSnapshot) {
+    // Un autre morceau démarre pendant la lecture d'essai : son faux son s'arrête (la lecture
+    // qui jouait déjà avant l'essai, elle, ne l'arrête pas en envoyant sa position).
+    if let Some(i) = s.info.as_ref().filter(|i| i.app_id != ESSAI_APP && i.playing) {
+        let mut before = lock(&ESSAI_BEFORE);
+        let started = before.as_ref().is_some_and(|b| b.info.as_ref().is_none_or(|o| !o.playing || o.title != i.title || o.app_id != i.app_id));
+        if started {
+            *before = None;
+            app.state::<audio::AudioHub>().essai(horizon_core::music::Essai::Mix, std::time::Duration::ZERO);
+        }
+    }
     let now = horizon_core::time::now_ms();
     let payload = MediaPayload {
         position_ms: s.info.as_ref().map(|i| position_at(i, now)).unwrap_or(0),
@@ -212,6 +223,49 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Appli de la lecture d'essai.
+const ESSAI_APP: &str = "horizon.essai";
+
+/// Numéro du dernier essai lancé : seul lui rétablit la lecture d'avant à sa fin.
+static ESSAI_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// Lecture d'avant le premier essai d'une suite (un essai relancé garde celle-ci).
+static ESSAI_BEFORE: Mutex<Option<MediaPayload>> = Mutex::new(None);
+
+/// Lecture d'essai (`horizon.exe --musique-essai [secondes] [mix|kick|bass|level]` pendant
+/// qu'Horizon tourne) : les barres montrent un morceau en lecture et reçoivent un son d'essai
+/// (`kind` : un morceau entier, ou un seul ingrédient), pour voir les animations de la musique
+/// sans rien jouer (pendant un jeu aussi). À la fin, la lecture d'avant revient.
+/// Une vraie lecture qui démarre entre-temps arrête l'essai ; un essai relancé prolonge le
+/// précédent.
+pub fn essai(app: &AppHandle, secs: u64, kind: horizon_core::music::Essai) {
+    let secs = secs.clamp(1, 600);
+    let before = lock(&ESSAI_BEFORE).get_or_insert_with(|| media_state(app).payload).clone();
+    let generation = ESSAI_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+    let info = MediaInfo {
+        app_id: ESSAI_APP.into(),
+        title: "Morceau d’essai".into(),
+        artist: "Horizon".into(),
+        playing: true,
+        // Au tiers du morceau : la progression a de quoi se montrer.
+        position_ms: 60_000,
+        duration_ms: 180_000,
+        timeline_at_ms: horizon_core::time::now_ms(),
+    };
+    log::info!("musique d'essai : {secs} s, {kind:?}");
+    on_snapshot(app, MediaSnapshot { info: Some(info), sessions: before.sessions.clone(), art: None });
+    app.state::<audio::AudioHub>().essai(kind, std::time::Duration::from_secs(secs));
+    let app = app.clone();
+    crate::util::spawn_named("musique-essai", move || {
+        std::thread::sleep(std::time::Duration::from_secs(secs));
+        if ESSAI_GEN.load(std::sync::atomic::Ordering::SeqCst) != generation {
+            return;
+        }
+        lock(&ESSAI_BEFORE).take();
+        if current_app_id(&app).as_deref() == Some(ESSAI_APP) {
+            on_snapshot(&app, MediaSnapshot { info: before.info, sessions: before.sessions, art: None });
+        }
+    });
+}
 
 /// Identifiant SMTC de l'appli de la lecture en cours.
 pub fn current_app_id(app: &AppHandle) -> Option<String> {

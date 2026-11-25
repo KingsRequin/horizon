@@ -141,7 +141,23 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
 - **Profils** : clic droit sur une barre → Profil. Chaque profil garde sa disposition ; une
   appli associée (fenêtre « Gérer les profils… ») active son profil tant qu'elle est au premier
   plan, le profil choisi revient 2 s après.
-- Le fond suit la musique (halo ou spectre) dans la couleur de la pochette.
+- **Animations de la musique**, écran par écran (*Réglages d'Horizon › Barres*, ou clic droit
+  sur la barre › Musique ; `music` de chaque barre dans `layout.json`, annulable par Ctrl+Z en
+  mode édition), dans la couleur de la pochette :
+  - *Animation* de la barre : aucune, bords (lueur de la basse, flash de la grosse caisse),
+    respiration (fond teinté par le volume, pochette qui bat), onde de kick (une vague traverse
+    chaque îlot de bout en bout), ligne d'horizon (filet au bas des îlots ou de la bande, d'où
+    partent deux éclats), lumière qui tourne (autour de l'îlot de la lecture en cours ; barres
+    en îlots seulement).
+  - *Fond de la lecture en cours* : aucun, halo, aurore (trois nappes : graves, médiums, aigus),
+    spectre, ruban (le spectre fondu en une vague), points, capsules (à côté du titre).
+  - *Barre de progression* : simple, ou vivante (la part lue ondule avec le son).
+
+  Une barre neuve reçoit le préréglage de son style (halo et bords en îlots, spectre et bords en
+  graphique), qui suit un changement de style tant qu'il n'a pas été touché. Les réglages
+  globaux de 0.7.2 et 0.7.3 (`[music]`, `bar_pulse`) sont repris une fois sur chaque barre. En
+  pause ou dans un silence, tout retombe en douceur ; rien ne bouge en mode jeu ni si Windows
+  demande moins d'animations (relu toutes les 5 s).
 - **Couleur du fond d'écran** (`[features] wallpaper_accent`, `windows_accent`) : hors lecture,
   l'accent vient du fond de l'écran principal, relu chaque minute (`PrintWindow` du bureau avec
   `PW_RENDERFULLCONTENT` : Wallpaper Engine et ses listes de lecture compris, ~25 ms ; rien en
