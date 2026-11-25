@@ -1,7 +1,7 @@
 //! Fenêtre au premier plan (appli + écran), relance et mise au premier plan des applis.
 
 use crate::win32::{class_name, from_wide};
-use horizon_core::apps::{app_key, is_shell_window, launcher_app_key};
+use horizon_core::apps::{app_key, is_shell_window, launcher_starts_app};
 use std::cell::RefCell;
 use std::path::Path;
 use crate::window_focus::{bring_to_front, main_windows, pid_of};
@@ -233,7 +233,7 @@ pub fn resolve_launch(app: &str) -> Option<String> {
     let key = app_key(app);
     let hit = crate::shell::run(move || {
         crate::startmenu::shortcuts().into_iter().find(|l| {
-            lnk_info(&l.to_string_lossy()).is_some_and(|(t, a)| launcher_app_key(&t, &a) == key)
+            lnk_info(&l.to_string_lossy()).is_some_and(|(t, a)| launcher_starts_app(&t, &a, &key))
         })
     })
     .flatten();

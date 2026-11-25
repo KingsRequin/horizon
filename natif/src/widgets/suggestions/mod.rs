@@ -129,7 +129,15 @@ impl Suggestions {
     /// Cible de lancement d'une appli : en base, sinon cherchée dans le menu Démarrer (par le fil
     /// shell : bloquant, jamais depuis le fil de l'interface).
     fn launch_target(&self, key: &str) -> Option<String> {
-        let raw = self.with_store(|s| s.launch_target(key).ok_or_else(|| s.last_raw_app(key)))?;
+        let raw = self.with_store(|s| match s.launch_target(key) {
+            // Entrée fausse d'une version antérieure (Explorateur → raccourci du SDK) : réparée.
+            Some(t) if horizon_core::apps::is_bogus_launch(key, &t) => {
+                let _ = s.clear_launch(key);
+                Err(s.last_raw_app(key))
+            }
+            Some(t) => Ok(t),
+            None => Err(s.last_raw_app(key)),
+        })?;
         let raw = match raw {
             Ok(target) => return Some(target),
             Err(raw) => raw?,

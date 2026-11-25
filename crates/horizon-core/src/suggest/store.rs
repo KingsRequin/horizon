@@ -230,6 +230,12 @@ impl Store {
         Ok(())
     }
 
+    /// Oublie la cible de lancement d'une appli (à résoudre de nouveau).
+    pub fn clear_launch(&self, app_key: &str) -> anyhow::Result<()> {
+        self.db.execute("DELETE FROM launch WHERE app_key = ?1", [app_key])?;
+        Ok(())
+    }
+
     pub fn launch_target(&self, app_key: &str) -> Option<String> {
         self.db
             .query_row("SELECT target FROM launch WHERE app_key = ?1", [app_key], |r| r.get(0))
