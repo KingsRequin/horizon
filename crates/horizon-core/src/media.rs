@@ -70,9 +70,9 @@ pub fn timeline_ms(ticks: i64, start: i64) -> u64 {
 /// Position à demander (unités de 100 ns de la chronologie qui commence à `start`) pour avancer
 /// de `delta_ms` depuis la position courante, sans sortir du morceau.
 pub fn seek_target(info: &MediaInfo, now_ms: u64, delta_ms: i64, start: i64) -> i64 {
-    let pos = position_at(info, now_ms) as i64 + delta_ms;
+    let pos = i64::try_from(position_at(info, now_ms)).unwrap_or(i64::MAX).saturating_add(delta_ms);
     let max = if info.duration_ms > 0 { info.duration_ms as i64 } else { i64::MAX / 10_000 };
-    start + pos.clamp(0, max) * 10_000
+    start.saturating_add(pos.clamp(0, max).saturating_mul(10_000))
 }
 
 /// Un autre morceau commence : titre ou artiste différents d'un morceau déjà connu (le premier

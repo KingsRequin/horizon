@@ -734,7 +734,9 @@ d'exemple par type dans `crates/horizon-core/tests/fixtures/phone/`, que l'appli
 - **Service** : `identity.rs` (clé du PC dans le Gestionnaire d'identifiants, certificat
   auto-signé, empreinte du SPKI), `server.rs` (TLS + WebSocket, un fil par session ; avant
   authentification : sondes TCP, 10 s en tout pour le premier message, 64 Kio par trame, 8 connexions en
-  attente et 4 sessions au plus, adresses privées seulement), `mod.rs` (`Core` : appairage,
+  attente et 4 sessions au plus, adresses privées seulement ; un fil par session, réveillé toutes
+  les secondes, toutes les 50 ms tant que le téléphone regarde la lecture ou le volume, pour que
+  ce qui part vers lui n'attende pas), `mod.rs` (`Core` : appairage,
   sessions, batteries ; `refresh` : serveur en marche si le module est activé et que le pare-feu
   le permet ; `publish` : `EV_PHONE` = `Vec<BatteryView>` pour les barres, `EV_PHONE_LINK` =
   `LinkView` pour la page ; `set_right`), `ui.rs` (widget de barre, global `PhoneData`),

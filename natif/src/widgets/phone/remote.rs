@@ -11,9 +11,10 @@ use horizon_core::phone::remote::{self, Command, Topic, art_key, media_message};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-/// Pochette envoyée : côté en pixels et poids au plus.
+/// Pochette envoyée : côté en pixels et poids au plus. 47 Kio de JPEG font 64 172 caractères de
+/// base64 : avec l'enveloppe JSON, la trame tient dans les 64 Kio du protocole.
 const ART_SIDE: u32 = 300;
-const ART_MAX: usize = 48 * 1024;
+const ART_MAX: usize = 47 * 1024;
 
 /// Ce que la télécommande demande au reste d'Horizon (en test : un faux).
 pub trait Controls: Send + Sync {
@@ -66,7 +67,14 @@ pub type Rights = Box<dyn Fn(&str) -> Vec<String> + Send + Sync>;
 
 #[derive(Default)]
 struct Inner {
+    /// Ce que chaque téléphone a demandé (`watch`), avant le tri par ses droits : rétabli quand
+    /// un droit revient, l'appli ne le redemandant pas.
+    requested: HashMap<String, Vec<String>>,
+    /// Ce qu'il regarde vraiment : la demande triée par ses droits du moment.
     watch: HashMap<String, Vec<Topic>>,
+    /// Le mixeur a été réveillé pour le volume (décidé sous le verrou : deux fils ne peuvent pas
+    /// le réveiller ou l'endormir deux fois).
+    volume_on: bool,
     sent: Option<Sent>,
     art: Option<Art>,
     volume: Option<(f32, bool)>,
@@ -123,11 +131,14 @@ impl Remote {
             return false;
         }
         match remote::command(msg, &(self.rights)(phone_id)) {
+            // Cible bornée au morceau ; un direct (durée inconnue) ne se déplace pas.
+            Some(Command::SeekTo(_)) if self.controls.media().info.is_none_or(|i| i.duration_ms == 0) => {}
             Some(Command::PlayPause) => self.controls.play_pause(),
             Some(Command::Next) => self.controls.next(),
             Some(Command::Previous) => self.controls.previous(),
             Some(Command::SeekTo(target)) => {
                 if let Some(info) = self.controls.media().info {
+                    let target = target.min(info.duration_ms);
                     let delta = i64::try_from(target).unwrap_or(i64::MAX).saturating_sub(i64::try_from(position_at(&info, now_ms)).unwrap_or(i64::MAX));
                     self.controls.seek_relative(delta);
                 }
@@ -140,25 +151,36 @@ impl Remote {
         true
     }
 
-    /// Ce que `phone_id` regarde désormais ; ce qu'il vient de commencer à regarder lui est
-    /// envoyé tout de suite.
+    /// Vrai si `phone_id` regarde quelque chose : sa session doit alors relayer sans attendre.
+    pub fn watching(&self, phone_id: &str) -> bool {
+        lock(&self.inner).watch.contains_key(phone_id)
+    }
+
+    /// Ce que `phone_id` demande désormais à regarder.
     fn watch(&self, phone_id: &str, requested: &[String], now_ms: u64) {
-        let (volume_before, added) = {
+        lock(&self.inner).requested.insert(phone_id.to_owned(), requested.to_vec());
+        self.apply(phone_id, now_ms);
+    }
+
+    /// Ce que `phone_id` regarde : sa demande, triée par ses droits du moment. Ce qu'il vient de
+    /// commencer à regarder lui est envoyé tout de suite.
+    fn apply(&self, phone_id: &str, now_ms: u64) {
+        let added = {
             let mut inner = lock(&self.inner);
-            // Droits lus sous le verrou : `rights_changed` attend ce verrou pour retirer les
-            // abonnements, il ne peut donc pas passer entre la lecture et l'abonnement.
-            let topics = remote::topics(requested, &(self.rights)(phone_id));
+            // Droits lus sous le verrou : deux changements rapprochés (abonnement, droit retiré ou
+            // rendu) ne peuvent pas s'appliquer dans le désordre.
+            let requested = inner.requested.get(phone_id).cloned().unwrap_or_default();
+            let topics = remote::topics(&requested, &(self.rights)(phone_id));
             let before = inner.watch.get(phone_id).cloned().unwrap_or_default();
-            let volume_before = !inner.watching(Topic::Volume).is_empty();
             let added: Vec<Topic> = topics.iter().copied().filter(|t| !before.contains(t)).collect();
             if topics.is_empty() {
                 inner.watch.remove(phone_id);
             } else {
                 inner.watch.insert(phone_id.to_owned(), topics);
             }
-            (volume_before, added)
+            added
         };
-        self.volume_watch_changed(volume_before);
+        self.sync_volume();
         if added.contains(&Topic::Media) {
             let now = self.controls.media();
             let mut inner = lock(&self.inner);
@@ -178,42 +200,38 @@ impl Remote {
         }
     }
 
-    /// Réveille ou rendort le mixeur si le nombre de téléphones qui regardent le volume passe
-    /// par zéro.
-    fn volume_watch_changed(&self, before: bool) {
-        let after = !lock(&self.inner).watching(Topic::Volume).is_empty();
-        if before != after {
-            self.controls.watch_volume(after);
+    /// Réveille ou rendort le mixeur quand le nombre de téléphones qui regardent le volume passe
+    /// par zéro. Le passage est décidé sous le verrou ; l'appel au mixeur se fait hors du verrou
+    /// (le mixeur rappelle `volume_changed`).
+    fn sync_volume(&self) {
+        let change = {
+            let mut inner = lock(&self.inner);
+            let on = !inner.watching(Topic::Volume).is_empty();
+            (on != inner.volume_on).then(|| {
+                inner.volume_on = on;
+                on
+            })
+        };
+        if let Some(on) = change {
+            self.controls.watch_volume(on);
         }
     }
 
     /// La session de `phone_id` est finie : il ne regarde plus rien.
     pub fn closed(&self, phone_id: &str) {
-        let before = !lock(&self.inner).watching(Topic::Volume).is_empty();
-        lock(&self.inner).watch.remove(phone_id);
-        self.volume_watch_changed(before);
-    }
-
-    /// Les droits de `phone_id` ont changé (déjà enregistrés) : il le sait, et ne regarde plus
-    /// que ce qu'il peut. Les abonnements sont triés d'après les droits relus sous le verrou :
-    /// deux changements rapprochés ne peuvent pas s'appliquer dans le désordre.
-    pub fn rights_changed(&self, phone_id: &str, granted: &[String]) {
-        (self.send)(phone_id, &ToPhone::Rights { granted: granted.to_vec() });
-        let before = !lock(&self.inner).watching(Topic::Volume).is_empty();
         {
             let mut inner = lock(&self.inner);
-            let now = (self.rights)(phone_id);
-            if let Some(topics) = inner.watch.get(phone_id) {
-                let names: Vec<String> = topics.iter().map(|t| if *t == Topic::Media { "media" } else { "volume" }.to_owned()).collect();
-                let kept = remote::topics(&names, &now);
-                if kept.is_empty() {
-                    inner.watch.remove(phone_id);
-                } else {
-                    inner.watch.insert(phone_id.to_owned(), kept);
-                }
-            }
+            inner.requested.remove(phone_id);
+            inner.watch.remove(phone_id);
         }
-        self.volume_watch_changed(before);
+        self.sync_volume();
+    }
+
+    /// Les droits de `phone_id` ont changé (déjà enregistrés) : il le sait, et regarde ce qu'il
+    /// a demandé et peut désormais voir (un droit rendu rétablit son abonnement).
+    pub fn rights_changed(&self, phone_id: &str, granted: &[String], now_ms: u64) {
+        (self.send)(phone_id, &ToPhone::Rights { granted: granted.to_vec() });
+        self.apply(phone_id, now_ms);
     }
 
     /// La lecture a changé (fil du média). La pochette reçue est gardée ; l'état ne part que
@@ -429,7 +447,7 @@ mod tests {
         r.message("tel-1", &watch(&["media", "volume"]), 0);
         let only_battery: Vec<String> = vec!["battery".into()];
         *fake.granted.lock().unwrap() = only_battery.clone();
-        r.rights_changed("tel-1", &only_battery);
+        r.rights_changed("tel-1", &only_battery, 0);
         assert_eq!(sent.lock().unwrap().last().unwrap().1, ToPhone::Rights { granted: only_battery });
         assert_eq!(*fake.watched.lock().unwrap(), vec![true, false]);
         sent.lock().unwrap().clear();
@@ -473,6 +491,45 @@ mod tests {
         assert!(fake.watched.lock().unwrap().is_empty());
         r.media_changed(&song("FROGZ", true, 0), ArtChange::Unchanged, 0);
         assert!(sent.lock().unwrap().is_empty(), "pas abonné");
+    }
+
+    #[test]
+    fn a_right_given_back_brings_the_watch_back() {
+        // L'appli ne renvoie pas `watch` quand ses droits reviennent : le PC garde ce qu'elle a
+        // demandé et le rétablit lui-même.
+        let (r, fake, sent) = remote();
+        *fake.media.lock().unwrap() = song("FROGZ", true, 0);
+        r.message("tel-1", &watch(&["media"]), 0);
+        let only_battery: Vec<String> = vec!["battery".into()];
+        *fake.granted.lock().unwrap() = only_battery.clone();
+        r.rights_changed("tel-1", &only_battery, 0);
+        sent.lock().unwrap().clear();
+        *fake.granted.lock().unwrap() = rights();
+        r.rights_changed("tel-1", &rights(), 0);
+        assert_eq!(types(&sent), vec!["tel-1 rights", "tel-1 media.state"], "l'état du moment repart");
+        r.media_changed(&song("AUTRE", true, 0), ArtChange::Unchanged, 0);
+        assert_eq!(types(&sent).last().map(String::as_str), Some("tel-1 media.state"), "et les changements suivent");
+    }
+
+    #[test]
+    fn a_seek_stays_inside_the_track() {
+        let (r, fake, _) = remote();
+        // 60 s lues à 1 s, morceau de 233 s : à 1 s, une cible démesurée s'arrête à la fin.
+        *fake.media.lock().unwrap() = song("FROGZ", true, 60_000);
+        r.message("tel-1", &FromPhone::MediaSeek { position_ms: u64::MAX }, 1_000);
+        assert_eq!(*fake.calls.lock().unwrap(), vec!["seek 173000"]);
+        let mut live = song("RADIO", true, 60_000);
+        live.info.as_mut().unwrap().duration_ms = 0;
+        *fake.media.lock().unwrap() = live;
+        r.message("tel-1", &FromPhone::MediaSeek { position_ms: 10_000 }, 1_000);
+        assert_eq!(fake.calls.lock().unwrap().len(), 1, "un direct ne se déplace pas");
+    }
+
+    #[test]
+    fn the_cover_fits_in_one_frame() {
+        // Une trame de plus de 64 Kio ferme la connexion (docs/PHONE.md) : le JPEG en base64 et
+        // l'enveloppe JSON (type, clé) doivent y tenir.
+        assert!(ART_MAX.div_ceil(3) * 4 + 128 <= 64 * 1024, "{} octets de base64", ART_MAX.div_ceil(3) * 4);
     }
 
     #[test]

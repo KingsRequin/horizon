@@ -300,6 +300,9 @@ impl<F: Fn(Event) + Send + Sync + 'static> Handler for Link<F> {
         match &result {
             Ok((id, _)) => {
                 log::info!("téléphone : session ouverte pour {id} depuis {peer}");
+                // Session neuve : le téléphone redemande ce qu'il regarde et en reçoit l'état, même
+                // si sa session morte n'a pas encore été vue.
+                self.remote.closed(id);
                 (self.notify)(Event::Opened);
             }
             // Pas un avertissement : n'importe quel appareil du réseau peut en provoquer à volonté.
@@ -316,6 +319,10 @@ impl<F: Fn(Event) + Send + Sync + 'static> Handler for Link<F> {
         if self.core.message(phone_id, msg, now) {
             (self.notify)(Event::Batteries);
         }
+    }
+
+    fn poll(&self, phone_id: &str) -> Duration {
+        if self.remote.watching(phone_id) { server::PROMPT } else { server::POLL }
     }
 
     fn closed(&self, phone_id: &str) {
@@ -630,7 +637,7 @@ pub fn set_right(app: &AppHandle, id: &str, right: &str, on: bool) {
     let (Some(core), Some(remote)) = (state.core.get(), state.remote.get()) else { return };
     if let Some(granted) = core.set_right(id, right, on) {
         log::info!("téléphone : droit {right} {} pour {id}", if on { "accordé" } else { "retiré" });
-        remote.rights_changed(id, &granted);
+        remote.rights_changed(id, &granted, now_ms());
         publish(app);
     }
 }
@@ -655,13 +662,22 @@ fn master(app: &AppHandle) -> Option<(f32, bool)> {
     crate::mixer::view(app).snapshot.master.map(|l| (l.volume, l.muted))
 }
 
+/// Les lectures du média (identifiant, titre en cours) nommées d'après leur appli, comme dans
+/// le panneau du média : c'est le nom du lecteur que le téléphone affiche.
+fn named(sessions: Vec<(String, String)>) -> Vec<(String, String)> {
+    sessions.into_iter().map(|(id, _)| {
+        let name = crate::ui::format::app_name(&id);
+        (id, name)
+    }).collect()
+}
+
 /// La télécommande branchée sur Horizon : lecture en cours et mixeur.
 struct AppControls(AppHandle);
 
 impl AppControls {
     fn media_now(&self) -> remote::MediaNow {
         let state = crate::widgets::media::media_state(&self.0);
-        remote::MediaNow { info: state.payload.info, sessions: state.payload.sessions }
+        remote::MediaNow { info: state.payload.info, sessions: named(state.payload.sessions) }
     }
 
     fn report(what: &str, result: Result<(), String>) {
@@ -1023,45 +1039,116 @@ mod tests {
         assert_eq!(lock(&saved).len(), 1, "rien à écrire");
     }
 
+    /// Le vrai serveur, le vrai `Core` et une télécommande branchée sur de fausses commandes ;
+    /// un téléphone appairé prêt à ouvrir des sessions.
+    struct Bench {
+        recorded: Arc<Recorded>,
+        remote: Arc<remote::Remote>,
+        slot: Arc<Mutex<Option<ServerHandle>>>,
+        addr: std::net::SocketAddr,
+        fingerprint: String,
+        paired: faux_telephone::Client,
+    }
+
+    impl Bench {
+        fn new() -> Bench {
+            let core = Arc::new(Core::for_tests("pc-1", "Bureau"));
+            let identity = identity::Identity::load_or_create(|| None, |_| {}).unwrap();
+            let recorded = Arc::new(Recorded::default());
+            let slot: Arc<Mutex<Option<ServerHandle>>> = Arc::default();
+            let to = slot.clone();
+            let c = core.clone();
+            let remote = Arc::new(remote::Remote::new(
+                Box::new(recorded.clone()),
+                Box::new(move |id: &str, msg: &ToPhone| {
+                    if let Some(server) = lock(&to).as_ref() {
+                        server.send_to(id, msg);
+                    }
+                }),
+                Box::new(move |id: &str| c.granted(id)),
+            ));
+            let link = Link { core: core.clone(), remote: remote.clone(), notify: |_| {} };
+            let server = server::spawn("127.0.0.1".parse().unwrap(), 0, identity.tls_config(), Arc::new(link)).unwrap();
+            let port = server.port();
+            *lock(&slot) = Some(server);
+            core.pairing_offer("jeton".into(), horizon_core::time::now_ms());
+            let link = format!("horizon://pair?v=1&h=127.0.0.1&n=Bureau&p={port}&fp={}&t=jeton", identity.fingerprint());
+            let paired = faux_telephone::Client::pair(&link, "Pixel").unwrap();
+            Bench { recorded, remote, slot, addr: std::net::SocketAddr::from(([127, 0, 0, 1], port)), fingerprint: identity.fingerprint(), paired }
+        }
+
+        /// Une session de ce téléphone, abonnée à la lecture ; son premier état est lu.
+        fn watching(&self) -> faux_telephone::Client {
+            let mut phone = faux_telephone::Client::hello(self.addr, &self.fingerprint, &self.paired.device_id, &self.paired.device_token).unwrap();
+            phone.send_raw(r#"{"type":"watch","topics":["media"]}"#).unwrap();
+            let state = phone.receive().unwrap();
+            assert!(state.contains("\"media.state\"") && state.contains("FROGZ"), "{state}");
+            phone
+        }
+
+        /// Le PC change de morceau.
+        fn new_track(&self, title: &str) {
+            let mut now = remote::Controls::media(&self.recorded);
+            if let Some(info) = now.info.as_mut() {
+                info.title = title.to_owned();
+            }
+            self.remote.media_changed(&now, remote::ArtChange::Unchanged, horizon_core::time::now_ms());
+        }
+    }
+
+    impl Drop for Bench {
+        fn drop(&mut self) {
+            if let Some(server) = lock(&self.slot).take() {
+                server.stop();
+            }
+        }
+    }
+
     #[test]
     fn a_phone_watching_media_gets_its_state_over_the_network() {
-        let core = Arc::new(Core::for_tests("pc-1", "Bureau"));
-        let identity = identity::Identity::load_or_create(|| None, |_| {}).unwrap();
-        let recorded = Arc::new(Recorded::default());
-        let slot: Arc<Mutex<Option<ServerHandle>>> = Arc::default();
-        let to = slot.clone();
-        let c = core.clone();
-        let remote = Arc::new(remote::Remote::new(
-            Box::new(recorded.clone()),
-            Box::new(move |id: &str, msg: &ToPhone| {
-                if let Some(server) = lock(&to).as_ref() {
-                    server.send_to(id, msg);
-                }
-            }),
-            Box::new(move |id: &str| c.granted(id)),
-        ));
-        let link = Link { core: core.clone(), remote, notify: |_| {} };
-        let server = server::spawn("127.0.0.1".parse().unwrap(), 0, identity.tls_config(), Arc::new(link)).unwrap();
-        let port = server.port();
-        *lock(&slot) = Some(server);
-        core.pairing_offer("jeton".into(), horizon_core::time::now_ms());
-        let link = format!("horizon://pair?v=1&h=127.0.0.1&n=Bureau&p={port}&fp={}&t=jeton", identity.fingerprint());
-        let paired = faux_telephone::Client::pair(&link, "Pixel").unwrap();
-        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
-        let mut phone = faux_telephone::Client::hello(addr, &identity.fingerprint(), &paired.device_id, &paired.device_token).unwrap();
-        phone.send_raw(r#"{"type":"watch","topics":["media"]}"#).unwrap();
-        let state = phone.receive().unwrap();
-        assert!(state.contains("\"media.state\"") && state.contains("FROGZ"), "{state}");
+        let bench = Bench::new();
+        let mut phone = bench.watching();
         phone.send_raw(r#"{"type":"media.command","action":"next"}"#).unwrap();
         let start = Instant::now();
-        while lock(&recorded.calls).is_empty() {
+        while lock(&bench.recorded.calls).is_empty() {
             assert!(start.elapsed() < Duration::from_secs(5), "commande jamais reçue");
             std::thread::sleep(Duration::from_millis(20));
         }
-        assert_eq!(*lock(&recorded.calls), vec!["next"]);
-        if let Some(server) = lock(&slot).take() {
-            server.stop();
+        assert_eq!(*lock(&bench.recorded.calls), vec!["next"]);
+    }
+
+    #[test]
+    fn a_reconnected_phone_keeps_its_watch() {
+        // Le téléphone revient avant que le PC ait vu la mort de sa session : la fin de
+        // l'ancienne ne doit pas emporter l'abonnement de la nouvelle.
+        let bench = Bench::new();
+        let _old = bench.watching();
+        let mut phone = bench.watching();
+        std::thread::sleep(Duration::from_millis(1_500));
+        bench.new_track("AUTRE");
+        let state = phone.receive().unwrap();
+        assert!(state.contains("AUTRE"), "{state}");
+    }
+
+    #[test]
+    fn the_state_leaves_at_once_for_a_watching_phone() {
+        let bench = Bench::new();
+        let mut phone = bench.watching();
+        for title in ["UN", "DEUX", "TROIS"] {
+            let start = Instant::now();
+            bench.new_track(title);
+            let state = phone.receive().unwrap();
+            assert!(state.contains(title), "{state}");
+            assert!(start.elapsed() < Duration::from_millis(300), "{title} : {:?}", start.elapsed());
+            std::thread::sleep(Duration::from_millis(150));
         }
+    }
+
+    #[test]
+    fn media_sessions_are_named_after_their_app() {
+        // La liste du média donne (identifiant, titre en cours) : le téléphone veut le nom de l'appli.
+        let sessions = vec![("Spotify.exe".to_owned(), "FROGZ".to_owned()), ("Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic".to_owned(), String::new())];
+        assert_eq!(named(sessions), vec![("Spotify.exe".to_owned(), "Spotify".to_owned()), ("Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic".to_owned(), "ZuneMusic".to_owned())]);
     }
 
     #[test]

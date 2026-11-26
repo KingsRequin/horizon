@@ -32,7 +32,10 @@ pub const MAX_CLIENTS: usize = 4;
 /// Connexions qui n'ont pas encore ouvert de session ; au-delà, la plus ancienne cède sa place.
 pub const MAX_PENDING: usize = 8;
 /// Réveil d'un fil de téléphone sans message entrant (envois en attente, arrêt).
-const POLL: Duration = Duration::from_secs(1);
+pub const POLL: Duration = Duration::from_secs(1);
+/// Réveil d'un fil de téléphone qui regarde la lecture ou le volume : ce qui part vers lui ne
+/// doit pas attendre la seconde suivante (une pause commandée depuis le PC, une position).
+pub const PROMPT: Duration = Duration::from_millis(50);
 /// Silence après lequel Windows sonde une connexion, et écart entre deux sondes.
 const KEEPALIVE_IDLE: Duration = Duration::from_secs(120);
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(10);
@@ -53,6 +56,10 @@ pub trait Handler: Send + Sync + 'static {
     fn first(&self, msg: FromPhone, peer: IpAddr) -> Result<(String, ToPhone), ToPhone>;
     /// Message d'un téléphone dont la session est ouverte.
     fn message(&self, phone_id: &str, msg: FromPhone);
+    /// Attente de lecture de la session de `phone_id`, qui borne le délai de ses envois.
+    fn poll(&self, _phone_id: &str) -> Duration {
+        POLL
+    }
     /// La session du téléphone est finie.
     fn closed(&self, phone_id: &str);
 }
@@ -256,9 +263,14 @@ fn accept_loop(listener: &TcpListener, tls: &Arc<ServerConfig>, handler: &Arc<dy
         let (tls, handler, s) = (tls.clone(), handler.clone(), shared.clone());
         let spawned = std::thread::Builder::new().name(format!("telephone-{n}")).spawn(move || {
             let phone_id = serve(stream, peer, tls, handler.as_ref(), &s, n, &inbox, cancel);
-            // `closed` d'abord : quand la liste est vide, tout a été signalé (`shutdown`).
+            // `closed` d'abord : quand la liste est vide, tout a été signalé (`shutdown`). Pas
+            // de `closed` si le téléphone a déjà rouvert une session (il revient avant que sa
+            // session morte ait été vue) : elle emporterait l'état de la nouvelle.
             if let Some(id) = phone_id {
-                handler.closed(&id);
+                let reopened = lock(&s.clients).iter().any(|c| c.n != n && c.admitted && c.phone_id.as_deref() == Some(id.as_str()));
+                if !reopened {
+                    handler.closed(&id);
+                }
             }
             lock(&s.clients).retain(|c| c.n != n);
         });
@@ -351,12 +363,19 @@ fn serve(
             me.phone_id = Some(phone_id.clone());
         }
     }
-    // Session ouverte : plus d'échéance, mais un réveil périodique.
+    // Session ouverte : plus d'échéance, mais un réveil périodique, rapproché tant que le
+    // téléphone regarde quelque chose.
     ws.get_mut().sock.deadline = None;
-    let _ = ws.get_ref().sock.stream.set_read_timeout(Some(POLL));
+    let mut poll = POLL;
+    let _ = ws.get_ref().sock.stream.set_read_timeout(Some(poll));
     'session: loop {
         if shared.stop.load(Ordering::SeqCst) {
             break;
+        }
+        let wanted = handler.poll(&phone_id);
+        if wanted != poll {
+            poll = wanted;
+            let _ = ws.get_ref().sock.stream.set_read_timeout(Some(poll));
         }
         for out in inbox.try_iter() {
             match out {
