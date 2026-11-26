@@ -104,6 +104,8 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
                 announce(&app, ev);
                 let _ = app.emit(EV_TIMER, payload(&app));
                 sync_session(&app);
+                // Fin du minuteur ou nouvelle phase du pomodoro : les téléphones le savent aussi.
+                crate::widgets::phone::actions_changed(&app);
             }
         }
     })

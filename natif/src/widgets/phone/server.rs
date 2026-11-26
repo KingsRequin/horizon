@@ -340,13 +340,8 @@ fn serve(
             }
         }
     }
-    let phone_id = match handler.first(first, peer) {
-        Ok((id, reply)) => {
-            if ws.send(Message::text(reply.to_json())).is_err() {
-                return None;
-            }
-            id
-        }
+    let (phone_id, reply) = match handler.first(first, peer) {
+        Ok(accepted) => accepted,
         Err(refusal) => {
             let _ = ws.send(Message::text(refusal.to_json()));
             let _ = ws.close(None);
@@ -354,6 +349,8 @@ fn serve(
         }
     };
     {
+        // Inscrite avant la réponse : un envoi fait dès que le téléphone se sait relié (accent,
+        // état) attend dans sa file au lieu de se perdre.
         // Le même téléphone encore connu d'une session morte : elle cède la place.
         let mut clients = lock(&shared.clients);
         for old in clients.iter().filter(|c| c.n != n && c.phone_id.as_deref() == Some(phone_id.as_str())) {
@@ -362,6 +359,9 @@ fn serve(
         if let Some(me) = clients.iter_mut().find(|c| c.n == n) {
             me.phone_id = Some(phone_id.clone());
         }
+    }
+    if ws.send(Message::text(reply.to_json())).is_err() {
+        return None;
     }
     // Session ouverte : plus d'échéance, mais un réveil périodique, rapproché tant que le
     // téléphone regarde quelque chose.

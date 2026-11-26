@@ -160,7 +160,24 @@ impl Remote {
             self.watch(phone_id, topics, now_ms);
             return true;
         }
-        if matches!(msg, FromPhone::PairRequest { .. } | FromPhone::Hello { .. } | FromPhone::Battery { .. } | FromPhone::Unknown) {
+        // Liste blanche : seuls les messages de la télécommande passent par ici.
+        let remote = matches!(
+            msg,
+            FromPhone::MediaCommand { .. }
+                | FromPhone::MediaSeek { .. }
+                | FromPhone::MediaSelect { .. }
+                | FromPhone::VolumeSet { .. }
+                | FromPhone::VolumeMute { .. }
+                | FromPhone::MixerAppVolume { .. }
+                | FromPhone::MixerAppMute { .. }
+                | FromPhone::MixerOutput { .. }
+                | FromPhone::ActionLock
+                | FromPhone::ActionDnd { .. }
+                | FromPhone::TimerStart { .. }
+                | FromPhone::TimerPause { .. }
+                | FromPhone::TimerStop
+        );
+        if !remote {
             return false;
         }
         match remote::command(msg, &(self.rights)(phone_id)) {
@@ -181,7 +198,12 @@ impl Remote {
             Some(Command::SetMute(m)) => self.controls.set_mute(m),
             Some(Command::AppVolume(key, v)) => self.controls.set_app_volume(&key, v),
             Some(Command::AppMute(key, m)) => self.controls.set_app_mute(&key, m),
-            Some(Command::Output(id)) => self.controls.set_output(&id),
+            // Seulement une sortie que le téléphone a reçue : ni un micro, ni un appareil inconnu.
+            Some(Command::Output(id)) => {
+                if self.controls.mixer().is_some_and(|m| m.outputs.iter().any(|o| o.id == id)) {
+                    self.controls.set_output(&id);
+                }
+            }
             Some(Command::Lock) => {
                 log::info!("téléphone : {phone_id} verrouille le PC");
                 self.controls.lock_pc();
@@ -242,17 +264,21 @@ impl Remote {
             lock(&self.inner).volume = Some((volume, muted));
             (self.send)(phone_id, &ToPhone::VolumeState { volume, muted });
         }
+        // L'état du moment part sous le verrou, comme ses changements : une publication du mixeur
+        // ou des actions ne peut pas passer entre l'état noté et son envoi.
         if added.contains(&Topic::Mixer)
             && let Some(snapshot) = self.controls.mixer()
         {
             let msg = mixer_message(&snapshot);
-            lock(&self.inner).sent_mixer = Some(msg.clone());
+            let mut inner = lock(&self.inner);
+            inner.sent_mixer = Some(msg.clone());
             (self.send)(phone_id, &msg);
         }
         if added.contains(&Topic::Actions) {
             let now = self.controls.actions();
             let msg = actions_message(&now, now_ms);
-            lock(&self.inner).sent_actions = Some(now);
+            let mut inner = lock(&self.inner);
+            inner.sent_actions = Some(now);
             (self.send)(phone_id, &msg);
         }
     }
@@ -274,39 +300,34 @@ impl Remote {
     }
 
     /// L'état du mixeur a peut-être changé (fil du mixeur) : il part vers ceux qui le regardent,
-    /// seulement s'il a changé.
+    /// seulement s'il a changé. Envoyé sous le verrou (l'envoi ne fait que mettre en file) : les
+    /// états partent dans l'ordre où ils ont été notés.
     pub fn mixer_changed(&self, snapshot: Option<&MixerSnapshot>) {
         let Some(snapshot) = snapshot else { return };
-        let watchers = {
-            let mut inner = lock(&self.inner);
-            let watchers = inner.watching(Topic::Mixer);
-            if watchers.is_empty() {
-                return;
-            }
-            let msg = mixer_message(snapshot);
-            if inner.sent_mixer.as_ref() == Some(&msg) {
-                return;
-            }
-            inner.sent_mixer = Some(msg.clone());
-            (watchers, msg)
-        };
-        for id in &watchers.0 {
-            (self.send)(id, &watchers.1);
+        let mut inner = lock(&self.inner);
+        let watchers = inner.watching(Topic::Mixer);
+        if watchers.is_empty() {
+            return;
+        }
+        let msg = mixer_message(snapshot);
+        if inner.sent_mixer.as_ref() == Some(&msg) {
+            return;
+        }
+        inner.sent_mixer = Some(msg.clone());
+        for id in &watchers {
+            (self.send)(id, &msg);
         }
     }
 
     /// Les actions ont peut-être changé (minuteur, NPD, casque) : elles partent vers ceux qui
-    /// les regardent, seulement si elles ont changé.
+    /// les regardent, seulement si elles ont changé (sous le verrou, comme le mixeur).
     pub fn actions_changed(&self, now: &ActionsNow, now_ms: u64) {
-        let watchers = {
-            let mut inner = lock(&self.inner);
-            let watchers = inner.watching(Topic::Actions);
-            if watchers.is_empty() || inner.sent_actions.as_ref() == Some(now) {
-                return;
-            }
-            inner.sent_actions = Some(now.clone());
-            watchers
-        };
+        let mut inner = lock(&self.inner);
+        let watchers = inner.watching(Topic::Actions);
+        if watchers.is_empty() || inner.sent_actions.as_ref() == Some(now) {
+            return;
+        }
+        inner.sent_actions = Some(now.clone());
         let msg = actions_message(now, now_ms);
         for id in &watchers {
             (self.send)(id, &msg);
@@ -315,7 +336,7 @@ impl Remote {
 
     /// Réveille ou rendort le mixeur quand le nombre de téléphones qui regardent le volume passe
     /// par zéro. Le passage est décidé sous le verrou ; l'appel au mixeur se fait hors du verrou
-    /// (le mixeur rappelle `volume_changed`).
+    /// (le mixeur rappelle `mixer_changed`).
     fn sync_volume(&self) {
         let change = {
             let mut inner = lock(&self.inner);
@@ -718,6 +739,8 @@ mod tests {
     #[test]
     fn app_commands_reach_the_mixer_and_actions() {
         let (r, fake, _) = remote();
+        let out = horizon_core::mixer::Device { id: "out-2".into(), name: "Enceintes".into(), flow: horizon_core::mixer::Flow::Output, pinned: false };
+        *fake.mixer.lock().unwrap() = Some(MixerSnapshot { outputs: vec![out], ..MixerSnapshot::default() });
         for msg in [
             FromPhone::MixerAppVolume { key: "spotify.exe".into(), volume: 0.4 },
             FromPhone::MixerAppMute { key: "spotify.exe".into(), muted: true },
@@ -734,6 +757,21 @@ mod tests {
             *fake.calls.lock().unwrap(),
             vec!["app spotify.exe 0.4", "app mute spotify.exe true", "output out-2", "lock", "dnd true", "timer 25", "timer pause true", "timer stop"]
         );
+    }
+
+    #[test]
+    fn only_a_known_output_can_be_chosen() {
+        // Un identifiant de micro, ou d'un appareil débranché : le téléphone ne choisit que
+        // parmi les sorties qu'il a reçues.
+        use horizon_core::mixer::{Device, Flow};
+        let (r, fake, _) = remote();
+        let out = Device { id: "out-1".into(), name: "Casque".into(), flow: Flow::Output, pinned: false };
+        let mic = Device { id: "mic-1".into(), name: "Micro".into(), flow: Flow::Input, pinned: false };
+        *fake.mixer.lock().unwrap() = Some(MixerSnapshot { outputs: vec![out], inputs: vec![mic], ..MixerSnapshot::default() });
+        r.message("tel-1", &FromPhone::MixerOutput { id: "mic-1".into() }, 0);
+        r.message("tel-1", &FromPhone::MixerOutput { id: "inconnu".into() }, 0);
+        r.message("tel-1", &FromPhone::MixerOutput { id: "out-1".into() }, 0);
+        assert_eq!(*fake.calls.lock().unwrap(), vec!["output out-1"]);
     }
 
     #[test]

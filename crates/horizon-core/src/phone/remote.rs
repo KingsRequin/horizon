@@ -75,9 +75,19 @@ pub fn topics(requested: &[String], granted: &[String]) -> Vec<Topic> {
 
 /// La commande que porte `msg`, si ce téléphone a le droit de la donner et qu'elle est valable.
 pub fn command(msg: &FromPhone, granted: &[String]) -> Option<Command> {
+    // Chaque message nomme son droit : un message ajouté plus tard (la saisie de la 0.4) ne
+    // peut pas tomber par défaut sous un droit accordé à l'appairage.
     let right = match msg {
         FromPhone::MediaCommand { .. } | FromPhone::MediaSeek { .. } | FromPhone::MediaSelect { .. } | FromPhone::VolumeSet { .. } | FromPhone::VolumeMute { .. } => MEDIA,
-        _ => SOUND,
+        FromPhone::MixerAppVolume { .. }
+        | FromPhone::MixerAppMute { .. }
+        | FromPhone::MixerOutput { .. }
+        | FromPhone::ActionLock
+        | FromPhone::ActionDnd { .. }
+        | FromPhone::TimerStart { .. }
+        | FromPhone::TimerPause { .. }
+        | FromPhone::TimerStop => SOUND,
+        FromPhone::PairRequest { .. } | FromPhone::Hello { .. } | FromPhone::Battery { .. } | FromPhone::Watch { .. } | FromPhone::Unknown => return None,
     };
     if !has(granted, right) {
         return None;
