@@ -1,8 +1,9 @@
-//! `faux-telephone "<lien du QR>" <pourcentage> [--charge] [--boucle <secondes>]`
+//! `faux-telephone "<lien du QR>" <pourcentage> [--charge] [--envoi '<json>']… [--boucle <secondes>]`
 //!
 //! Appaire un faux téléphone avec Horizon (ou rouvre sa session s'il l'est déjà), envoie une
-//! batterie, puis, avec `--boucle`, la renvoie en la faisant baisser d'un point à chaque tour
-//! et affiche ce que le PC envoie. Son jeton est gardé dans `%TEMP%\faux-telephone.json`.
+//! batterie, puis chaque message `--envoi` tel quel (un `input.move` nul, par exemple, pour
+//! voir le témoin de saisie sans bouger le pointeur), puis, avec `--boucle`, renvoie la batterie
+//! en la faisant baisser d'un point à chaque tour et affiche ce que le PC envoie. Son jeton est gardé dans `%TEMP%\faux-telephone.json`.
 
 use anyhow::{Context, bail};
 use faux_telephone::{Client, parse_link};
@@ -46,13 +47,17 @@ fn open(link: &str) -> anyhow::Result<Client> {
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (Some(link), Some(percent)) = (args.first(), args.get(1).and_then(|p| p.parse::<u8>().ok())) else {
-        bail!("usage : faux-telephone \"<lien du QR>\" <pourcentage> [--charge] [--boucle <secondes>]");
+        bail!("usage : faux-telephone \"<lien du QR>\" <pourcentage> [--charge] [--envoi '<json>']… [--boucle <secondes>]");
     };
     let charging = args.iter().any(|a| a == "--charge");
     let every = args.iter().position(|a| a == "--boucle").and_then(|i| args.get(i + 1)).and_then(|s| s.parse::<u64>().ok());
     let mut client = open(link)?;
     client.send_battery(percent, charging)?;
     println!("batterie envoyée : {percent} %{}", if charging { ", en charge" } else { "" });
+    for raw in args.windows(2).filter(|w| w[0] == "--envoi").map(|w| &w[1]) {
+        client.send_raw(raw)?;
+        println!("envoyé : {raw}");
+    }
     let Some(every) = every else { return Ok(()) };
     let mut level = percent;
     loop {
