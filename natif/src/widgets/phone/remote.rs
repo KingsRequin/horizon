@@ -60,6 +60,10 @@ type Sent = (Option<MediaInfo>, Vec<(String, String)>, Option<String>);
 /// Envoie un message à un téléphone (en vrai : par le serveur ; en test : dans une liste).
 pub type Sender = Box<dyn Fn(&str, &ToPhone) + Send + Sync>;
 
+/// Droits actuels d'un téléphone (en vrai : le registre). Lus au moment où ils servent, jamais
+/// d'avance : un abonnement ne peut pas se réinstaller avec des droits qui viennent de changer.
+pub type Rights = Box<dyn Fn(&str) -> Vec<String> + Send + Sync>;
+
 #[derive(Default)]
 struct Inner {
     watch: HashMap<String, Vec<Topic>>,
@@ -94,6 +98,7 @@ impl Inner {
 pub struct Remote {
     controls: Box<dyn Controls>,
     send: Sender,
+    rights: Rights,
     inner: Mutex<Inner>,
 }
 
@@ -103,21 +108,21 @@ fn app_name(now: &MediaNow) -> String {
 }
 
 impl Remote {
-    pub fn new(controls: Box<dyn Controls>, send: Sender) -> Remote {
-        Remote { controls, send, inner: Mutex::default() }
+    pub fn new(controls: Box<dyn Controls>, send: Sender, rights: Rights) -> Remote {
+        Remote { controls, send, rights, inner: Mutex::default() }
     }
 
     /// Message d'un téléphone dont la session est ouverte ; vrai si c'en est un de la
     /// télécommande (accepté ou non).
-    pub fn message(&self, phone_id: &str, msg: &FromPhone, granted: &[String], now_ms: u64) -> bool {
+    pub fn message(&self, phone_id: &str, msg: &FromPhone, now_ms: u64) -> bool {
         if let FromPhone::Watch { topics } = msg {
-            self.watch(phone_id, remote::topics(topics, granted), now_ms);
+            self.watch(phone_id, topics, now_ms);
             return true;
         }
         if !matches!(msg, FromPhone::MediaCommand { .. } | FromPhone::MediaSeek { .. } | FromPhone::MediaSelect { .. } | FromPhone::VolumeSet { .. } | FromPhone::VolumeMute { .. }) {
             return false;
         }
-        match remote::command(msg, granted) {
+        match remote::command(msg, &(self.rights)(phone_id)) {
             Some(Command::PlayPause) => self.controls.play_pause(),
             Some(Command::Next) => self.controls.next(),
             Some(Command::Previous) => self.controls.previous(),
@@ -137,9 +142,12 @@ impl Remote {
 
     /// Ce que `phone_id` regarde désormais ; ce qu'il vient de commencer à regarder lui est
     /// envoyé tout de suite.
-    fn watch(&self, phone_id: &str, topics: Vec<Topic>, now_ms: u64) {
+    fn watch(&self, phone_id: &str, requested: &[String], now_ms: u64) {
         let (volume_before, added) = {
             let mut inner = lock(&self.inner);
+            // Droits lus sous le verrou : `rights_changed` attend ce verrou pour retirer les
+            // abonnements, il ne peut donc pas passer entre la lecture et l'abonnement.
+            let topics = remote::topics(requested, &(self.rights)(phone_id));
             let before = inner.watch.get(phone_id).cloned().unwrap_or_default();
             let volume_before = !inner.watching(Topic::Volume).is_empty();
             let added: Vec<Topic> = topics.iter().copied().filter(|t| !before.contains(t)).collect();
@@ -186,15 +194,18 @@ impl Remote {
         self.volume_watch_changed(before);
     }
 
-    /// Les droits de `phone_id` ont changé : il le sait, et ne regarde plus que ce qu'il peut.
+    /// Les droits de `phone_id` ont changé (déjà enregistrés) : il le sait, et ne regarde plus
+    /// que ce qu'il peut. Les abonnements sont triés d'après les droits relus sous le verrou :
+    /// deux changements rapprochés ne peuvent pas s'appliquer dans le désordre.
     pub fn rights_changed(&self, phone_id: &str, granted: &[String]) {
         (self.send)(phone_id, &ToPhone::Rights { granted: granted.to_vec() });
         let before = !lock(&self.inner).watching(Topic::Volume).is_empty();
         {
             let mut inner = lock(&self.inner);
+            let now = (self.rights)(phone_id);
             if let Some(topics) = inner.watch.get(phone_id) {
                 let names: Vec<String> = topics.iter().map(|t| if *t == Topic::Media { "media" } else { "volume" }.to_owned()).collect();
-                let kept = remote::topics(&names, granted);
+                let kept = remote::topics(&names, &now);
                 if kept.is_empty() {
                     inner.watch.remove(phone_id);
                 } else {
@@ -275,6 +286,8 @@ mod tests {
         media: Mutex<MediaNow>,
         volume: Mutex<Option<(f32, bool)>>,
         watched: Mutex<Vec<bool>>,
+        /// Droits de tous les téléphones du test, lus par la télécommande au moment voulu.
+        granted: Mutex<Vec<String>>,
     }
 
     impl Controls for Arc<Fake> {
@@ -314,9 +327,15 @@ mod tests {
 
     fn remote() -> (Remote, Arc<Fake>, Sent) {
         let fake = Arc::new(Fake::default());
+        *fake.granted.lock().unwrap() = rights();
         let sent: Sent = Arc::default();
         let s = sent.clone();
-        let r = Remote::new(Box::new(fake.clone()), Box::new(move |id: &str, msg: &ToPhone| s.lock().unwrap().push((id.to_owned(), msg.clone()))));
+        let f = fake.clone();
+        let r = Remote::new(
+            Box::new(fake.clone()),
+            Box::new(move |id: &str, msg: &ToPhone| s.lock().unwrap().push((id.to_owned(), msg.clone()))),
+            Box::new(move |_: &str| f.granted.lock().unwrap().clone()),
+        );
         (r, fake, sent)
     }
 
@@ -347,15 +366,16 @@ mod tests {
     #[test]
     fn a_command_runs_only_with_the_media_right() {
         let (r, fake, _) = remote();
-        let without: Vec<String> = vec!["battery".into()];
-        assert!(r.message("tel-1", &FromPhone::MediaCommand { action: "next".into() }, &without, 0));
+        *fake.granted.lock().unwrap() = vec!["battery".into()];
+        assert!(r.message("tel-1", &FromPhone::MediaCommand { action: "next".into() }, 0));
         assert!(fake.calls.lock().unwrap().is_empty(), "sans droit : rien");
-        r.message("tel-1", &FromPhone::MediaCommand { action: "next".into() }, &rights(), 0);
-        r.message("tel-1", &FromPhone::VolumeSet { volume: 3.0 }, &rights(), 0);
-        r.message("tel-1", &FromPhone::VolumeMute { muted: true }, &rights(), 0);
-        r.message("tel-1", &FromPhone::MediaSelect { app_id: "Chrome".into() }, &rights(), 0);
+        *fake.granted.lock().unwrap() = rights();
+        r.message("tel-1", &FromPhone::MediaCommand { action: "next".into() }, 0);
+        r.message("tel-1", &FromPhone::VolumeSet { volume: 3.0 }, 0);
+        r.message("tel-1", &FromPhone::VolumeMute { muted: true }, 0);
+        r.message("tel-1", &FromPhone::MediaSelect { app_id: "Chrome".into() }, 0);
         assert_eq!(*fake.calls.lock().unwrap(), vec!["next", "volume 1", "mute true", "select Chrome"]);
-        assert!(!r.message("tel-1", &FromPhone::Battery { devices: vec![] }, &rights(), 0), "pas un message de la télécommande");
+        assert!(!r.message("tel-1", &FromPhone::Battery { devices: vec![] }, 0), "pas un message de la télécommande");
     }
 
     #[test]
@@ -363,10 +383,10 @@ mod tests {
         let (r, fake, _) = remote();
         // Lecture : 60 s lues à 1 s ; à 9 s, on est à 68 s.
         *fake.media.lock().unwrap() = song("FROGZ", true, 60_000);
-        r.message("tel-1", &FromPhone::MediaSeek { position_ms: 30_000 }, &rights(), 9_000);
+        r.message("tel-1", &FromPhone::MediaSeek { position_ms: 30_000 }, 9_000);
         assert_eq!(*fake.calls.lock().unwrap(), vec!["seek -38000"]);
         *fake.media.lock().unwrap() = MediaNow::default();
-        r.message("tel-1", &FromPhone::MediaSeek { position_ms: 30_000 }, &rights(), 9_000);
+        r.message("tel-1", &FromPhone::MediaSeek { position_ms: 30_000 }, 9_000);
         assert_eq!(fake.calls.lock().unwrap().len(), 1, "rien ne joue : pas de saut");
     }
 
@@ -374,7 +394,7 @@ mod tests {
     fn watching_media_sends_the_state_at_once_then_only_changes() {
         let (r, fake, sent) = remote();
         *fake.media.lock().unwrap() = song("FROGZ", true, 60_000);
-        r.message("tel-1", &watch(&["media"]), &rights(), 2_000);
+        r.message("tel-1", &watch(&["media"]), 2_000);
         assert_eq!(types(&sent), vec!["tel-1 media.state"]);
         r.media_changed(&song("FROGZ", true, 61_000), ArtChange::Unchanged, 2_000);
         assert_eq!(sent.lock().unwrap().len(), 1, "même morceau, position cohérente : rien");
@@ -390,14 +410,14 @@ mod tests {
     fn the_volume_is_watched_while_one_phone_looks_at_it() {
         let (r, fake, sent) = remote();
         *fake.volume.lock().unwrap() = Some((0.5, false));
-        r.message("tel-1", &watch(&["media", "volume"]), &rights(), 0);
-        r.message("tel-2", &watch(&["volume"]), &rights(), 0);
+        r.message("tel-1", &watch(&["media", "volume"]), 0);
+        r.message("tel-2", &watch(&["volume"]), 0);
         assert_eq!(*fake.watched.lock().unwrap(), vec![true], "le mixeur n'est réveillé qu'une fois");
         assert!(types(&sent).contains(&"tel-2 volume.state".to_owned()), "le volume du moment part à l'abonnement");
         r.volume_changed(Some((0.6, false)));
         r.volume_changed(Some((0.6, false)));
         assert_eq!(types(&sent).iter().filter(|t| t.ends_with("volume.state")).count(), 4, "deux à l'abonnement, deux au changement, rien pour une répétition");
-        r.message("tel-1", &watch(&["media"]), &rights(), 0);
+        r.message("tel-1", &watch(&["media"]), 0);
         assert_eq!(*fake.watched.lock().unwrap(), vec![true]);
         r.closed("tel-2");
         assert_eq!(*fake.watched.lock().unwrap(), vec![true, false], "plus personne : le mixeur se rendort");
@@ -406,8 +426,9 @@ mod tests {
     #[test]
     fn a_right_withdrawn_reaches_the_phone_and_its_watch_stops() {
         let (r, fake, sent) = remote();
-        r.message("tel-1", &watch(&["media", "volume"]), &rights(), 0);
+        r.message("tel-1", &watch(&["media", "volume"]), 0);
         let only_battery: Vec<String> = vec!["battery".into()];
+        *fake.granted.lock().unwrap() = only_battery.clone();
         r.rights_changed("tel-1", &only_battery);
         assert_eq!(sent.lock().unwrap().last().unwrap().1, ToPhone::Rights { granted: only_battery });
         assert_eq!(*fake.watched.lock().unwrap(), vec![true, false]);
@@ -420,7 +441,7 @@ mod tests {
     fn the_cover_is_sent_once_per_track() {
         let (r, fake, sent) = remote();
         *fake.media.lock().unwrap() = song("FROGZ", true, 0);
-        r.message("tel-1", &watch(&["media"]), &rights(), 0);
+        r.message("tel-1", &watch(&["media"]), 0);
         let art = png();
         r.media_changed(&song("FROGZ", true, 0), ArtChange::Bytes(&art), 0);
         let t = types(&sent);
@@ -433,7 +454,7 @@ mod tests {
         assert!(jpeg.starts_with("/9j/"), "JPEG en base64");
         r.media_changed(&song("FROGZ", true, 0), ArtChange::Unchanged, 0);
         assert_eq!(sent.lock().unwrap().len(), 3, "rien de neuf");
-        r.message("tel-2", &watch(&["media"]), &rights(), 0);
+        r.message("tel-2", &watch(&["media"]), 0);
         assert_eq!(types(&sent)[3..], ["tel-2 media.state".to_owned(), "tel-2 media.art".to_owned()], "un nouvel abonné reçoit la pochette");
         r.media_changed(&song("AUTRE", true, 0), ArtChange::None, 0);
         let last = sent.lock().unwrap().last().unwrap().1.clone();
@@ -442,9 +463,22 @@ mod tests {
     }
 
     #[test]
+    fn a_watch_reads_the_rights_of_the_moment() {
+        // Pas de droits lus d'avance par l'appelant : un abonnement qui arriverait juste après un
+        // retrait ne peut pas se réinstaller avec les droits d'avant.
+        let (r, fake, sent) = remote();
+        *fake.granted.lock().unwrap() = vec!["battery".into()];
+        r.message("tel-1", &watch(&["media", "volume"]), 0);
+        assert!(sent.lock().unwrap().is_empty());
+        assert!(fake.watched.lock().unwrap().is_empty());
+        r.media_changed(&song("FROGZ", true, 0), ArtChange::Unchanged, 0);
+        assert!(sent.lock().unwrap().is_empty(), "pas abonné");
+    }
+
+    #[test]
     fn a_closed_session_stops_watching() {
         let (r, _, sent) = remote();
-        r.message("tel-1", &watch(&["media"]), &rights(), 0);
+        r.message("tel-1", &watch(&["media"]), 0);
         r.closed("tel-1");
         sent.lock().unwrap().clear();
         r.media_changed(&song("FROGZ", true, 0), ArtChange::Unchanged, 0);

@@ -310,7 +310,7 @@ impl<F: Fn(Event) + Send + Sync + 'static> Handler for Link<F> {
 
     fn message(&self, phone_id: &str, msg: FromPhone) {
         let now = now_ms();
-        if self.remote.message(phone_id, &msg, &self.core.granted(phone_id), now) {
+        if self.remote.message(phone_id, &msg, now) {
             return;
         }
         if self.core.message(phone_id, msg, now) {
@@ -436,10 +436,12 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     let core = Arc::new(Core::restore(&text, &horizon_sys::local_net::host_name()));
     core.set_accent(crate::accent::accent_state(app).map_or_else(|| DEFAULT_ACCENT.to_owned(), crate::plugins::events::hex));
     core.on_registry_change(write);
+    let registry = core.clone();
     let _ = app.state::<PhoneState>().core.set(core);
     let a = app.clone();
     let send = move |id: &str, msg: &ToPhone| a.state::<PhoneState>().runner.send_to(id, msg);
-    let _ = app.state::<PhoneState>().remote.set(Arc::new(remote::Remote::new(Box::new(AppControls(app.clone())), Box::new(send))));
+    let rights = move |id: &str| registry.granted(id);
+    let _ = app.state::<PhoneState>().remote.set(Arc::new(remote::Remote::new(Box::new(AppControls(app.clone())), Box::new(send), Box::new(rights))));
     let a = app.clone();
     start_thread("telephone-etat", move || watch(&a))?;
     refresh(app);
@@ -991,7 +993,7 @@ mod tests {
 
     /// Une télécommande qui ne commande rien ni n'envoie rien.
     fn quiet_remote() -> Arc<remote::Remote> {
-        Arc::new(remote::Remote::new(Box::new(Arc::new(Recorded::default())), Box::new(|_: &str, _: &ToPhone| {})))
+        Arc::new(remote::Remote::new(Box::new(Arc::new(Recorded::default())), Box::new(|_: &str, _: &ToPhone| {}), Box::new(|_: &str| Vec::new())))
     }
 
     #[test]
@@ -1028,11 +1030,16 @@ mod tests {
         let recorded = Arc::new(Recorded::default());
         let slot: Arc<Mutex<Option<ServerHandle>>> = Arc::default();
         let to = slot.clone();
-        let remote = Arc::new(remote::Remote::new(Box::new(recorded.clone()), Box::new(move |id: &str, msg: &ToPhone| {
-            if let Some(server) = lock(&to).as_ref() {
-                server.send_to(id, msg);
-            }
-        })));
+        let c = core.clone();
+        let remote = Arc::new(remote::Remote::new(
+            Box::new(recorded.clone()),
+            Box::new(move |id: &str, msg: &ToPhone| {
+                if let Some(server) = lock(&to).as_ref() {
+                    server.send_to(id, msg);
+                }
+            }),
+            Box::new(move |id: &str| c.granted(id)),
+        ));
         let link = Link { core: core.clone(), remote, notify: |_| {} };
         let server = server::spawn("127.0.0.1".parse().unwrap(), 0, identity.tls_config(), Arc::new(link)).unwrap();
         let port = server.port();
