@@ -19,6 +19,12 @@ pub fn app_name(id: &str) -> String {
     if let Some((_, name)) = KNOWN.iter().find(|(pats, _)| pats.iter().any(|p| lower.contains(p))) {
         return (*name).to_owned();
     }
+    // AUMID d'un paquet MSIX dont l'appli s'appelle « App » : le nom est celui du paquet, sans
+    // l'empreinte de son éditeur (`Éditeur.Nom_empreinte!App`).
+    let id = match id.split_once('!') {
+        Some((package, "App")) => package.split('_').next().unwrap_or(package),
+        _ => id,
+    };
     let last = id.rsplit(['!', '\\', '/']).next().unwrap_or(id);
     let cut = last.len().saturating_sub(4);
     let last = if last.is_char_boundary(cut) && last[cut..].eq_ignore_ascii_case(".exe") { &last[..cut] } else { last };
@@ -52,6 +58,10 @@ mod tests {
         assert_eq!(app_name("com.github.th-ch.youtube-music"), "Pear Desktop");
         assert_eq!(app_name("com.squirrel.Discord.Discord"), "Discord");
         assert_eq!(app_name(""), "");
+        // Paquet MSIX dont l'appli s'appelle « App » (Screenbox, Lecteur multimédia…) : le nom
+        // vient du paquet.
+        assert_eq!(app_name("29296OliverVinci.Screenbox_h3h3tmhvy8gfc!App"), "Screenbox");
+        assert_eq!(app_name("Microsoft.ZuneMusic_8wekyb3d8bbwe!App"), "ZuneMusic");
     }
 
     #[test]
