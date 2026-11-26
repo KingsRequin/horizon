@@ -65,6 +65,22 @@ pub fn launcher_app_key(target: &str, args: &str) -> String {
     key
 }
 
+/// Le raccourci (cible + arguments) lance-t-il l'appli de clé `key` ? Un raccourci qui passe des
+/// arguments à `explorer.exe` ouvre un dossier ou un document (ex. « Windows Software Development
+/// Kit.lnk »), il ne représente pas l'Explorateur de fichiers.
+pub fn launcher_starts_app(target: &str, args: &str, key: &str) -> bool {
+    if exe_key(target) == "explorer.exe" && !args.trim().is_empty() {
+        return false;
+    }
+    launcher_app_key(target, args) == key
+}
+
+/// Cible de lancement enregistrée à tort par une version antérieure : un raccourci `.lnk`
+/// associé à `explorer.exe` (le bon lancement de l'Explorateur est son exe).
+pub fn is_bogus_launch(key: &str, target: &str) -> bool {
+    exe_key(key) == "explorer.exe" && target.to_ascii_lowercase().ends_with(".lnk")
+}
+
 /// Nom d'exe réellement lancé par un raccourci : la cible, sauf pour un lanceur Squirrel qui
 /// nomme l'exe dans ses arguments. `None` si ce n'est pas un exe.
 pub fn lnk_exe_key(target: &str, args: &str) -> Option<String> {
@@ -158,6 +174,19 @@ mod tests {
         assert_eq!(lnk_exe_key(UPDATE, ""), None);
         assert_eq!(lnk_exe_key(r"C:\a\Vivaldi.exe", "").as_deref(), Some("vivaldi.exe"));
         assert_eq!(lnk_exe_key(r"C:\a\notes.txt", ""), None);
+    }
+
+    #[test]
+    fn explorer_with_arguments_is_not_the_file_explorer() {
+        let key = app_key(r"C:\Windows\explorer.exe");
+        assert_eq!(key, r"windows\explorer.exe");
+        // « Windows Software Development Kit.lnk » : explorer.exe <url ou dossier>
+        assert!(!launcher_starts_app(r"C:\Windows\explorer.exe", "https://aka.ms/winsdk", &key));
+        assert!(launcher_starts_app(r"C:\Windows\explorer.exe", "", &key));
+        assert!(launcher_starts_app(UPDATE, r#"--processStart "Discord.exe""#, r"discord\discord.exe"));
+        assert!(is_bogus_launch(&key, r"C:\Start\Windows Software Development Kit.lnk"));
+        assert!(!is_bogus_launch(&key, r"C:\Windows\explorer.exe"));
+        assert!(!is_bogus_launch(r"vivaldiivaldi.exe", r"C:\Start\Vivaldi.lnk"));
     }
 
     #[test]
