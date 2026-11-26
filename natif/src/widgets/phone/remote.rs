@@ -7,6 +7,7 @@ use crate::util::lock;
 use base64::Engine;
 use horizon_core::media::{MediaInfo, position_at, worth_sending};
 use horizon_core::mixer::MixerSnapshot;
+use horizon_core::phone::input::{ButtonAction, MouseButton, RateLimit};
 use horizon_core::phone::proto::{FromPhone, HeadsetView, ToPhone};
 use horizon_core::phone::remote::{self, Command, Topic, art_key, media_message, mixer_message, timer_state};
 use horizon_core::timer::TimerView;
@@ -45,6 +46,20 @@ pub trait Controls: Send + Sync {
     fn timer_start(&self, minutes: u32);
     fn timer_pause(&self, paused: bool);
     fn timer_stop(&self);
+    /// Applique une saisie (déplacement, bouton, molette, zoom, texte, touche).
+    fn input(&self, cmd: &Command);
+    /// `phone_id` vient de saisir : témoin et alerte d'une séance.
+    fn input_seen(&self, phone_id: &str);
+    /// Session verrouillée ou écran éteint : la saisie est ignorée.
+    fn away(&self) -> bool;
+}
+
+/// Saisie d'un téléphone : son débit, et les boutons qu'il tient enfoncés (relâchés si sa
+/// liaison ou son droit s'en va en plein glisser).
+#[derive(Default)]
+struct InputState {
+    rate: RateLimit,
+    held: Vec<MouseButton>,
 }
 
 /// Les actions rapides telles qu'Horizon les connaît : comparées telles quelles, le minuteur
@@ -141,6 +156,7 @@ pub struct Remote {
     send: Sender,
     rights: Rights,
     inner: Mutex<Inner>,
+    input: Mutex<HashMap<String, InputState>>,
 }
 
 fn app_name(now: &MediaNow) -> String {
@@ -150,7 +166,7 @@ fn app_name(now: &MediaNow) -> String {
 
 impl Remote {
     pub fn new(controls: Box<dyn Controls>, send: Sender, rights: Rights) -> Remote {
-        Remote { controls, send, rights, inner: Mutex::default() }
+        Remote { controls, send, rights, inner: Mutex::default(), input: Mutex::default() }
     }
 
     /// Message d'un téléphone dont la session est ouverte ; vrai si c'en est un de la
@@ -176,6 +192,12 @@ impl Remote {
                 | FromPhone::TimerStart { .. }
                 | FromPhone::TimerPause { .. }
                 | FromPhone::TimerStop
+                | FromPhone::InputMove { .. }
+                | FromPhone::InputButton { .. }
+                | FromPhone::InputScroll { .. }
+                | FromPhone::InputZoom { .. }
+                | FromPhone::InputText { .. }
+                | FromPhone::InputKey { .. }
         );
         if !remote {
             return false;
@@ -212,9 +234,46 @@ impl Remote {
             Some(Command::TimerStart(minutes)) => self.controls.timer_start(minutes),
             Some(Command::TimerPause(paused)) => self.controls.timer_pause(paused),
             Some(Command::TimerStop) => self.controls.timer_stop(),
+            Some(cmd @ (Command::Move(..) | Command::Button(..) | Command::Scroll(..) | Command::Zoom(_) | Command::Text(_) | Command::Key(..))) => {
+                self.input(phone_id, &cmd, now_ms);
+            }
             None => log::debug!("téléphone : commande de {phone_id} refusée"),
         }
         true
+    }
+
+    /// Saisie de `phone_id` (droit déjà vérifié) : ignorée session verrouillée, bornée en débit,
+    /// appliquée sous le verrou de la saisie (un relâchement ne peut pas doubler un appui).
+    fn input(&self, phone_id: &str, cmd: &Command, now_ms: u64) {
+        if self.controls.away() {
+            return;
+        }
+        {
+            let mut input = lock(&self.input);
+            let state = input.entry(phone_id.to_owned()).or_default();
+            if !state.rate.allow(now_ms) {
+                return;
+            }
+            if let Command::Button(button, action) = cmd {
+                match action {
+                    ButtonAction::Down if !state.held.contains(button) => state.held.push(*button),
+                    ButtonAction::Up => state.held.retain(|b| b != button),
+                    _ => {}
+                }
+            }
+            self.controls.input(cmd);
+        }
+        self.controls.input_seen(phone_id);
+    }
+
+    /// Relâche les boutons que `phone_id` tient encore, et oublie sa saisie.
+    fn release(&self, phone_id: &str) {
+        let mut input = lock(&self.input);
+        if let Some(state) = input.remove(phone_id) {
+            for button in state.held {
+                self.controls.input(&Command::Button(button, ButtonAction::Up));
+            }
+        }
     }
 
     /// Vrai si `phone_id` regarde quelque chose : sa session doit alors relayer sans attendre.
@@ -358,12 +417,16 @@ impl Remote {
             inner.requested.remove(phone_id);
             inner.watch.remove(phone_id);
         }
+        self.release(phone_id);
         self.sync_volume();
     }
 
     /// Les droits de `phone_id` ont changé (déjà enregistrés) : il le sait, et regarde ce qu'il
     /// a demandé et peut désormais voir (un droit rendu rétablit son abonnement).
     pub fn rights_changed(&self, phone_id: &str, granted: &[String], now_ms: u64) {
+        if !granted.iter().any(|r| r == remote::INPUT) {
+            self.release(phone_id);
+        }
         (self.send)(phone_id, &ToPhone::Rights { granted: granted.to_vec() });
         self.apply(phone_id, now_ms);
     }
@@ -443,6 +506,8 @@ mod tests {
         granted: Mutex<Vec<String>>,
         mixer: Mutex<Option<MixerSnapshot>>,
         actions: Mutex<ActionsNow>,
+        away: Mutex<bool>,
+        seen: Mutex<Vec<String>>,
     }
 
     impl Controls for Arc<Fake> {
@@ -505,6 +570,15 @@ mod tests {
         }
         fn timer_stop(&self) {
             self.calls.lock().unwrap().push("timer stop".into());
+        }
+        fn input(&self, cmd: &Command) {
+            self.calls.lock().unwrap().push(format!("input {cmd:?}"));
+        }
+        fn input_seen(&self, phone_id: &str) {
+            self.seen.lock().unwrap().push(phone_id.to_owned());
+        }
+        fn away(&self) -> bool {
+            *self.away.lock().unwrap()
         }
     }
 
@@ -788,6 +862,52 @@ mod tests {
         r.actions_changed(&now, 101_000);
         r.actions_changed(&now, 102_000);
         assert_eq!(sent.lock().unwrap().len(), 1, "l'échéance n'a pas bougé : le téléphone décompte seul");
+    }
+
+    fn with_input(fake: &Fake) {
+        *fake.granted.lock().unwrap() = vec!["battery".into(), "input".into()];
+    }
+
+    #[test]
+    fn input_needs_its_right_and_is_rate_limited() {
+        let (r, fake, _) = remote();
+        r.message("tel-1", &FromPhone::InputMove { dx: 3, dy: -4 }, 0);
+        assert!(fake.calls.lock().unwrap().is_empty(), "media et sound ne suffisent pas");
+        with_input(&fake);
+        for _ in 0..300 {
+            r.message("tel-1", &FromPhone::InputMove { dx: 3, dy: -4 }, 1_000);
+        }
+        assert_eq!(fake.calls.lock().unwrap().len(), 120, "une rafale : 120 passent, le reste est jeté");
+        assert_eq!(fake.calls.lock().unwrap()[0], "input Move(3, -4)");
+        assert_eq!(fake.seen.lock().unwrap().first().map(String::as_str), Some("tel-1"), "la séance de saisie est signalée");
+        r.message("tel-2", &FromPhone::InputMove { dx: 1, dy: 1 }, 1_000);
+        assert_eq!(fake.calls.lock().unwrap().len(), 121, "chaque téléphone a son débit");
+    }
+
+    #[test]
+    fn input_is_ignored_while_the_session_is_locked() {
+        let (r, fake, _) = remote();
+        with_input(&fake);
+        *fake.away.lock().unwrap() = true;
+        r.message("tel-1", &FromPhone::InputText { text: "secret".into() }, 0);
+        assert!(fake.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_held_button_is_released_when_the_session_or_the_right_goes() {
+        let (r, fake, _) = remote();
+        with_input(&fake);
+        r.message("tel-1", &FromPhone::InputButton { button: "left".into(), action: "down".into() }, 0);
+        r.closed("tel-1");
+        assert_eq!(fake.calls.lock().unwrap().last().map(String::as_str), Some("input Button(Left, Up)"), "liaison coupée en plein glisser");
+        fake.calls.lock().unwrap().clear();
+        r.message("tel-1", &FromPhone::InputButton { button: "right".into(), action: "down".into() }, 0);
+        *fake.granted.lock().unwrap() = vec!["battery".into()];
+        r.rights_changed("tel-1", &["battery".to_owned()], 0);
+        assert_eq!(fake.calls.lock().unwrap().last().map(String::as_str), Some("input Button(Right, Up)"), "droit retiré en plein glisser");
+        fake.calls.lock().unwrap().clear();
+        r.closed("tel-1");
+        assert!(fake.calls.lock().unwrap().is_empty(), "rien de tenu : rien à relâcher");
     }
 
     #[test]

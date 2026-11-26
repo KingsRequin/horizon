@@ -79,6 +79,12 @@ connexion est fermée. Après `pair.accepted` ou `hello.ok`, la session est ouve
 | `timer.start` | `minutes` (de 1 à 600) |
 | `timer.pause` | `paused` |
 | `timer.stop` | arrêter le minuteur |
+| `input.move` | `dx`, `dy` : déplacer le pointeur, en pixels (entiers, ±2000 au plus) |
+| `input.button` | `button` : `left`, `right`, `middle` ; `action` : `click`, `down`, `up` |
+| `input.scroll` | `dx`, `dy` : défiler, en unités de molette (120 = un cran ; positif : vers le haut, vers la droite ; ±2400 au plus) |
+| `input.zoom` | `delta` : Ctrl + molette, mêmes unités |
+| `input.text` | `text` : taper ce texte (Unicode, 256 caractères au plus, sans caractère de contrôle) |
+| `input.key` | `key` : `escape`, `tab`, `enter`, `backspace`, `delete`, `insert`, `home`, `end`, `page_up`, `page_down`, `left`, `up`, `right`, `down`, `space`, `win`, `print_screen`, `f1` à `f12`, `a` à `z`, `0` à `9` ; `mods` : parmi `ctrl`, `alt`, `shift`, `win` (facultatif) |
 
 `kind` vaut `phone`, `watch`, `earbuds` ou autre chose (traité comme « autre »). `percent` va
 de 0 à 100. `atMs` est l'heure de la mesure (millisecondes Unix, horloge du téléphone) ; une
@@ -93,9 +99,20 @@ verrouillé), `volume` et `mixer` seulement pendant que l'écran Télécommande 
 ou que le téléphone n'a pas le droit de voir, est ignoré ; le PC garde la demande et la
 rétablit quand le droit revient (avec l'état du moment). Une session neuve repart sans
 abonnement. `media` et `volume` demandent le droit `media` ; `mixer`, `actions` et leurs
-commandes, le droit `sound`. Une commande sans son droit, une action inconnue ou un volume illisible
+commandes, le droit `sound` ; les messages `input.*`, le droit `input`. Une commande sans son droit, une action inconnue ou un volume illisible
 sont ignorés ; le volume est ramené entre 0 et 1. Un saut de position est borné au morceau ;
 un direct ne se déplace pas.
+
+Saisie (`input.*`) : 120 messages par seconde et par téléphone au plus, le reste est jeté ; le
+téléphone regroupe donc ses déplacements (60 envois par seconde au plus) et garde le reste
+sous le pixel. Elle est ignorée tant que la session Windows est verrouillée ou l'écran éteint,
+et Windows ne la laisse atteindre ni l'écran de connexion, ni les demandes d'administrateur, ni
+les fenêtres lancées en administrateur. Un bouton tenu (`down`) est relâché par le PC si la
+session se ferme ou si le droit est retiré. Une touche porte ses modificateurs : le PC les
+enfonce autour d'elle et les relâche aussitôt, aucun ne reste tenu entre deux messages. Une
+séance (première saisie, ou reprise après 10 s de silence) est annoncée dans l'îlot, même en
+« ne pas déranger » ; un témoin reste sur les barres tant qu'elle dure, et un clic sur l'un ou
+l'autre retire le droit `input` du téléphone (il l'apprend par `rights`).
 
 ### Du PC vers le téléphone
 
@@ -130,7 +147,7 @@ tourne ne renvoie rien chaque seconde.
 ## Compatibilité
 
 - `features` dit ce que ce PC sait faire : `battery` (Horizon 0.8), `media` (0.9), `mixer` et
-  `actions` (0.10). L'appli ne
+  `actions` (0.10), `input` (0.11). L'appli ne
   montre que ce que le PC annonce ; le PC ignore ce qu'il n'a pas annoncé.
 - `granted` dit ce que ce téléphone a le droit de faire : `battery`, `media`, `sound`, `input`.
   Par défaut : `battery`, `media`, `sound` ; `input` ne s'accorde que dans Horizon. Absent

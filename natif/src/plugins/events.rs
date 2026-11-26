@@ -61,6 +61,7 @@ pub fn alert_name(kind: horizon_core::dnd::AlertKind) -> &'static str {
         AlertKind::Feedback => "feedback",
         AlertKind::Update => "update",
         AlertKind::Plugin => "plugin",
+        AlertKind::RemoteInput => "remote_input",
     }
 }
 

@@ -1160,7 +1160,7 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
 name = "faux-telephone"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -1684,7 +1684,7 @@ dependencies = [
 
 [[package]]
 name = "horizon-core"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1701,14 +1701,14 @@ dependencies = [
 
 [[package]]
 name = "horizon-hook"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "windows 0.62.2",
 ]
 
 [[package]]
 name = "horizon-natif"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -1747,7 +1747,7 @@ dependencies = [
 
 [[package]]
 name = "horizon-sys"
-version = "0.10.1"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "audio-commun",

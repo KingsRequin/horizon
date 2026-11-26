@@ -47,6 +47,8 @@ pub enum Action {
     Capture { path: String, session: String },
     /// Installe tout de suite la nouvelle version prête et redémarre Horizon.
     Update,
+    /// Coupe le clavier et la souris d'un téléphone (retire son droit `input`).
+    CutInput { phone: String },
 }
 
 /// Image RGBA déjà arrondie, à poser telle quelle.

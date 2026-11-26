@@ -1,6 +1,7 @@
 //! Témoins de la barre principale (`ui/bar-status.slint`, lib/BarStatus.svelte) : profil actif
 //! autre que le premier (lu dans `layout.json`), « ! » tant qu'une intégration est en échec
-//! (`status.rs`, `horizon://health`). Clic : page des réglages (« État », profils).
+//! (`status.rs`, `horizon://health`), clavier tant qu'un téléphone saisit (`horizon://phone-input`).
+//! Clic : page des réglages (« État », profils) ; sur le clavier : couper.
 //! Fil de l'interface.
 
 use super::{BarStatusData, BarWindow};
@@ -23,6 +24,15 @@ pub fn bind(app: &AppHandle, window: &BarWindow, label: &str) {
     g.set_profile(profile.into());
     g.set_profile_auto(auto);
     g.set_failing(crate::status::status_health(app).join(", ").into());
+    g.set_input(crate::widgets::phone::witness::active_names(app).join(", ").into());
+    let w = window.as_weak();
+    host::listen(crate::widgets::phone::witness::EV_PHONE_INPUT, Some(label), move |e| {
+        if let (Some(names), Some(w)) = (e.payload::<Vec<String>>(), w.upgrade()) {
+            w.global::<BarStatusData>().set_input(names.join(", ").into());
+        }
+    });
+    let a = app.clone();
+    g.on_cut_input(move || crate::widgets::phone::witness::cut_all(&a));
     let w = window.as_weak();
     host::listen(EV_HEALTH, Some(label), move |e| {
         if let (Some(f), Some(w)) = (e.payload::<Vec<String>>(), w.upgrade()) {

@@ -1,6 +1,8 @@
 // Témoins de la barre principale, au bout de la zone gauche (lib/BarStatus.svelte) : profil
-// actif autre que le premier (« Normal »), et « ! » tant qu'une intégration est en échec.
-// Données : src/ui/bar_status.rs (profil de layout.json, `horizon://health`).
+// actif autre que le premier (« Normal »), « ! » tant qu'une intégration est en échec, et
+// clavier tant qu'un téléphone contrôle le clavier et la souris.
+// Données : src/ui/bar_status.rs (profil de layout.json, `horizon://health`,
+// `horizon://phone-input`).
 
 import { Theme, StyleTokens } from "theme.slint";
 import { Icon, Island } from "components.slint";
@@ -13,8 +15,12 @@ export global BarStatusData {
     in property <bool> profile-auto;
     // Intégrations en échec, séparées par « , » ; vide : pas de « ! ».
     in property <string> failing;
+    // Téléphones qui saisissent en ce moment, séparés par « , » ; vide : pas de témoin.
+    in property <string> input;
     // Clic : page des réglages (« profiles », « options:etat »).
     callback open(string);
+    // Clic sur le témoin de saisie : couper le clavier et la souris des téléphones.
+    callback cut-input();
 }
 
 // Bouton d'un témoin : couleur estompée, survol (barre cliquable) plus clair sur un fond léger.
@@ -51,7 +57,7 @@ export component BarStatus inherits Rectangle {
     in property <bool> interactive;
     // Écart avant les témoins (aucun s'ils sont seuls dans la zone).
     in property <length> lead;
-    out property <bool> shown: BarStatusData.profile != "" || BarStatusData.failing != "";
+    out property <bool> shown: BarStatusData.profile != "" || BarStatusData.failing != "" || BarStatusData.input != "";
     width: root.shown ? root.lead + island.width : 0;
     visible: root.shown;
 
@@ -93,6 +99,29 @@ export component BarStatus inherits Rectangle {
                         font-weight: 500;
                         vertical-alignment: center;
                     }
+                }
+            }
+        }
+        // Toujours cliquable, même barre verrouillée : couper ne doit rien demander d'autre.
+        if BarStatusData.input != "": VerticalLayout {
+            alignment: center;
+            remote := StatusButton {
+                width: 20px;
+                height: 16px;
+                t: root.t;
+                interactive: true;
+                tip: BarStatusData.input + " contrôle le clavier et la souris — clic : couper";
+                clicked => { BarStatusData.cut-input(); }
+                Rectangle {
+                    border-radius: Theme.r-sm;
+                    background: remote.hovered ? transparent : Theme.accent.with-alpha(0.22);
+                }
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    source: @image-url("../icons/phosphor/keyboard.svg");
+                    size: 12px;
+                    color: remote.hovered ? root.t.text : Theme.accent;
                 }
             }
         }

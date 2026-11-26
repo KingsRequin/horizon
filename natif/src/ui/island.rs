@@ -104,6 +104,7 @@ fn action_tip(a: Option<&Action>) -> &'static str {
         Some(Action::Session { .. }) => "Afficher le terminal",
         Some(Action::Capture { .. }) => "Coller le chemin dans le terminal (sans l’envoyer)",
         Some(Action::Update) => "Installer et redémarrer Horizon",
+        Some(Action::CutInput { .. }) => "Couper le clavier et la souris de ce téléphone",
         None => "",
     }
 }
@@ -304,6 +305,10 @@ fn run(app: &AppHandle) {
             if let Err(e) = crate::update::install_now(app) {
                 log::warn!("îlot, mise à jour : {e}");
             }
+        }
+        Some(Action::CutInput { phone }) => {
+            end_flash();
+            crate::widgets::phone::witness::cut(app, &phone);
         }
         None => {}
     }

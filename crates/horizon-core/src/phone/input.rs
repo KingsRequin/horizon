@@ -107,6 +107,36 @@ pub fn key_code(name: &str) -> Option<u16> {
     }
 }
 
+/// Silence au-delà duquel une saisie ouvre une nouvelle séance (témoin, alerte).
+pub const SESSION_IDLE_MS: u64 = 10_000;
+
+/// Séances de saisie des téléphones : le témoin reste tant qu'une saisie a eu lieu dans les
+/// 10 dernières secondes, et chaque séance qui commence est annoncée.
+#[derive(Debug, Clone, Default)]
+pub struct InputSessions {
+    last: std::collections::BTreeMap<String, u64>,
+}
+
+impl InputSessions {
+    /// Saisie de `phone_id` à `now_ms` ; vrai si elle ouvre une séance.
+    pub fn seen(&mut self, phone_id: &str, now_ms: u64) -> bool {
+        let started = self.last.get(phone_id).is_none_or(|&at| now_ms.saturating_sub(at) > SESSION_IDLE_MS);
+        self.last.insert(phone_id.to_owned(), now_ms);
+        started
+    }
+
+    /// Téléphones dont la séance dure encore à `now_ms` (les autres sont oubliés), triés.
+    pub fn active(&mut self, now_ms: u64) -> Vec<String> {
+        self.last.retain(|_, at| now_ms.saturating_sub(*at) <= SESSION_IDLE_MS);
+        self.last.keys().cloned().collect()
+    }
+
+    /// Séance de `phone_id` close (droit coupé).
+    pub fn end(&mut self, phone_id: &str) {
+        self.last.remove(phone_id);
+    }
+}
+
 /// Messages de saisie par seconde et par téléphone, au plus (seau à jetons).
 const RATE: f64 = 120.0;
 
@@ -163,6 +193,22 @@ mod tests {
         assert_eq!(Mod::parse("shift"), Some(Mod::Shift));
         assert_eq!(Mod::Ctrl.code(), 0x11);
         assert_eq!(Mod::parse("meta"), None);
+    }
+
+    #[test]
+    fn a_session_starts_after_ten_seconds_of_silence() {
+        let mut s = InputSessions::default();
+        assert!(s.seen("tel-1", 1_000), "première saisie : une séance commence");
+        assert!(!s.seen("tel-1", 5_000));
+        assert!(!s.seen("tel-1", 15_000), "moins de 10 s depuis la dernière : même séance");
+        assert_eq!(s.active(20_000), vec!["tel-1".to_owned()]);
+        assert!(s.seen("tel-2", 20_000), "chaque téléphone a sa séance");
+        assert_eq!(s.active(25_500), vec!["tel-2".to_owned()], "tel-1 se tait depuis plus de 10 s");
+        assert!(s.seen("tel-1", 26_000), "reprise après le silence : nouvelle séance");
+        s.end("tel-1");
+        assert_eq!(s.active(26_000), vec!["tel-2".to_owned()]);
+        assert!(s.seen("tel-1", 26_100), "coupée : la saisie suivante en ouvre une autre");
+        assert!(s.active(40_000).is_empty());
     }
 
     #[test]

@@ -21,6 +21,8 @@ export struct PhoneRow {
     media: bool,
     // Droit « Son et actions » : volume de chaque appli, sortie audio, actions rapides.
     sound: bool,
+    // Droit « Clavier et souris » : jamais accordé d'office.
+    input: bool,
 }
 
 export global PhonePageData {
@@ -49,6 +51,7 @@ export global PhonePageData {
     callback remove(string);
     callback set-media(string, bool);
     callback set-sound(string, bool);
+    callback set-input(string, bool);
     callback set-threshold(int);
 }
 
@@ -232,6 +235,15 @@ export component PhonePage inherits Rectangle {
                     hint: "Volume de chaque appli, sortie audio, verrouiller, ne pas déranger et minuteur.";
                     toggled(on) => {
                         PhonePageData.set-sound(p.id, on);
+                    }
+                }
+                SettingCheck {
+                    nested: true;
+                    checked: p.input;
+                    label: "Clavier et souris";
+                    hint: "Ce téléphone pilote le pointeur et tape au clavier. Un témoin le signale sur les barres ; un clic dessus coupe.";
+                    toggled(on) => {
+                        PhonePageData.set-input(p.id, on);
                     }
                 }
             }

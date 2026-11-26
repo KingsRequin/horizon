@@ -140,7 +140,14 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   *Son et actions*, sous *Télécommande* dans la page (accordé à l'appairage). Le mixeur n'est
   envoyé que pendant que la télécommande est ouverte, les actions pendant que l'accueil l'est,
   et seulement quand ils changent (le minuteur part en temps restant, l'appli le décompte).
-  Protocole : [PHONE.md](PHONE.md).
+  **Clavier et souris** (Horizon 0.11, appli 0.4) : le téléphone devient un pavé tactile (un
+  doigt : pointeur ; appui à un, deux ou trois doigts : clic gauche, droit, milieu ; deux
+  doigts : défilement ; pincer : zoom ; double appui maintenu : glisser) et un clavier (texte du
+  clavier du téléphone, touches spéciales et raccourcis). Droit *Clavier et souris*, jamais
+  accordé d'office : à cocher dans la page. Chaque fois qu'un téléphone se met à saisir, l'îlot
+  l'annonce (même en *ne pas déranger*) et un clavier reste sur les barres tant qu'il saisit ;
+  un clic sur l'un ou l'autre coupe (le droit est décoché). Rien ne passe tant que la session
+  est verrouillée. Protocole : [PHONE.md](PHONE.md).
 - **Bascule audio du casque** (Réglages d'Horizon › Son et média ; désactivée tant qu'aucune sortie
   de repli n'est choisie) : casque éteint (deux lectures d'affilée, relu toutes les 5 s), la
   sortie par défaut passe sur la sortie de repli ; rallumé, elle revient à celle d'avant, sauf si

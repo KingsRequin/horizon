@@ -11,6 +11,7 @@ pub mod identity;
 pub mod remote;
 pub mod server;
 pub mod ui;
+pub mod witness;
 
 use crate::alerts::LowBattery;
 use crate::host::{AppHandle, Emitter, Manager};
@@ -399,6 +400,8 @@ pub struct PhoneState {
     link: Published<LinkView>,
     /// Une alerte « batterie faible » par appareil (clé de [`BatteryView`]).
     low: Mutex<HashMap<String, LowBattery>>,
+    /// Séances de saisie à distance : témoin des barres.
+    witness: witness::Witness,
     /// Le registre ou les batteries ont changé depuis la dernière écriture.
     dirty: AtomicBool,
     wake: Waker,
@@ -415,6 +418,7 @@ impl Default for PhoneState {
             shown: Published::new(EV_PHONE, Vec::new()),
             link: Published::new(EV_PHONE_LINK, LinkView::default()),
             low: Mutex::default(),
+            witness: witness::Witness::default(),
             dirty: AtomicBool::new(false),
             wake: Waker::default(),
         }
@@ -774,6 +778,15 @@ impl remote::Controls for AppControls {
     fn timer_stop(&self) {
         crate::timer::timer_stop(&self.0);
     }
+    fn input(&self, cmd: &horizon_core::phone::remote::Command) {
+        witness::apply(cmd);
+    }
+    fn input_seen(&self, phone_id: &str) {
+        witness::seen(&self.0, phone_id);
+    }
+    fn away(&self) -> bool {
+        horizon_sys::presence::away()
+    }
 }
 
 /// Retire un téléphone appairé et ferme sa session.
@@ -866,7 +879,7 @@ mod tests {
         assert_eq!((id.as_str(), pc_id.as_str(), pc_name.as_str()), ("tel-1", "pc-1", "Bureau"));
         assert_eq!(device_token.len(), 43, "32 octets aléatoires");
         let ok = core.first(hello("tel-1", &device_token), 2);
-        assert!(matches!(&ok, Ok((id, ToPhone::HelloOk { protocol: 1, features, accent, .. })) if id == "tel-1" && features == &["battery", "media", "mixer", "actions"] && accent == "#f97316"), "{ok:?}");
+        assert!(matches!(&ok, Ok((id, ToPhone::HelloOk { protocol: 1, features, accent, .. })) if id == "tel-1" && features == &["battery", "media", "mixer", "actions", "input"] && accent == "#f97316"), "{ok:?}");
         assert!(matches!(core.first(hello("tel-1", "faux"), 3), Err(ToPhone::HelloRejected { reason }) if reason == "bad_token"));
         let newer = FromPhone::Hello { device_id: "tel-1".into(), device_token, protocol: 2, app_version: "9".into() };
         assert!(matches!(core.first(newer, 3), Err(ToPhone::HelloRejected { reason }) if reason == "protocol"));
@@ -1075,6 +1088,11 @@ mod tests {
         fn timer_start(&self, _minutes: u32) {}
         fn timer_pause(&self, _paused: bool) {}
         fn timer_stop(&self) {}
+        fn input(&self, _cmd: &horizon_core::phone::remote::Command) {}
+        fn input_seen(&self, _phone_id: &str) {}
+        fn away(&self) -> bool {
+            false
+        }
     }
 
     /// Une télécommande qui ne commande rien ni n'envoie rien.
@@ -1090,7 +1108,7 @@ mod tests {
         assert_eq!(core.set_right("tel-1", "media", false), None, "rien de changé");
         assert_eq!(core.set_right("inconnu", "media", true), None);
         let Ok((_, ToPhone::HelloOk { features, granted, .. })) = core.first(hello("tel-1", &token), 2) else { panic!() };
-        assert_eq!(features, vec!["battery", "media", "mixer", "actions"]);
+        assert_eq!(features, vec!["battery", "media", "mixer", "actions", "input"]);
         assert_eq!(granted, vec!["battery", "sound"]);
         assert_eq!(core.phones(&[], 0)[0].granted, vec!["battery", "sound"]);
     }

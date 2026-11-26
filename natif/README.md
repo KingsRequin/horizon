@@ -748,13 +748,18 @@ d'exemple par type dans `crates/horizon-core/tests/fixtures/phone/`, que l'appli
   `phone::media_changed` (`media::on_snapshot`), `phone::mixer_changed` (`mixer::publish`) et
   `phone::actions_changed` (`timer`, `dnd`, `widgets::headset`) ; rien n'est calculé si aucun
   téléphone ne regarde ; le mixeur ne relit l'état que tant qu'un téléphone regarde le volume ou
-  le mixeur). Verrouiller : `horizon_sys::power::lock_workstation`.
+  le mixeur). Verrouiller : `horizon_sys::power::lock_workstation`. Saisie à distance
+  (`witness.rs`) : `horizon_sys::input` (`SendInput`), débit et boutons tenus par téléphone dans
+  `Remote`, séances (`horizon_core::phone::input::InputSessions`), alerte `AlertKind::RemoteInput`
+  (passe le NPD) avec l'action `CutInput`, témoin `BarStatusData.input` (événement
+  `horizon://phone-input`) dont le clic coupe.
   Logique pure de la télécommande : `horizon_core::phone::remote` (droits, commandes bornées,
   message d'état) ; droits par téléphone : `registry` (`granted`, `set_granted`).
 - **Page** (`src/ui/phone_page.rs`, `ui/phone/page.slint`, `SettingsPage::Phone`, nom `phone`) :
   pare-feu, QR de l'appli, QR d'appairage (`qr_image`, décompte seulement pendant qu'une offre
   est affichée), téléphones (retrait différé par le bandeau d'annulation ; case *Télécommande*
-  = droit `media`, case *Son et actions* = droit `sound`), seuil
+  = droit `media`, case *Son et actions* = droit `sound`, case *Clavier et souris* = droit
+  `input`), seuil
   `alerts.phone_low`. Ouverte par l'activation du module, la palette et les réglages du widget.
 - **Fichiers** : `%APPDATA%\Horizon\phones.json` ; règle de pare-feu « Horizon Mobile » (une
   seule, pour l'exe en cours, profil privé).
