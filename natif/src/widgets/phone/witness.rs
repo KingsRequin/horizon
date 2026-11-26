@@ -90,7 +90,8 @@ pub fn seen(app: &AppHandle, phone_id: &str) {
     };
     let name = phone_name(app, phone_id);
     log::info!("téléphone : {phone_id} ({name}) prend le clavier et la souris");
-    let alert = Alert::icon("keyboard", Severity::Attention, format!("{name} contrôle le clavier et la souris"), "Clic : couper".into())
+    // Titre court (l'îlot coupe vite) ; l'infobulle de l'action dit que le clic coupe.
+    let alert = Alert::icon("keyboard", Severity::Attention, "Clavier et souris".into(), name.clone())
         .with_action(Action::CutInput { phone: phone_id.to_owned() });
     crate::alerts::show(app, AlertKind::RemoteInput, alert);
     publish(app, &active);
