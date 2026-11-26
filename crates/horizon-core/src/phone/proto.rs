@@ -62,6 +62,27 @@ pub enum FromPhone {
     VolumeSet { volume: f32 },
     #[serde(rename = "volume.mute")]
     VolumeMute { muted: bool },
+    /// Volume d'une appli (clé d'exe du mixeur), de 0 à 1.
+    #[serde(rename = "mixer.app_volume")]
+    MixerAppVolume { key: String, volume: f32 },
+    #[serde(rename = "mixer.app_mute")]
+    MixerAppMute { key: String, muted: bool },
+    /// Sortie audio par défaut (identifiant d'endpoint du mixeur).
+    #[serde(rename = "mixer.output")]
+    MixerOutput { id: String },
+    /// Verrouiller la session Windows.
+    #[serde(rename = "action.lock")]
+    ActionLock,
+    /// Ne pas déranger, allumé ou éteint.
+    #[serde(rename = "action.dnd")]
+    ActionDnd { on: bool },
+    /// Lancer le minuteur pour `minutes`.
+    #[serde(rename = "timer.start")]
+    TimerStart { minutes: u32 },
+    #[serde(rename = "timer.pause")]
+    TimerPause { paused: bool },
+    #[serde(rename = "timer.stop")]
+    TimerStop,
     #[serde(other)]
     Unknown,
 }
@@ -94,6 +115,53 @@ pub enum ToPhone {
     /// Volume général (sortie par défaut), de 0 à 1.
     #[serde(rename = "volume.state")]
     VolumeState { volume: f32, muted: bool },
+    /// Sorties audio, sortie par défaut et volume de chaque appli (ordre d'Horizon : celles qui
+    /// émettent d'abord).
+    #[serde(rename = "mixer.state")]
+    MixerState { outputs: Vec<OutputView>, default_output: Option<String>, apps: Vec<AppView> },
+    /// Ne pas déranger, minuteur (`None` : arrêté), durées proposées et casque du PC.
+    #[serde(rename = "actions.state")]
+    ActionsState { dnd: bool, timer: Option<TimerState>, timer_presets: Vec<u32>, headset: Option<HeadsetView> },
+}
+
+/// Une sortie audio du PC ; `kind` : `headset` ou `speaker` (l'icône du téléphone).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputView {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+}
+
+/// Une appli du mixeur : `key` est la clé d'exe que les commandes reprennent.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppView {
+    pub key: String,
+    pub name: String,
+    pub volume: f32,
+    pub muted: bool,
+    /// Elle émet du son en ce moment.
+    pub active: bool,
+}
+
+/// Minuteur en cours : `remaining_ms` vaut au moment de l'envoi, le téléphone le décompte
+/// depuis la réception (sauf en pause).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimerState {
+    pub remaining_ms: u64,
+    pub total_ms: u64,
+    pub paused: bool,
+}
+
+/// Casque du PC (batterie lue par Horizon).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeadsetView {
+    pub name: String,
+    pub level: u8,
+    pub charging: bool,
 }
 
 /// Lecture en cours telle que le téléphone la reçoit. `position_ms` vaut au moment de l'envoi :
@@ -186,6 +254,40 @@ mod tests {
         assert_eq!(parse(fixture("media.select.json")), Some(FromPhone::MediaSelect { app_id: "Spotify.exe".into() }));
         assert_eq!(parse(fixture("volume.set.json")), Some(FromPhone::VolumeSet { volume: 0.72 }));
         assert_eq!(parse(fixture("volume.mute.json")), Some(FromPhone::VolumeMute { muted: true }));
+    }
+
+    #[test]
+    fn the_mixer_and_action_messages_from_the_phone_parse() {
+        assert_eq!(parse(fixture("mixer.app_volume.json")), Some(FromPhone::MixerAppVolume { key: "spotify.exe".into(), volume: 0.4 }));
+        assert_eq!(parse(fixture("mixer.app_mute.json")), Some(FromPhone::MixerAppMute { key: "discord.exe".into(), muted: true }));
+        assert_eq!(parse(fixture("mixer.output.json")), Some(FromPhone::MixerOutput { id: "{0.0.0.00000000}.{5a1c}".into() }));
+        assert_eq!(parse(fixture("action.lock.json")), Some(FromPhone::ActionLock));
+        assert_eq!(parse(fixture("action.dnd.json")), Some(FromPhone::ActionDnd { on: true }));
+        assert_eq!(parse(fixture("timer.start.json")), Some(FromPhone::TimerStart { minutes: 25 }));
+        assert_eq!(parse(fixture("timer.pause.json")), Some(FromPhone::TimerPause { paused: true }));
+        assert_eq!(parse(fixture("timer.stop.json")), Some(FromPhone::TimerStop));
+    }
+
+    #[test]
+    fn the_mixer_and_action_states_match_their_fixtures() {
+        let same = |msg: ToPhone, name: &str| {
+            let sent: serde_json::Value = serde_json::from_str(&msg.to_json()).unwrap();
+            let expected: serde_json::Value = serde_json::from_str(fixture(name)).unwrap();
+            assert_eq!(sent, expected, "{name}");
+        };
+        let outputs = vec![
+            OutputView { id: "out-1".into(), name: "Casque".into(), kind: "headset".into() },
+            OutputView { id: "out-2".into(), name: "Enceintes".into(), kind: "speaker".into() },
+        ];
+        let apps = vec![
+            AppView { key: "spotify.exe".into(), name: "Spotify".into(), volume: 0.8, muted: false, active: true },
+            AppView { key: "discord.exe".into(), name: "Discord".into(), volume: 0.55, muted: true, active: false },
+        ];
+        same(ToPhone::MixerState { outputs, default_output: Some("out-1".into()), apps }, "mixer.state.json");
+        let timer = TimerState { remaining_ms: 760_000, total_ms: 1_500_000, paused: false };
+        let headset = HeadsetView { name: "Casque".into(), level: 92, charging: false };
+        same(ToPhone::ActionsState { dnd: true, timer: Some(timer), timer_presets: vec![5, 15, 25, 45], headset: Some(headset) }, "actions.state.json");
+        same(ToPhone::ActionsState { dnd: false, timer: None, timer_presets: Vec::new(), headset: None }, "actions.state-vide.json");
     }
 
     #[test]
