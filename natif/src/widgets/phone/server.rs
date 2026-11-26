@@ -552,9 +552,16 @@ mod tests {
     #[test]
     fn a_busy_port_moves_to_the_next_one_and_stop_frees_it() {
         let id = test_identity();
-        let taken = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let first = taken.local_addr().unwrap().port();
-        let server = spawn("127.0.0.1".parse().unwrap(), first, id.tls_config(), Arc::new(TestHandler(Arc::default()))).unwrap();
+        // Les autres tests ouvrent des ports au hasard en même temps : une plage voisine déjà
+        // prise ne dit rien du serveur, on en reprend une autre.
+        let (_taken, first, server) = (0..20)
+            .find_map(|_| {
+                let taken = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+                let first = taken.local_addr().unwrap().port();
+                let server = spawn("127.0.0.1".parse().unwrap(), first, id.tls_config(), Arc::new(TestHandler(Arc::default()))).ok()?;
+                Some((taken, first, server))
+            })
+            .expect("aucune plage de ports libre");
         assert!(server.port() > first && server.port() < first + PORT_TRIES, "{} après {first}", server.port());
         let port = server.port();
         server.stop();
