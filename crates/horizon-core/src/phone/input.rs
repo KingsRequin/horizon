@@ -115,6 +115,8 @@ pub const SESSION_IDLE_MS: u64 = 10_000;
 #[derive(Debug, Clone, Default)]
 pub struct InputSessions {
     last: std::collections::BTreeMap<String, u64>,
+    /// Ce que le témoin montre (dernière relecture) : ce que « Couper » coupe.
+    shown: Vec<String>,
 }
 
 impl InputSessions {
@@ -125,10 +127,26 @@ impl InputSessions {
         started
     }
 
-    /// Téléphones dont la séance dure encore à `now_ms` (les autres sont oubliés), triés.
+    /// Téléphones dont la séance dure encore à `now_ms`, triés : ce que le témoin montre désormais.
     pub fn active(&mut self, now_ms: u64) -> Vec<String> {
-        self.last.retain(|_, at| now_ms.saturating_sub(*at) <= SESSION_IDLE_MS);
-        self.last.keys().cloned().collect()
+        self.shown = self.last.iter().filter(|(_, at)| now_ms.saturating_sub(**at) <= SESSION_IDLE_MS).map(|(id, _)| id.clone()).collect();
+        self.shown.clone()
+    }
+
+    /// Ce que montre le témoin depuis la dernière relecture ([`active`](Self::active)) : un clic
+    /// dessus coupe ces téléphones, même si leur séance vient de finir.
+    pub fn shown(&self) -> Vec<String> {
+        self.shown.clone()
+    }
+
+    /// Séances finies à `now_ms` (plus de 10 s de silence), rendues une seule fois et oubliées :
+    /// les boutons qu'elles tiennent encore sont à relâcher.
+    pub fn expire(&mut self, now_ms: u64) -> Vec<String> {
+        let ended: Vec<String> = self.last.iter().filter(|(_, at)| now_ms.saturating_sub(**at) > SESSION_IDLE_MS).map(|(id, _)| id.clone()).collect();
+        for id in &ended {
+            self.last.remove(id);
+        }
+        ended
     }
 
     /// Séance de `phone_id` close (droit coupé).
@@ -209,6 +227,27 @@ mod tests {
         assert_eq!(s.active(26_000), vec!["tel-2".to_owned()]);
         assert!(s.seen("tel-1", 26_100), "coupée : la saisie suivante en ouvre une autre");
         assert!(s.active(40_000).is_empty());
+    }
+
+    #[test]
+    fn a_session_that_falls_silent_is_reported_once() {
+        let mut s = InputSessions::default();
+        s.seen("tel-1", 1_000);
+        s.seen("tel-2", 5_000);
+        assert_eq!(s.expire(9_000), Vec::<String>::new());
+        assert_eq!(s.expire(12_000), vec!["tel-1".to_owned()], "plus de 10 s : la séance est finie");
+        assert_eq!(s.expire(12_500), Vec::<String>::new(), "une seule fois");
+        assert_eq!(s.expire(16_000), vec!["tel-2".to_owned()]);
+    }
+
+    #[test]
+    fn what_was_shown_stays_the_target_of_a_cut() {
+        let mut s = InputSessions::default();
+        s.seen("tel-1", 1_000);
+        assert_eq!(s.active(5_000), vec!["tel-1".to_owned()]);
+        assert_eq!(s.shown(), vec!["tel-1".to_owned()], "à 11,5 s, la séance est finie mais le témoin, relu à 5 s, la montre encore");
+        assert_eq!(s.active(11_500), Vec::<String>::new());
+        assert!(s.shown().is_empty());
     }
 
     #[test]

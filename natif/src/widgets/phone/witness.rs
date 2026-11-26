@@ -104,17 +104,25 @@ pub fn seen(app: &AppHandle, phone_id: &str) {
     }
 }
 
-/// Efface le témoin des séances qui se taisent, puis s'arrête quand il n'en reste aucune.
+/// Efface le témoin des séances qui se taisent et relâche les boutons qu'elles tiennent encore
+/// (liaison morte en plein glisser, relâchement perdu), puis s'arrête quand il n'en reste aucune.
 fn fade(app: &AppHandle) {
     let state = app.state::<PhoneState>();
     loop {
         std::thread::sleep(Duration::from_secs(1));
-        let active = {
+        let (active, ended) = {
             let mut watch = lock(&state.witness.sessions);
-            let active = watch.sessions.active(now_ms());
+            let now = now_ms();
+            let ended = watch.sessions.expire(now);
+            let active = watch.sessions.active(now);
             watch.running = !active.is_empty();
-            active
+            (active, ended)
         };
+        if let Some(remote) = state.remote.get() {
+            for id in &ended {
+                remote.release(id);
+            }
+        }
         publish(app, &active);
         if active.is_empty() {
             return;
@@ -136,10 +144,10 @@ pub fn cut(app: &AppHandle, phone_id: &str) {
     publish(app, &active);
 }
 
-/// Coupe tous les téléphones qui saisissent (clic sur le témoin).
+/// Coupe les téléphones que le témoin montre (clic sur lui), même si leur séance vient de finir.
 pub fn cut_all(app: &AppHandle) {
-    let active = lock(&app.state::<PhoneState>().witness.sessions).sessions.active(now_ms());
-    for id in active {
+    let shown = lock(&app.state::<PhoneState>().witness.sessions).sessions.shown();
+    for id in shown {
         cut(app, &id);
     }
 }

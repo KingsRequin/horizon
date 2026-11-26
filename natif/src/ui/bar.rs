@@ -146,10 +146,9 @@ pub fn open(app: &AppHandle, label: &str, monitor: &MonitorInfo, rect: (i32, i32
         [slots(&layout, &layout.left), slots(&layout, &layout.center), slots(&layout, &layout.right)].map(|v| Rc::new(VecModel::from(v)));
     super::panels::bind(app, label, &window);
     super::island::bind(app, &window, &layout);
-    if layout.role == BarRole::Main {
-        window.set_main(true);
-        super::bar_status::bind(app, &window, label);
-    }
+    let main = layout.role == BarRole::Main;
+    window.set_main(main);
+    super::bar_status::bind(app, &window, label, main);
     let bound = crate::widgets::bind_all(app, &window, label, &layout);
     super::edit::bind(app, &window, label);
     // Accent, affichage du volume (barre principale), pulsation.
@@ -735,13 +734,13 @@ fn schedule_fit(label: &str) {
     slint::Timer::single_shot(Duration::ZERO, move || run_fit(&l));
 }
 
-/// Largeur annoncée des témoins de la barre principale (au bout de la zone gauche).
+/// Largeur annoncée des témoins de la barre (au bout de la zone gauche).
 const STATUS_ID: &str = "#status";
 
 /// Largeur voulue par chaque zone si `hidden` y est masqué : les largeurs naturelles et un écart
 /// avant chaque emplacement affiché sauf le premier. Un widget qui n'a rien à montrer (largeur
 /// nulle : Sessions Claude sans session) ne compte pas, comme `.slot:not(:has(*))` ; les témoins
-/// de la barre principale comptent dans la zone gauche.
+/// de la barre comptent dans la zone gauche.
 fn needs(
     b: &BarUi,
     widths: &overflow::Widths,

@@ -372,7 +372,8 @@ export component BarWindow inherits Window {
                 drag(phase, x, y) => { root.slot-drag(s.id, phase, x, y); }
             }
             // Largeur annoncée sous l'identifiant « #status » (débordement de la zone gauche).
-            if root.main && !root.editing: status := BarStatus {
+            if !root.editing: status := BarStatus {
+                main: root.main;
                 t: root.t;
                 dim: root.t.graphic ? 0 : root.dim;
                 interactive: root.clickable;

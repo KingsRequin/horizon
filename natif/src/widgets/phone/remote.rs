@@ -242,37 +242,40 @@ impl Remote {
         true
     }
 
-    /// Saisie de `phone_id` (droit déjà vérifié) : ignorée session verrouillée, bornée en débit,
-    /// appliquée sous le verrou de la saisie (un relâchement ne peut pas doubler un appui).
+    /// Saisie de `phone_id` (droit déjà vérifié) : ignorée session verrouillée, bornée en débit
+    /// (sauf le relâchement d'un bouton tenu), appliquée sous le verrou de la saisie.
     fn input(&self, phone_id: &str, cmd: &Command, now_ms: u64) {
-        if self.controls.away() {
+        let mut input = lock(&self.input);
+        // Relâcher un bouton tenu passe toujours : ni le débit ni la session verrouillée ne
+        // doivent laisser un bouton enfoncé sur le PC.
+        let release = matches!(cmd, Command::Button(b, ButtonAction::Up) if input.get(phone_id).is_some_and(|s| s.held.contains(b)));
+        if !release && self.controls.away() {
             return;
         }
-        {
-            let mut input = lock(&self.input);
-            // Droit relu sous le verrou : une coupure (enregistrée avant `release`, qui prend ce
-            // verrou) ne peut pas être suivie d'une saisie ni d'un bouton tenu.
-            if !(self.rights)(phone_id).iter().any(|r| r == remote::INPUT) {
-                return;
-            }
-            let state = input.entry(phone_id.to_owned()).or_default();
-            if !state.rate.allow(now_ms) {
-                return;
-            }
-            if let Command::Button(button, action) = cmd {
-                match action {
-                    ButtonAction::Down if !state.held.contains(button) => state.held.push(*button),
-                    ButtonAction::Up => state.held.retain(|b| b != button),
-                    _ => {}
-                }
-            }
-            self.controls.input(cmd);
+        // Droit relu sous le verrou : une coupure (enregistrée avant `release`, qui prend ce
+        // verrou) ne peut pas être suivie d'une saisie ni d'un bouton tenu.
+        if !(self.rights)(phone_id).iter().any(|r| r == remote::INPUT) {
+            return;
         }
+        let state = input.entry(phone_id.to_owned()).or_default();
+        if !release && !state.rate.allow(now_ms) {
+            return;
+        }
+        if let Command::Button(button, action) = cmd {
+            match action {
+                ButtonAction::Down if !state.held.contains(button) => state.held.push(*button),
+                ButtonAction::Up => state.held.retain(|b| b != button),
+                _ => {}
+            }
+        }
+        self.controls.input(cmd);
+        drop(input);
         self.controls.input_seen(phone_id);
     }
 
-    /// Relâche les boutons que `phone_id` tient encore, et oublie sa saisie.
-    fn release(&self, phone_id: &str) {
+    /// Relâche les boutons que `phone_id` tient encore, et oublie sa saisie (session fermée,
+    /// droit retiré, séance finie).
+    pub fn release(&self, phone_id: &str) {
         let mut input = lock(&self.input);
         if let Some(state) = input.remove(phone_id) {
             for button in state.held {
@@ -893,6 +896,34 @@ mod tests {
         assert_eq!(fake.seen.lock().unwrap().first().map(String::as_str), Some("tel-1"), "la séance de saisie est signalée");
         r.message("tel-2", &FromPhone::InputMove { dx: 1, dy: 1 }, 1_000);
         assert_eq!(fake.calls.lock().unwrap().len(), 121, "chaque téléphone a son débit");
+    }
+
+    #[test]
+    fn the_release_of_a_held_button_always_passes() {
+        let (r, fake, _) = remote();
+        with_input(&fake);
+        r.message("tel-1", &FromPhone::InputButton { button: "left".into(), action: "down".into() }, 0);
+        for _ in 0..300 {
+            r.message("tel-1", &FromPhone::InputMove { dx: 1, dy: 0 }, 0);
+        }
+        r.message("tel-1", &FromPhone::InputButton { button: "left".into(), action: "up".into() }, 0);
+        assert_eq!(fake.calls.lock().unwrap().last().map(String::as_str), Some("input Button(Left, Up)"), "débit épuisé : le relâchement passe");
+        r.message("tel-1", &FromPhone::InputButton { button: "right".into(), action: "down".into() }, 2_000);
+        *fake.away.lock().unwrap() = true;
+        r.message("tel-1", &FromPhone::InputButton { button: "right".into(), action: "up".into() }, 2_001);
+        assert_eq!(fake.calls.lock().unwrap().last().map(String::as_str), Some("input Button(Right, Up)"), "session verrouillée : le relâchement passe");
+        let n = fake.calls.lock().unwrap().len();
+        r.message("tel-1", &FromPhone::InputButton { button: "right".into(), action: "up".into() }, 2_002);
+        assert_eq!(fake.calls.lock().unwrap().len(), n, "un relâchement de bouton non tenu suit la règle commune");
+    }
+
+    #[test]
+    fn a_session_that_ends_releases_its_buttons() {
+        let (r, fake, _) = remote();
+        with_input(&fake);
+        r.message("tel-1", &FromPhone::InputButton { button: "left".into(), action: "down".into() }, 0);
+        r.release("tel-1");
+        assert_eq!(fake.calls.lock().unwrap().last().map(String::as_str), Some("input Button(Left, Up)"));
     }
 
     #[test]

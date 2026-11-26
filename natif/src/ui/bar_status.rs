@@ -1,7 +1,8 @@
-//! Témoins de la barre principale (`ui/bar-status.slint`, lib/BarStatus.svelte) : profil actif
-//! autre que le premier (lu dans `layout.json`), « ! » tant qu'une intégration est en échec
-//! (`status.rs`, `horizon://health`), clavier tant qu'un téléphone saisit (`horizon://phone-input`).
-//! Clic : page des réglages (« État », profils) ; sur le clavier : couper.
+//! Témoins des barres (`ui/bar-status.slint`, lib/BarStatus.svelte). Sur la barre principale :
+//! profil actif autre que le premier (lu dans `layout.json`), « ! » tant qu'une intégration est
+//! en échec (`status.rs`, `horizon://health`). Sur chaque barre : clavier tant qu'un téléphone
+//! saisit (`horizon://phone-input`), où que l'on regarde. Clic : page des réglages (« État »,
+//! profils) ; sur le clavier : couper.
 //! Fil de l'interface.
 
 use super::{BarStatusData, BarWindow};
@@ -17,13 +18,9 @@ fn custom_profile(l: &Layout) -> Option<(String, bool)> {
     (l.profiles.first().is_some_and(|first| first.id != active.id)).then(|| (active.name.clone(), l.auto_from.is_some()))
 }
 
-/// Relie les témoins de la barre principale `label`.
-pub fn bind(app: &AppHandle, window: &BarWindow, label: &str) {
+/// Relie les témoins de la barre `label` (profil et état : barre principale seulement).
+pub fn bind(app: &AppHandle, window: &BarWindow, label: &str, main: bool) {
     let g = window.global::<BarStatusData>();
-    let (profile, auto) = app.state::<crate::state::AppState>().read(custom_profile).unwrap_or_default();
-    g.set_profile(profile.into());
-    g.set_profile_auto(auto);
-    g.set_failing(crate::status::status_health(app).join(", ").into());
     g.set_input(crate::widgets::phone::witness::active_names(app).join(", ").into());
     let w = window.as_weak();
     host::listen(crate::widgets::phone::witness::EV_PHONE_INPUT, Some(label), move |e| {
@@ -33,6 +30,13 @@ pub fn bind(app: &AppHandle, window: &BarWindow, label: &str) {
     });
     let a = app.clone();
     g.on_cut_input(move || crate::widgets::phone::witness::cut_all(&a));
+    if !main {
+        return;
+    }
+    let (profile, auto) = app.state::<crate::state::AppState>().read(custom_profile).unwrap_or_default();
+    g.set_profile(profile.into());
+    g.set_profile_auto(auto);
+    g.set_failing(crate::status::status_health(app).join(", ").into());
     let w = window.as_weak();
     host::listen(EV_HEALTH, Some(label), move |e| {
         if let (Some(f), Some(w)) = (e.payload::<Vec<String>>(), w.upgrade()) {
