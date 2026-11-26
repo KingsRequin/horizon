@@ -8,6 +8,7 @@
 //! activé et que le pare-feu de Windows le permet ([`refresh`]).
 
 pub mod identity;
+pub mod remote;
 pub mod server;
 pub mod ui;
 
@@ -73,6 +74,8 @@ pub struct PhoneView {
     pub name: String,
     pub connected: bool,
     pub last_seen_ms: u64,
+    /// Ce qu'il a le droit de faire (`battery`, `media`, `sound`, `input`).
+    pub granted: Vec<String>,
 }
 
 /// État de la liaison, pour la page de réglages.
@@ -206,8 +209,7 @@ impl Core {
                     pc_name: self.pc_name.clone(),
                     protocol: PROTOCOL,
                     features: FEATURES.iter().map(|f| (*f).to_owned()).collect(),
-                    // Les droits par téléphone arrivent avec le registre (tâche suivante).
-                    granted: FEATURES.iter().map(|f| (*f).to_owned()).collect(),
+                    granted: registry.granted(&device_id),
                     accent: lock(&self.accent).clone(),
                 };
                 Ok((device_id, ok))
@@ -226,6 +228,21 @@ impl Core {
             FromPhone::Battery { devices } => lock(&self.book).apply(phone_id, devices, now_ms),
             _ => false,
         }
+    }
+
+    /// Droits du téléphone `phone_id` (vide s'il n'est pas connu).
+    pub fn granted(&self, phone_id: &str) -> Vec<String> {
+        lock(&self.registry).granted(phone_id)
+    }
+
+    /// Accorde ou retire un droit ; la nouvelle liste s'il a changé (elle est aussitôt écrite).
+    pub fn set_right(&self, phone_id: &str, right: &str, on: bool) -> Option<Vec<String>> {
+        let granted = {
+            let mut registry = lock(&self.registry);
+            registry.set_granted(phone_id, right, on).then(|| registry.granted(phone_id))
+        }?;
+        self.registry_did_change();
+        Some(granted)
     }
 
     /// Retire un téléphone : son jeton ne vaut plus rien, ses batteries sont oubliées.
@@ -248,7 +265,7 @@ impl Core {
         lock(&self.registry)
             .phones
             .iter()
-            .map(|p| PhoneView { id: p.id.clone(), name: p.name.clone(), connected: connected.contains(&p.id), last_seen_ms: p.last_seen_ms })
+            .map(|p| PhoneView { id: p.id.clone(), name: p.name.clone(), connected: connected.contains(&p.id), last_seen_ms: p.last_seen_ms, granted: p.rights() })
             .collect()
     }
 
@@ -270,9 +287,10 @@ pub(crate) enum Event {
     Closed,
 }
 
-/// Relie le serveur à [`Core`] ; `notify` prévient le reste d'Horizon.
+/// Relie le serveur à [`Core`] et à la télécommande ; `notify` prévient le reste d'Horizon.
 struct Link<F> {
     core: Arc<Core>,
+    remote: Arc<remote::Remote>,
     notify: F,
 }
 
@@ -291,13 +309,18 @@ impl<F: Fn(Event) + Send + Sync + 'static> Handler for Link<F> {
     }
 
     fn message(&self, phone_id: &str, msg: FromPhone) {
-        if self.core.message(phone_id, msg, now_ms()) {
+        let now = now_ms();
+        if self.remote.message(phone_id, &msg, &self.core.granted(phone_id), now) {
+            return;
+        }
+        if self.core.message(phone_id, msg, now) {
             (self.notify)(Event::Batteries);
         }
     }
 
     fn closed(&self, phone_id: &str) {
         log::info!("téléphone : session de {phone_id} fermée");
+        self.remote.closed(phone_id);
         (self.notify)(Event::Closed);
     }
 }
@@ -344,6 +367,12 @@ impl Runner {
         }
     }
 
+    fn send_to(&self, phone_id: &str, msg: &ToPhone) {
+        if let Some(server) = lock(&self.server).as_ref() {
+            server.send_to(phone_id, msg);
+        }
+    }
+
     fn disconnect(&self, phone_id: &str) {
         if let Some(server) = lock(&self.server).as_ref() {
             server.disconnect(phone_id);
@@ -354,6 +383,8 @@ impl Runner {
 pub struct PhoneState {
     /// Posé par [`start`] : absent tant que le module n'a jamais été activé.
     core: OnceLock<Arc<Core>>,
+    /// Télécommande des téléphones, posée par [`start`].
+    remote: OnceLock<Arc<remote::Remote>>,
     runner: Runner,
     identity: Mutex<Option<Arc<Identity>>>,
     firewall: Mutex<FirewallState>,
@@ -370,6 +401,7 @@ impl Default for PhoneState {
     fn default() -> Self {
         PhoneState {
             core: OnceLock::new(),
+            remote: OnceLock::new(),
             runner: Runner::default(),
             identity: Mutex::default(),
             firewall: Mutex::new(FirewallState::Unknown),
@@ -405,6 +437,9 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
     core.set_accent(crate::accent::accent_state(app).map_or_else(|| DEFAULT_ACCENT.to_owned(), crate::plugins::events::hex));
     core.on_registry_change(write);
     let _ = app.state::<PhoneState>().core.set(core);
+    let a = app.clone();
+    let send = move |id: &str, msg: &ToPhone| a.state::<PhoneState>().runner.send_to(id, msg);
+    let _ = app.state::<PhoneState>().remote.set(Arc::new(remote::Remote::new(Box::new(AppControls(app.clone())), Box::new(send))));
     let a = app.clone();
     start_thread("telephone-etat", move || watch(&a))?;
     refresh(app);
@@ -482,7 +517,8 @@ pub fn refresh(app: &AppHandle) {
     let started = state.runner.set(want, || {
         let identity = identity(&state)?;
         let (core, a) = (core.clone(), app.clone());
-        server::spawn(Ipv4Addr::UNSPECIFIED.into(), PORT, identity.tls_config(), Arc::new(Link { core, notify: move |event| on_event(&a, event) }))
+        let remote = state.remote.get().cloned().ok_or_else(|| anyhow::anyhow!("télécommande pas encore prête"))?;
+        server::spawn(Ipv4Addr::UNSPECIFIED.into(), PORT, identity.tls_config(), Arc::new(Link { core, remote, notify: move |event| on_event(&a, event) }))
     });
     match started {
         Ok(()) if want => log::info!("téléphone : écoute sur le port {}", state.runner.port().unwrap_or(0)),
@@ -582,6 +618,87 @@ pub fn cancel_pairing(app: &AppHandle) {
     if let Some(core) = core(app) {
         core.cancel_pairing();
         publish(app);
+    }
+}
+
+/// Accorde ou retire un droit à un téléphone (page Téléphone) : enregistré tout de suite, et
+/// le téléphone l'apprend (`rights`) s'il est relié.
+pub fn set_right(app: &AppHandle, id: &str, right: &str, on: bool) {
+    let state = app.state::<PhoneState>();
+    let (Some(core), Some(remote)) = (state.core.get(), state.remote.get()) else { return };
+    if let Some(granted) = core.set_right(id, right, on) {
+        log::info!("téléphone : droit {right} {} pour {id}", if on { "accordé" } else { "retiré" });
+        remote.rights_changed(id, &granted);
+        publish(app);
+    }
+}
+
+/// La lecture en cours a changé (fil du média) ; `art` : ce que la relecture dit de la
+/// pochette. Ne fait rien tant que le module n'a pas démarré ou que personne ne regarde.
+pub fn media_changed(app: &AppHandle, art: remote::ArtChange) {
+    if let Some(remote) = app.state::<PhoneState>().remote.get() {
+        remote.media_changed(&AppControls(app.clone()).media_now(), art, now_ms());
+    }
+}
+
+/// Le volume général a peut-être changé (fil du mixeur).
+pub fn volume_changed(app: &AppHandle) {
+    if let Some(remote) = app.state::<PhoneState>().remote.get() {
+        remote.volume_changed(master(app));
+    }
+}
+
+/// Volume général et muet de la sortie par défaut.
+fn master(app: &AppHandle) -> Option<(f32, bool)> {
+    crate::mixer::view(app).snapshot.master.map(|l| (l.volume, l.muted))
+}
+
+/// La télécommande branchée sur Horizon : lecture en cours et mixeur.
+struct AppControls(AppHandle);
+
+impl AppControls {
+    fn media_now(&self) -> remote::MediaNow {
+        let state = crate::widgets::media::media_state(&self.0);
+        remote::MediaNow { info: state.payload.info, sessions: state.payload.sessions }
+    }
+
+    fn report(what: &str, result: Result<(), String>) {
+        if let Err(e) = result {
+            log::warn!("téléphone : {what} : {e}");
+        }
+    }
+}
+
+impl remote::Controls for AppControls {
+    fn play_pause(&self) {
+        Self::report("lecture", crate::widgets::media::media_play_pause(&self.0));
+    }
+    fn next(&self) {
+        Self::report("suivant", crate::widgets::media::media_next(&self.0));
+    }
+    fn previous(&self) {
+        Self::report("précédent", crate::widgets::media::media_prev(&self.0));
+    }
+    fn seek_relative(&self, ms: i64) {
+        Self::report("position", crate::widgets::media::media_seek_relative(&self.0, ms));
+    }
+    fn select(&self, app_id: &str) {
+        Self::report("choix du lecteur", crate::widgets::media::media_select_session(&self.0, app_id.to_owned()));
+    }
+    fn set_volume(&self, volume: f32) {
+        Self::report("volume", crate::mixer::set_master(&self.0, volume));
+    }
+    fn set_mute(&self, muted: bool) {
+        Self::report("muet", crate::mixer::set_master_mute(&self.0, muted));
+    }
+    fn media(&self) -> remote::MediaNow {
+        self.media_now()
+    }
+    fn volume(&self) -> Option<(f32, bool)> {
+        master(&self.0)
+    }
+    fn watch_volume(&self, on: bool) {
+        crate::mixer::watch(&self.0, on);
     }
 }
 
@@ -765,7 +882,7 @@ mod tests {
         let runner = Runner::default();
         let make = |port: u16| {
             let (core, tls) = (core.clone(), identity.tls_config());
-            move || server::spawn("127.0.0.1".parse().unwrap(), port, tls, Arc::new(Link { core, notify: |_| {} }))
+            move || server::spawn("127.0.0.1".parse().unwrap(), port, tls, Arc::new(Link { core, remote: quiet_remote(), notify: |_| {} }))
         };
         runner.set(true, make(0)).unwrap();
         let port = runner.port().unwrap();
@@ -803,7 +920,7 @@ mod tests {
         let core = Arc::new(Core::for_tests("pc-essai", "PC essai"));
         let identity = identity::Identity::load_or_create(|| None, |_| {}).unwrap();
         let notify = |event| println!("événement : {event:?}");
-        let server = server::spawn("127.0.0.1".parse().unwrap(), 0, identity.tls_config(), Arc::new(Link { core: core.clone(), notify })).unwrap();
+        let server = server::spawn("127.0.0.1".parse().unwrap(), 0, identity.tls_config(), Arc::new(Link { core: core.clone(), remote: quiet_remote(), notify })).unwrap();
         let offer = |token: &str| {
             core.pairing_offer(token.to_owned(), horizon_core::time::now_ms());
             println!("LIEN horizon://pair?v=1&h=10.0.2.2&n=PC%20essai&p={}&fp={}&t={token}", server.port(), identity.fingerprint());
@@ -844,12 +961,108 @@ mod tests {
         println!("fin de l'essai");
     }
 
+    /// Commandes reçues par la télécommande, et lecture servie (essais par le réseau).
+    #[derive(Default)]
+    struct Recorded {
+        calls: Mutex<Vec<String>>,
+    }
+
+    impl remote::Controls for Arc<Recorded> {
+        fn play_pause(&self) {
+            lock(&self.calls).push("play_pause".into());
+        }
+        fn next(&self) {
+            lock(&self.calls).push("next".into());
+        }
+        fn previous(&self) {}
+        fn seek_relative(&self, _ms: i64) {}
+        fn select(&self, _app_id: &str) {}
+        fn set_volume(&self, _volume: f32) {}
+        fn set_mute(&self, _muted: bool) {}
+        fn media(&self) -> remote::MediaNow {
+            let info = horizon_core::media::MediaInfo { app_id: "Spotify.exe".into(), title: "FROGZ".into(), artist: "SPLATA".into(), playing: true, position_ms: 0, duration_ms: 233_000, timeline_at_ms: horizon_core::time::now_ms() };
+            remote::MediaNow { info: Some(info), sessions: vec![("Spotify.exe".into(), "Spotify".into())] }
+        }
+        fn volume(&self) -> Option<(f32, bool)> {
+            None
+        }
+        fn watch_volume(&self, _on: bool) {}
+    }
+
+    /// Une télécommande qui ne commande rien ni n'envoie rien.
+    fn quiet_remote() -> Arc<remote::Remote> {
+        Arc::new(remote::Remote::new(Box::new(Arc::new(Recorded::default())), Box::new(|_: &str, _: &ToPhone| {})))
+    }
+
+    #[test]
+    fn hello_carries_the_rights_of_the_phone() {
+        let core = Core::for_tests("pc-1", "Bureau");
+        let token = pair(&core, "tel-1");
+        assert_eq!(core.set_right("tel-1", "media", false), Some(vec!["battery".to_owned(), "sound".to_owned()]));
+        assert_eq!(core.set_right("tel-1", "media", false), None, "rien de changé");
+        assert_eq!(core.set_right("inconnu", "media", true), None);
+        let Ok((_, ToPhone::HelloOk { features, granted, .. })) = core.first(hello("tel-1", &token), 2) else { panic!() };
+        assert_eq!(features, vec!["battery", "media"]);
+        assert_eq!(granted, vec!["battery", "sound"]);
+        assert_eq!(core.phones(&[], 0)[0].granted, vec!["battery", "sound"]);
+    }
+
+    #[test]
+    fn a_right_change_is_saved_at_once() {
+        let core = Core::for_tests("pc-1", "Bureau");
+        pair(&core, "tel-1");
+        let saved = Arc::new(Mutex::new(Vec::<String>::new()));
+        let s = saved.clone();
+        core.on_registry_change(move |c| lock(&s).push(c.snapshot()));
+        core.set_right("tel-1", "input", true);
+        assert_eq!(lock(&saved).len(), 1);
+        assert!(lock(&saved)[0].contains("\"input\""));
+        core.set_right("tel-1", "input", true);
+        assert_eq!(lock(&saved).len(), 1, "rien à écrire");
+    }
+
+    #[test]
+    fn a_phone_watching_media_gets_its_state_over_the_network() {
+        let core = Arc::new(Core::for_tests("pc-1", "Bureau"));
+        let identity = identity::Identity::load_or_create(|| None, |_| {}).unwrap();
+        let recorded = Arc::new(Recorded::default());
+        let slot: Arc<Mutex<Option<ServerHandle>>> = Arc::default();
+        let to = slot.clone();
+        let remote = Arc::new(remote::Remote::new(Box::new(recorded.clone()), Box::new(move |id: &str, msg: &ToPhone| {
+            if let Some(server) = lock(&to).as_ref() {
+                server.send_to(id, msg);
+            }
+        })));
+        let link = Link { core: core.clone(), remote, notify: |_| {} };
+        let server = server::spawn("127.0.0.1".parse().unwrap(), 0, identity.tls_config(), Arc::new(link)).unwrap();
+        let port = server.port();
+        *lock(&slot) = Some(server);
+        core.pairing_offer("jeton".into(), horizon_core::time::now_ms());
+        let link = format!("horizon://pair?v=1&h=127.0.0.1&n=Bureau&p={port}&fp={}&t=jeton", identity.fingerprint());
+        let paired = faux_telephone::Client::pair(&link, "Pixel").unwrap();
+        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+        let mut phone = faux_telephone::Client::hello(addr, &identity.fingerprint(), &paired.device_id, &paired.device_token).unwrap();
+        phone.send_raw(r#"{"type":"watch","topics":["media"]}"#).unwrap();
+        let state = phone.receive().unwrap();
+        assert!(state.contains("\"media.state\"") && state.contains("FROGZ"), "{state}");
+        phone.send_raw(r#"{"type":"media.command","action":"next"}"#).unwrap();
+        let start = Instant::now();
+        while lock(&recorded.calls).is_empty() {
+            assert!(start.elapsed() < Duration::from_secs(5), "commande jamais reçue");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(*lock(&recorded.calls), vec!["next"]);
+        if let Some(server) = lock(&slot).take() {
+            server.stop();
+        }
+    }
+
     #[test]
     fn the_link_view_says_who_is_there() {
         let core = Core::for_tests("pc-1", "Bureau");
         pair(&core, "tel-1");
         let phones = core.phones(&["tel-1".to_owned()], 5);
-        assert_eq!(phones, vec![PhoneView { id: "tel-1".into(), name: "Pixel".into(), connected: true, last_seen_ms: 1 }]);
+        assert_eq!(phones, vec![PhoneView { id: "tel-1".into(), name: "Pixel".into(), connected: true, last_seen_ms: 1, granted: horizon_core::phone::registry::default_granted() }]);
         assert!(!core.phones(&[], 5)[0].connected);
     }
 }

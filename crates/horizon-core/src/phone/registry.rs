@@ -24,6 +24,13 @@ pub struct Phone {
     pub granted: Vec<String>,
 }
 
+impl Phone {
+    /// Ses droits, dans l'ordre de [`RIGHTS`].
+    pub fn rights(&self) -> Vec<String> {
+        RIGHTS.iter().filter(|r| self.granted.iter().any(|g| g == *r)).map(|r| (*r).to_owned()).collect()
+    }
+}
+
 /// Droits qui existent. `battery` ne se retire pas ; `input` n'est jamais accordé d'office.
 pub const RIGHTS: &[&str] = &["battery", "media", "sound", "input"];
 
@@ -82,8 +89,7 @@ impl Registry {
 
     /// Droits du téléphone `id`, dans l'ordre de [`RIGHTS`] ; vide s'il n'est pas connu.
     pub fn granted(&self, id: &str) -> Vec<String> {
-        let Some(phone) = self.phones.iter().find(|p| p.id == id) else { return Vec::new() };
-        RIGHTS.iter().filter(|r| phone.granted.iter().any(|g| g == *r)).map(|r| (*r).to_owned()).collect()
+        self.phones.iter().find(|p| p.id == id).map(Phone::rights).unwrap_or_default()
     }
 
     /// Accorde (`on`) ou retire le droit `right` au téléphone `id` ; vrai si quelque chose a

@@ -318,7 +318,7 @@ mod tests {
 
     #[test]
     fn a_phone_row_says_when_it_was_last_seen() {
-        let phone = |connected| PhoneView { id: "t".into(), name: "Pixel".into(), connected, last_seen_ms: 0 };
+        let phone = |connected| PhoneView { id: "t".into(), name: "Pixel".into(), connected, last_seen_ms: 0, granted: Vec::new() };
         assert_eq!(phone_state(&phone(true), 3 * 3_600_000), "Connecté");
         assert_eq!(phone_state(&phone(false), 3 * 3_600_000), "Vu il y a 3 h");
         assert_eq!(phone_state(&phone(false), 20_000), "Vu à l’instant");

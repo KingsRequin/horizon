@@ -167,6 +167,13 @@ impl ServerHandle {
         }
     }
 
+    /// Envoie `msg` au seul téléphone `phone_id`, si sa session est ouverte.
+    pub fn send_to(&self, phone_id: &str, msg: &ToPhone) {
+        for client in lock(&self.shared.clients).iter().filter(|c| c.phone_id.as_deref() == Some(phone_id)) {
+            let _ = client.out.send(Out::Message(msg.clone()));
+        }
+    }
+
     /// Ferme la session du téléphone `phone_id` (il vient d'être retiré).
     pub fn disconnect(&self, phone_id: &str) {
         for client in lock(&self.shared.clients).iter().filter(|c| c.phone_id.as_deref() == Some(phone_id)) {

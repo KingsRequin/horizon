@@ -174,7 +174,9 @@ fn on_snapshot(app: &AppHandle, s: MediaSnapshot) {
     };
     let playing = payload.info.as_ref().is_some_and(|i| i.playing);
     // La pochette est décodée avant de prendre le verrou.
-    let decoded = s.art.map(|art| art.as_deref().and_then(art_pixels));
+    // L'image reçue reste aussi pour le téléphone (module Téléphone, pochette en JPEG).
+    let raw_art = s.art;
+    let decoded = raw_art.as_ref().map(|art| art.as_deref().and_then(art_pixels));
     let cover = decoded.as_ref().map(|d| d.as_ref().and_then(|(_, c)| *c));
     let art = decoded.map(|d| d.map(|(a, _)| a));
     let (send, new_track) = {
@@ -214,6 +216,13 @@ fn on_snapshot(app: &AppHandle, s: MediaSnapshot) {
     if new_track {
         crate::osd::track_changed(app);
     }
+    use crate::widgets::phone::remote::ArtChange;
+    let art_change = match raw_art.as_ref() {
+        None => ArtChange::Unchanged,
+        Some(None) => ArtChange::None,
+        Some(Some(bytes)) => ArtChange::Bytes(bytes),
+    };
+    crate::widgets::phone::media_changed(app, art_change);
 }
 
 pub fn start(app: &AppHandle) -> anyhow::Result<()> {
