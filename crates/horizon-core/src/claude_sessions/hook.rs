@@ -52,8 +52,9 @@ pub struct HookEvent {
 pub(super) enum Effect {
     Remove,
     /// Nouvel état ; `alert` = l'événement mérite une alerte (attente, fin de réponse) ;
-    /// `permission` = autorisation demandée (attente).
-    State { state: SessionState, message: Option<String>, alert: bool, permission: Option<Permission> },
+    /// `question` = Claude ne peut pas continuer sans toi (question, autorisation), à la
+    /// différence d'une fin de réponse ; `permission` = autorisation demandée (attente).
+    State { state: SessionState, message: Option<String>, alert: bool, question: bool, permission: Option<Permission> },
     /// Début de session : « terminé » si elle est nouvelle, sinon rien ne change (un
     /// `compact` automatique arrive en plein travail).
     Start,
@@ -65,21 +66,38 @@ pub(super) enum Effect {
 /// (connexion réussie, quota, extension…) ne changent pas l'état.
 const WAITING_NOTIFICATIONS: [&str; 5] =
     ["permission_prompt", "idle_prompt", "elicitation_dialog", "elicitation_url_dialog", "agent_needs_input"];
+/// Notification d'inactivité (60 s après une fin de réponse) : rien n'est demandé.
+const IDLE_NOTIFICATION: &str = "idle_prompt";
+/// Son message, seul repère d'une ancienne version de Claude Code sans `notification_type`.
+const IDLE_MESSAGE: &str = "Claude is waiting for your input";
+/// Outil de Claude Code qui pose une question à choix et attend la réponse.
+const ASK_TOOL: &str = "AskUserQuestion";
 
 pub(super) fn effect_of(ev: &HookEvent) -> Effect {
-    let state = |state, message, alert| Effect::State { state, message, alert, permission: None };
+    let state = |state, message, alert, question| Effect::State { state, message, alert, question, permission: None };
     match ev.hook_event_name.as_str() {
         "SessionEnd" => Effect::Remove,
         "SessionStart" => Effect::Start,
-        "UserPromptSubmit" | "PreToolUse" | "PostToolUse" => state(SessionState::Working, None, false),
+        "PreToolUse" if ev.tool_name.as_deref() == Some(ASK_TOOL) => {
+            let asked = ev.tool_input.as_ref().and_then(asked_question);
+            state(SessionState::Waiting, Some(asked.unwrap_or_else(|| "Te pose une question".into())), true, true)
+        }
+        "UserPromptSubmit" | "PreToolUse" | "PostToolUse" => state(SessionState::Working, None, false, false),
         "Notification" => match ev.notification_type.as_deref() {
             // Ancienne version sans type : toute notification était une attente.
             Some(t) if !WAITING_NOTIFICATIONS.contains(&t) => Effect::Alive,
-            _ => state(
-                SessionState::Waiting,
-                Some(ev.message.as_deref().map(french_message).unwrap_or_else(|| "Attend ta réponse".into())),
-                true,
-            ),
+            kind => {
+                let idle = match kind {
+                    Some(t) => t == IDLE_NOTIFICATION,
+                    None => ev.message.as_deref().map(str::trim) == Some(IDLE_MESSAGE),
+                };
+                state(
+                    SessionState::Waiting,
+                    Some(ev.message.as_deref().map(french_message).unwrap_or_else(|| "Attend ta réponse".into())),
+                    true,
+                    !idle,
+                )
+            }
         },
         "PermissionRequest" => {
             let p = Permission::of(ev);
@@ -87,17 +105,25 @@ pub(super) fn effect_of(ev: &HookEvent) -> Effect {
                 state: SessionState::Waiting,
                 message: Some(p.summary()),
                 alert: true,
+                question: true,
                 permission: Some(p),
             }
         }
-        "Stop" => state(SessionState::Done, ev.last_assistant_message.as_deref().and_then(first_line), true),
+        "Stop" => state(SessionState::Done, ev.last_assistant_message.as_deref().and_then(first_line), true, false),
         "StopFailure" => state(
             SessionState::Done,
             Some(format!("Échec : {}", ev.error.as_deref().unwrap_or("erreur inconnue"))),
             true,
+            false,
         ),
         _ => Effect::Alive,
     }
+}
+
+/// Première question posée par `AskUserQuestion` (`questions[0].question`), raccourcie.
+fn asked_question(input: &serde_json::Value) -> Option<String> {
+    let q = input.get("questions")?.get(0)?.get("question")?.as_str()?;
+    first_line(q)
 }
 
 /// Longueur maximale du détail d'une autorisation (commande, chemin, adresse).

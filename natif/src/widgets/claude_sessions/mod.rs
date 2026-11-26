@@ -114,16 +114,18 @@ fn alert_options(app: &AppHandle) -> AlertOptions {
 }
 
 /// « Claude attend » (ou demande une autorisation) : dans l'îlot (clic = terminal de la
-/// session) et signal lumineux, selon les réglages et « Ne pas déranger ».
+/// session) et signal lumineux, selon les réglages et « Ne pas déranger ». La lumière ne
+/// s'allume que pour une vraie question : une fin de réponse n'attend rien.
 fn alert(app: &AppHandle, a: Alert) {
     if !alerts::allowed(app, AlertKind::Claude) {
         return;
     }
     let opts = alert_options(app);
-    if opts.island || opts.light {
+    let light = opts.light && a.question;
+    if opts.island || light {
         let island = alerts::Alert::app("Claude", "", Severity::Attention, a.name, a.message)
             .with_action(Action::Session { id: a.session_id });
-        alerts::announce(app, AlertKind::Claude, island, opts.island, opts.light);
+        alerts::announce(app, AlertKind::Claude, island, opts.island, light);
     }
 }
 

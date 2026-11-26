@@ -48,7 +48,7 @@ export component AlertsSection inherits VerticalLayout {
             key: "alerts.claude_light";
             checked: OptionsData.claude-light;
             label: "Signal lumineux (plugin Prisme)";
-            hint: "Scène « claude » de Prisme si elle existe, sinon un bref clignotement. Rien si l’éclairage est éteint.";
+            hint: "Seulement quand Claude pose une question ou demande une autorisation, pas à la fin d’une réponse. Scène « claude » de Prisme si elle existe, sinon un bref clignotement ; rien si l’éclairage est éteint.";
         }
         SettingsNote {
             text: "Une seule alerte par attente : la suivante vient quand la session s’est remise au travail.";

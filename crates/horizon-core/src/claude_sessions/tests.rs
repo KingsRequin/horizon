@@ -345,3 +345,41 @@ fn tool_details() {
     let long = tool_detail("Bash", &serde_json::json!({ "command": "é".repeat(500) })).unwrap();
     assert_eq!(long.chars().count(), MAX_DETAIL);
 }
+
+#[test]
+fn only_real_questions_are_questions() {
+    let mut t = SessionTracker::default();
+    // Fin de réponse (même en attendant des sous-agents) : alerte, mais pas une question.
+    t.apply(ev("a", "UserPromptSubmit"), 0);
+    assert!(!t.apply(ev("a", "Stop"), 10).unwrap().question);
+    // Inactivité qui suit une fin de réponse, sans Stop connu avant : pas une question.
+    let idle = t.apply(notif("b", "idle_prompt", "Claude is waiting for your input"), 0).unwrap();
+    assert!(!idle.question);
+    let old = HookEvent { message: Some("Claude is waiting for your input".into()), ..ev("c", "Notification") };
+    assert!(!t.apply(old, 0).unwrap().question);
+    // Autorisation, dialogue : questions.
+    t.apply(ev("a", "UserPromptSubmit"), 20);
+    assert!(t.apply(ev("a", "PermissionRequest"), 30).unwrap().question);
+    t.apply(ev("a", "PostToolUse"), 40);
+    assert!(t.apply(notif("a", "elicitation_dialog", "x"), 50).unwrap().question);
+}
+
+#[test]
+fn ask_user_question_waits_with_the_question() {
+    let mut t = SessionTracker::default();
+    t.apply(ev("a", "UserPromptSubmit"), 0);
+    let input = serde_json::json!({ "questions": [{ "question": "Quelle couleur ?", "options": [] }] });
+    let ask = HookEvent { tool_name: Some("AskUserQuestion".into()), tool_input: Some(input), ..ev("a", "PreToolUse") };
+    let a = t.apply(ask, 10).expect("alerte à la question");
+    assert!(a.question);
+    assert_eq!((a.state, a.message.as_str()), (SessionState::Waiting, "Quelle couleur ?"));
+    // La demande d'autorisation qui peut suivre ne fait pas une seconde alerte.
+    let perm = HookEvent { tool_name: Some("AskUserQuestion".into()), ..ev("a", "PermissionRequest") };
+    assert_eq!(t.apply(perm, 11), None);
+    // Réponse donnée : retour au travail.
+    t.apply(ev("a", "PostToolUse"), 20);
+    assert_eq!(states(&mut t, 21), vec![("a".into(), SessionState::Working)]);
+    // Un autre outil ne met pas la session en attente.
+    let bash = HookEvent { tool_name: Some("Bash".into()), ..ev("a", "PreToolUse") };
+    assert_eq!(t.apply(bash, 30), None);
+}

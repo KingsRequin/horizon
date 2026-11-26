@@ -151,7 +151,8 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   poste : `cargo run --release -p horizon-sys --example game_mode_cost`.
 - **Alerte « Claude attend »** (réglages du widget) : quand une session attend ou a terminé,
   l'îlot de l'écran principal montre le projet et le message (clic = terminal au premier plan).
-  Une seule alerte par attente.
+  Une seule alerte par attente. Le signal lumineux (plugin Prisme) ne part que pour une vraie
+  question (autorisation, question à choix, dialogue), pas à la fin d'une réponse.
 - **Profils** : clic droit sur une barre → Profil. Chaque profil garde sa disposition ; une
   appli associée (fenêtre « Gérer les profils… ») active son profil tant qu'elle est au premier
   plan, le profil choisi revient 2 s après.

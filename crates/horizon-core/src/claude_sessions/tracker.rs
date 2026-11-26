@@ -46,6 +46,9 @@ pub struct Alert {
     pub message: String,
     /// L'alerte annonce une autorisation demandée.
     pub permission: bool,
+    /// Claude attend vraiment une réponse (question, autorisation) : pas une simple fin de
+    /// réponse ni l'inactivité qui la suit. Seul ce cas allume le signal lumineux.
+    pub question: bool,
 }
 
 #[derive(Debug)]
@@ -92,8 +95,10 @@ impl SessionTracker {
             s.seen_ms = now_ms;
             return None;
         }
-        let (state, message, alert, permission) = match effect {
-            Effect::State { state, message, alert, permission } => (state, message, alert, permission),
+        let (state, message, alert, question, permission) = match effect {
+            Effect::State { state, message, alert, question, permission } => {
+                (state, message, alert, question, permission)
+            }
             // Début d'une session déjà connue (compactage, reprise) ou signe de vie : rien ne
             // change, sauf la date de dernière nouvelle et les processus hôtes.
             Effect::Start | Effect::Alive if exists => {
@@ -104,7 +109,7 @@ impl SessionTracker {
             }
             // Session nouvelle : signe de vie d'une session inconnue = ignoré.
             Effect::Alive => return None,
-            Effect::Start => (SessionState::Done, None, false, None),
+            Effect::Start => (SessionState::Done, None, false, false, None),
             Effect::Remove => unreachable!(),
         };
         let name = folder_name(&ev.cwd);
@@ -152,6 +157,7 @@ impl SessionTracker {
                     _ => "A terminé".into(),
                 }),
                 permission: s.view.permission.is_some(),
+                question,
             })
         } else {
             None
