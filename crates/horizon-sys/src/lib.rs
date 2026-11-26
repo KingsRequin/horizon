@@ -15,6 +15,7 @@ pub mod firewall;
 pub mod foreground;
 pub mod headset;
 pub mod hotkey;
+pub mod input;
 pub mod fullscreen;
 pub mod installed;
 pub mod git;
