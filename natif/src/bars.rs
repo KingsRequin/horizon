@@ -217,6 +217,20 @@ fn watch(app: AppHandle) -> anyhow::Result<()> {
                     let a = app.clone();
                     let _ = app.run_on_main_thread(move || rebuild_if_changed(&a));
                 }
+                // Chaque barre reçoit l'avis : une seule réinscription, une fois l'Explorateur posé.
+                AppbarEvent::ExplorerRestarted => {
+                    while rx.recv_timeout(Duration::from_millis(800)).is_ok() {}
+                    let a = app.clone();
+                    let _ = app.run_on_main_thread(move || {
+                        log::info!("Explorateur redémarré : les barres reprennent leur place");
+                        for h in appbar::registered() {
+                            if !appbar::renew(h) {
+                                log::warn!("barre {h:#x} : réinscription refusée par l'Explorateur");
+                            }
+                            reposition(&a, h);
+                        }
+                    });
+                }
             }
         }
     })

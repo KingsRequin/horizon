@@ -20,7 +20,7 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreateIconIndirect, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyMenu,
     DestroyWindow, GetCursorPos, GetSystemMetrics, HICON, HWND_MESSAGE, ICONINFO, MF_CHECKED, MF_SEPARATOR, MF_STRING,
-    PostMessageW, RegisterClassW, RegisterWindowMessageW, SM_CXSMICON, SetForegroundWindow, TPM_NONOTIFY, TPM_RETURNCMD,
+    PostMessageW, RegisterClassW, SM_CXSMICON, SetForegroundWindow, TPM_NONOTIFY, TPM_RETURNCMD,
     TPM_RIGHTBUTTON, TrackPopupMenu, WINDOW_EX_STYLE, WM_APP, WM_CONTEXTMENU, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP,
     WNDCLASSW, WS_OVERLAPPED,
 };
@@ -88,12 +88,6 @@ pub fn sync_palette(app: &AppHandle) {
 /// Libellé du menu qui ouvre la palette, avec son raccourci (aligné à droite par Windows).
 pub fn palette_label(hotkey: &str) -> String {
     if hotkey.is_empty() { "Palette de commandes".into() } else { format!("Palette de commandes\t{hotkey}") }
-}
-
-/// Message envoyé par l'Explorateur quand il redémarre : l'icône est à remettre.
-fn taskbar_created() -> u32 {
-    // SAFETY : chaîne constante terminée par zéro.
-    unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) }
 }
 
 /// Crée l'icône (fil de l'interface).
@@ -321,7 +315,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         }
         return LRESULT(0);
     }
-    if msg == taskbar_created() {
+    // L'Explorateur a redémarré : l'icône est à remettre.
+    if msg == horizon_sys::appbar::taskbar_created() {
         TRAY.with_borrow(|t| {
             if let Some(t) = t {
                 let _ = notify(t, NIM_ADD);

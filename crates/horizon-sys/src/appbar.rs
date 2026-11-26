@@ -1,6 +1,8 @@
 //! Barres « appbar » : Windows réserve leur hauteur en haut de l'écran, les fenêtres maximisées
 //! commencent dessous. La fenêtre est sous-classée pour recevoir les avis de l'appbar (place,
-//! plein écran) et les changements d'écrans, renvoyés sur un canal.
+//! plein écran), les changements d'écrans et le retour de l'Explorateur, renvoyés sur un canal.
+//! Les places réservées vivent dans l'Explorateur : s'il redémarre, elles disparaissent et chaque
+//! barre doit se réinscrire ([`renew`]), sinon les fenêtres agrandies passent dessous.
 
 use crossbeam_channel::Sender;
 use horizon_core::geometry::Rect;
@@ -26,6 +28,8 @@ pub enum AppbarEvent {
     DisplayChanged,
     /// Une appli passe en plein écran (ou en sort) sur l'écran d'une barre.
     FullscreenApp,
+    /// L'Explorateur a redémarré (`TaskbarCreated`) : les places réservées sont perdues.
+    ExplorerRestarted,
 }
 
 const SUBCLASS_ID: usize = 0x484f_525a; // « HORZ »
@@ -38,6 +42,27 @@ fn callback_message() -> u32 {
     static MSG: OnceLock<u32> = OnceLock::new();
     // SAFETY : chaîne constante terminée par zéro.
     *MSG.get_or_init(|| unsafe { RegisterWindowMessageW(w!("HorizonAppbarMessage")) })
+}
+
+/// Message diffusé par l'Explorateur quand il (re)démarre.
+pub fn taskbar_created() -> u32 {
+    static MSG: OnceLock<u32> = OnceLock::new();
+    // SAFETY : chaîne constante terminée par zéro.
+    *MSG.get_or_init(|| unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) })
+}
+
+/// Ce qu'un message reçu par la barre `hwnd` signale au reste de l'appli.
+fn event_for(msg: u32, wparam: usize, hwnd: isize) -> Option<AppbarEvent> {
+    let appbar = callback_message();
+    Some(match msg {
+        m if m == appbar && wparam as u32 == ABN_POSCHANGED => AppbarEvent::PosChanged(hwnd),
+        m if m == appbar && wparam as u32 == ABN_FULLSCREENAPP => AppbarEvent::FullscreenApp,
+        m if m == taskbar_created() => AppbarEvent::ExplorerRestarted,
+        WM_DISPLAYCHANGE | WM_DPICHANGED => AppbarEvent::DisplayChanged,
+        // SPI_SETWORKAREA : zone de travail modifiée par une autre barre.
+        WM_SETTINGCHANGE if wparam == 0x2F => AppbarEvent::PosChanged(hwnd),
+        _ => return None,
+    })
 }
 
 fn send(ev: AppbarEvent) {
@@ -62,16 +87,8 @@ unsafe extern "system" fn subclass_proc(
     _id: usize,
     _data: usize,
 ) -> LRESULT {
-    let appbar = callback_message();
-    if msg == appbar && wparam.0 as u32 == ABN_POSCHANGED {
-        send(AppbarEvent::PosChanged(hwnd.0 as isize));
-    } else if msg == appbar && wparam.0 as u32 == ABN_FULLSCREENAPP {
-        send(AppbarEvent::FullscreenApp);
-    } else if msg == WM_DISPLAYCHANGE || msg == WM_DPICHANGED {
-        send(AppbarEvent::DisplayChanged);
-    } else if msg == WM_SETTINGCHANGE && wparam.0 == 0x2F {
-        // SPI_SETWORKAREA : zone de travail modifiée par une autre barre.
-        send(AppbarEvent::PosChanged(hwnd.0 as isize));
+    if let Some(ev) = event_for(msg, wparam.0, hwnd.0 as isize) {
+        send(ev);
     } else if msg == WM_ACTIVATE || msg == WM_WINDOWPOSCHANGED {
         // Exigé par la documentation des appbars pour garder l'ordre Z cohérent.
         let mut abd = data(hwnd);
@@ -235,6 +252,19 @@ pub fn register(h: isize, wanted: Rect) -> anyhow::Result<Rect> {
     update(h, wanted)
 }
 
+/// Réinscrit la barre auprès de l'Explorateur qui vient de redémarrer (sa place est à
+/// redemander ensuite par [`update`]). Faux si l'Explorateur la refuse.
+pub fn renew(h: isize) -> bool {
+    let mut abd = data(hwnd(h));
+    // SAFETY : APPBARDATA valide ; une barre déjà inscrite est simplement refusée.
+    unsafe { SHAppBarMessage(ABM_NEW, &mut abd) != 0 }
+}
+
+/// Barres inscrites (pour les réinscrire toutes après un redémarrage de l'Explorateur).
+pub fn registered() -> Vec<isize> {
+    REGISTERED.lock().map(|r| r.clone()).unwrap_or_default()
+}
+
 /// Redemande la position (après un changement d'écran ou d'une autre barre).
 pub fn update(h: isize, wanted: Rect) -> anyhow::Result<Rect> {
     let hw = hwnd(h);
@@ -288,5 +318,19 @@ pub fn unregister(h: isize) {
     unsafe {
         SHAppBarMessage(ABM_REMOVE, &mut abd);
         let _ = RemoveWindowSubclass(hw, Some(subclass_proc), SUBCLASS_ID);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_restarted_explorer_asks_the_bars_to_register_again() {
+        assert_eq!(event_for(taskbar_created(), 0, 7), Some(AppbarEvent::ExplorerRestarted));
+        assert_eq!(event_for(callback_message(), ABN_POSCHANGED as usize, 7), Some(AppbarEvent::PosChanged(7)));
+        assert_eq!(event_for(WM_DISPLAYCHANGE, 0, 7), Some(AppbarEvent::DisplayChanged));
+        assert_eq!(event_for(WM_SETTINGCHANGE, 0x2F, 7), Some(AppbarEvent::PosChanged(7)));
+        assert_eq!(event_for(WM_SETTINGCHANGE, 0x30, 7), None);
     }
 }
