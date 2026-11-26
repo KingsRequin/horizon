@@ -10,12 +10,15 @@ import { SettingsTitle, SettingsHeading, SettingsNote } from "../settings/text.s
 import { SettingRow } from "../settings/row.slint";
 import { SettingsButton, RemoveButton } from "../settings/button.slint";
 import { NumberField } from "../settings/field.slint";
+import { SettingCheck } from "../settings/check.slint";
 
 export struct PhoneRow {
     id: string,
     name: string,
     // « Connecté » ou « Vu il y a 3 h ».
     state: string,
+    // Droit « Médias » : la télécommande (lecture, morceau, volume) depuis ce téléphone.
+    media: bool,
 }
 
 export global PhonePageData {
@@ -42,6 +45,7 @@ export global PhonePageData {
     callback pair();
     callback cancel();
     callback remove(string);
+    callback set-media(string, bool);
     callback set-threshold(int);
 }
 
@@ -126,7 +130,7 @@ export component PhonePage inherits Rectangle {
         }
         SettingsTitle {
             text: "Téléphone";
-            description: "La batterie de ton téléphone sur la barre, envoyée par l’appli Horizon Mobile. Le téléphone et le PC doivent être sur le même réseau.";
+            description: "La batterie de ton téléphone sur la barre, et la télécommande du PC dans l’appli Horizon Mobile. Le téléphone et le PC doivent être sur le même réseau.";
         }
         if !PhonePageData.enabled: SettingsNote {
             text: "Le module Téléphone est désactivé. Active-le dans Réglages d’Horizon › Plugins, « Modules intégrés ».";
@@ -198,13 +202,24 @@ export component PhonePage inherits Rectangle {
                 text: "Aucun téléphone pour l’instant.";
                 below: 8px;
             }
-            for p in PhonePageData.phones: SettingRow {
-                label: p.name;
-                hint: p.state;
-                RemoveButton {
-                    what: p.name;
-                    clicked => {
-                        PhonePageData.remove(p.id);
+            for p in PhonePageData.phones: VerticalLayout {
+                SettingRow {
+                    label: p.name;
+                    hint: p.state;
+                    RemoveButton {
+                        what: p.name;
+                        clicked => {
+                            PhonePageData.remove(p.id);
+                        }
+                    }
+                }
+                SettingCheck {
+                    nested: true;
+                    checked: p.media;
+                    label: "Télécommande";
+                    hint: "Lecture, pause, morceau, position et volume depuis ce téléphone.";
+                    toggled(on) => {
+                        PhonePageData.set-media(p.id, on);
                     }
                 }
             }

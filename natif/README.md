@@ -737,10 +737,19 @@ d'exemple par type dans `crates/horizon-core/tests/fixtures/phone/`, que l'appli
   attente et 4 sessions au plus, adresses privées seulement), `mod.rs` (`Core` : appairage,
   sessions, batteries ; `refresh` : serveur en marche si le module est activé et que le pare-feu
   le permet ; `publish` : `EV_PHONE` = `Vec<BatteryView>` pour les barres, `EV_PHONE_LINK` =
-  `LinkView` pour la page), `ui.rs` (widget de barre, global `PhoneData`).
+  `LinkView` pour la page ; `set_right`), `ui.rs` (widget de barre, global `PhoneData`),
+  `remote.rs` (télécommande : `Remote` tient les abonnements `watch` de chaque téléphone, lit
+  ses droits au moment voulu, exécute les commandes par le trait `Controls` — en vrai
+  `AppControls`, les fonctions de `widgets::media` et de `mixer` —, envoie l'état du média
+  quand il change, la pochette en JPEG une fois par morceau et le volume ; crochets
+  `phone::media_changed`, appelé par `media::on_snapshot`, et `phone::volume_changed`, appelé
+  par `mixer::publish` ; le mixeur ne relit l'état que tant qu'un téléphone regarde le volume).
+  Logique pure de la télécommande : `horizon_core::phone::remote` (droits, commandes bornées,
+  message d'état) ; droits par téléphone : `registry` (`granted`, `set_granted`).
 - **Page** (`src/ui/phone_page.rs`, `ui/phone/page.slint`, `SettingsPage::Phone`, nom `phone`) :
   pare-feu, QR de l'appli, QR d'appairage (`qr_image`, décompte seulement pendant qu'une offre
-  est affichée), téléphones (retrait différé par le bandeau d'annulation), seuil
+  est affichée), téléphones (retrait différé par le bandeau d'annulation ; case *Télécommande*
+  = droit `media`), seuil
   `alerts.phone_low`. Ouverte par l'activation du module, la palette et les réglages du widget.
 - **Fichiers** : `%APPDATA%\Horizon\phones.json` ; règle de pare-feu « Horizon Mobile » (une
   seule, pour l'exe en cours, profil privé).

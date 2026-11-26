@@ -126,7 +126,14 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   mesure date. La page liste les téléphones appairés (« Connecté », « Vu il y a 3 h ») ; en
   retirer un (annulable 5 s) ferme sa session et rend son jeton inutilisable. Le PC et le
   téléphone doivent être sur le même réseau ; rien ne passe par Internet. Module désactivé :
-  Horizon n'écoute plus et le widget disparaît. Protocole : [PHONE.md](PHONE.md).
+  Horizon n'écoute plus et le widget disparaît. **Télécommande** (Horizon 0.9, appli 0.2) :
+  depuis l'appli, lecture et pause, morceau précédent ou suivant, position, choix de la lecture
+  à suivre, volume général et muet, avec la pochette ; les commandes apparaissent aussi dans le
+  volet et sur l'écran verrouillé du téléphone. Chaque téléphone a ses droits, sous son nom dans
+  la page : *Télécommande* (accordée à l'appairage, à décocher pour un téléphone qui ne doit que
+  donner sa batterie). Rien n'est envoyé au téléphone qui ne regarde pas : l'état de la lecture
+  part à chaque changement, la pochette une fois par morceau, le volume seulement pendant que
+  l'écran Télécommande est ouvert. Protocole : [PHONE.md](PHONE.md).
 - **Bascule audio du casque** (Réglages d'Horizon › Son et média ; désactivée tant qu'aucune sortie
   de repli n'est choisie) : casque éteint (deux lectures d'affilée, relu toutes les 5 s), la
   sortie par défaut passe sur la sortie de repli ; rallumé, elle revient à celle d'avant, sauf si

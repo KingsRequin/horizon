@@ -104,6 +104,11 @@ pub fn firewall_hint(firewall: &str, port: u16) -> String {
     }
 }
 
+/// La ligne d'un téléphone appairé : nom, état, et le droit « Médias » (télécommande).
+pub fn phone_row(p: &PhoneView, now_ms: u64) -> PhoneRow {
+    PhoneRow { id: p.id.as_str().into(), name: p.name.as_str().into(), state: phone_state(p, now_ms).into(), media: p.granted.iter().any(|g| g == "media") }
+}
+
 /// Pose l'état de la liaison dans la page.
 fn refresh(view: &LinkView) {
     let Some(w) = window() else { return };
@@ -117,7 +122,7 @@ fn refresh(view: &LinkView) {
         .phones
         .iter()
         .filter(|p| !leaving.contains(&p.id))
-        .map(|p| PhoneRow { id: p.id.as_str().into(), name: p.name.as_str().into(), state: phone_state(p, now).into() })
+        .map(|p| phone_row(p, now))
         .collect();
     super::model::sync_rc(&g.get_phones(), rows, |m| g.set_phones(m));
     // L'offre a été consommée (un téléphone vient d'être appairé) ou annulée : plus de code.
@@ -241,6 +246,8 @@ pub fn bind(app: &AppHandle, window: &SettingsWindow) {
     });
     g.on_remove(|id| remove(id.to_string()));
     let a = app.clone();
+    g.on_set_media(move |id, on| phone::set_right(&a, &id, "media", on));
+    let a = app.clone();
     g.on_set_threshold(move |v| set_threshold(&a, v));
     host::listen(EV_PHONE_LINK, Some(LABEL), |e| {
         if let Some(view) = e.payload::<LinkView>()
@@ -322,6 +329,15 @@ mod tests {
         assert_eq!(phone_state(&phone(true), 3 * 3_600_000), "Connecté");
         assert_eq!(phone_state(&phone(false), 3 * 3_600_000), "Vu il y a 3 h");
         assert_eq!(phone_state(&phone(false), 20_000), "Vu à l’instant");
+    }
+
+    #[test]
+    fn a_phone_row_shows_its_rights() {
+        let mut p = PhoneView { id: "t".into(), name: "Pixel".into(), connected: true, last_seen_ms: 0, granted: vec!["battery".into(), "media".into()] };
+        let row = phone_row(&p, 0);
+        assert_eq!((row.id.as_str(), row.name.as_str(), row.state.as_str(), row.media), ("t", "Pixel", "Connecté", true));
+        p.granted = vec!["battery".into(), "sound".into()];
+        assert!(!phone_row(&p, 0).media);
     }
 
     #[test]

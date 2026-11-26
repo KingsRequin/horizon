@@ -93,7 +93,7 @@ raccourcis, les applis du menu Démarrer, les sorties audio, le minuteur, les pr
 | 🪟 **Fenêtres** | Fenêtres ouvertes par écran ; en ramener une sur l'écran courant (clic) ou l'envoyer vers un autre (clic droit) |
 | ✨ **Suggestions** | Applis et sites que tu utilises à cette heure-ci |
 | 🤖 **Claude Code** | *Module intégré, à activer.* Sessions (travaille, attend, demande d'autorisation), consommation, terminal ramené au premier plan |
-| 📱 **Téléphone** | *Module intégré, à activer.* Batterie du téléphone Android sur la barre, envoyée par l'appli [Horizon Mobile](https://github.com/KingsRequin/horizon-mobile) (réseau local, appairage par QR code) |
+| 📱 **Téléphone** | *Module intégré, à activer.* Batterie du téléphone Android sur la barre, et télécommande du PC depuis l'appli [Horizon Mobile](https://github.com/KingsRequin/horizon-mobile) : lecture, morceau, position, volume, pochette, commandes sur l'écran verrouillé (réseau local, appairage par QR code) |
 | 🖥️ **Serveurs** | *Plugin.* Hôtes de `~/.ssh/config`, état et latence, SSH en un clic |
 | 🌀 **[Essaim](https://github.com/KingsRequin/essaim)** | *Plugin.* Pause et choix du preset du curseur animé qui suit la musique |
 | 📈 **Quota Claude** | *Plugin.* Quota de l'abonnement Claude : session de 5 h, semaine, limites par modèle |
