@@ -743,15 +743,18 @@ d'exemple par type dans `crates/horizon-core/tests/fixtures/phone/`, que l'appli
   `remote.rs` (télécommande : `Remote` tient les abonnements `watch` de chaque téléphone, lit
   ses droits au moment voulu, exécute les commandes par le trait `Controls` — en vrai
   `AppControls`, les fonctions de `widgets::media` et de `mixer` —, envoie l'état du média
-  quand il change, la pochette en JPEG une fois par morceau et le volume ; crochets
-  `phone::media_changed`, appelé par `media::on_snapshot`, et `phone::volume_changed`, appelé
-  par `mixer::publish` ; le mixeur ne relit l'état que tant qu'un téléphone regarde le volume).
+  quand il change, la pochette en JPEG une fois par morceau, le volume, le mixeur
+  (`mixer.state`) et les actions (`actions.state` : NPD, minuteur, casque) ; crochets
+  `phone::media_changed` (`media::on_snapshot`), `phone::mixer_changed` (`mixer::publish`) et
+  `phone::actions_changed` (`timer`, `dnd`, `widgets::headset`) ; rien n'est calculé si aucun
+  téléphone ne regarde ; le mixeur ne relit l'état que tant qu'un téléphone regarde le volume ou
+  le mixeur). Verrouiller : `horizon_sys::power::lock_workstation`.
   Logique pure de la télécommande : `horizon_core::phone::remote` (droits, commandes bornées,
   message d'état) ; droits par téléphone : `registry` (`granted`, `set_granted`).
 - **Page** (`src/ui/phone_page.rs`, `ui/phone/page.slint`, `SettingsPage::Phone`, nom `phone`) :
   pare-feu, QR de l'appli, QR d'appairage (`qr_image`, décompte seulement pendant qu'une offre
   est affichée), téléphones (retrait différé par le bandeau d'annulation ; case *Télécommande*
-  = droit `media`), seuil
+  = droit `media`, case *Son et actions* = droit `sound`), seuil
   `alerts.phone_low`. Ouverte par l'activation du module, la palette et les réglages du widget.
 - **Fichiers** : `%APPDATA%\Horizon\phones.json` ; règle de pare-feu « Horizon Mobile » (une
   seule, pour l'exe en cours, profil privé).

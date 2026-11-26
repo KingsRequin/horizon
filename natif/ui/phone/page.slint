@@ -19,6 +19,8 @@ export struct PhoneRow {
     state: string,
     // Droit « Médias » : la télécommande (lecture, morceau, volume) depuis ce téléphone.
     media: bool,
+    // Droit « Son et actions » : volume de chaque appli, sortie audio, actions rapides.
+    sound: bool,
 }
 
 export global PhonePageData {
@@ -46,6 +48,7 @@ export global PhonePageData {
     callback cancel();
     callback remove(string);
     callback set-media(string, bool);
+    callback set-sound(string, bool);
     callback set-threshold(int);
 }
 
@@ -220,6 +223,15 @@ export component PhonePage inherits Rectangle {
                     hint: "Lecture, pause, morceau, position et volume depuis ce téléphone.";
                     toggled(on) => {
                         PhonePageData.set-media(p.id, on);
+                    }
+                }
+                SettingCheck {
+                    nested: true;
+                    checked: p.sound;
+                    label: "Son et actions";
+                    hint: "Volume de chaque appli, sortie audio, verrouiller, ne pas déranger et minuteur.";
+                    toggled(on) => {
+                        PhonePageData.set-sound(p.id, on);
                     }
                 }
             }

@@ -133,7 +133,14 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   la page : *Télécommande* (accordée à l'appairage, à décocher pour un téléphone qui ne doit que
   donner sa batterie). Rien n'est envoyé au téléphone qui ne regarde pas : l'état de la lecture
   part à chaque changement, la pochette une fois par morceau, le volume seulement pendant que
-  l'écran Télécommande est ouvert. Protocole : [PHONE.md](PHONE.md).
+  l'écran Télécommande est ouvert. **Mixeur et actions** (Horizon 0.10, appli 0.3) : sur la
+  télécommande, la sortie audio (passer à la suivante, ou la choisir) et le volume et le muet de
+  chaque appli qui a du son ; sur l'accueil de l'appli, verrouiller le PC, ne pas déranger, le
+  minuteur (durées des réglages du minuteur, pause, arrêt) et la batterie du casque du PC. Droit
+  *Son et actions*, sous *Télécommande* dans la page (accordé à l'appairage). Le mixeur n'est
+  envoyé que pendant que la télécommande est ouverte, les actions pendant que l'accueil l'est,
+  et seulement quand ils changent (le minuteur part en temps restant, l'appli le décompte).
+  Protocole : [PHONE.md](PHONE.md).
 - **Bascule audio du casque** (Réglages d'Horizon › Son et média ; désactivée tant qu'aucune sortie
   de repli n'est choisie) : casque éteint (deux lectures d'affilée, relu toutes les 5 s), la
   sortie par défaut passe sur la sortie de repli ; rallumé, elle revient à celle d'avant, sauf si

@@ -104,9 +104,11 @@ pub fn firewall_hint(firewall: &str, port: u16) -> String {
     }
 }
 
-/// La ligne d'un téléphone appairé : nom, état, et le droit « Médias » (télécommande).
+/// La ligne d'un téléphone appairé : nom, état, et ses droits « Télécommande » (`media`) et
+/// « Son et actions » (`sound`).
 pub fn phone_row(p: &PhoneView, now_ms: u64) -> PhoneRow {
-    PhoneRow { id: p.id.as_str().into(), name: p.name.as_str().into(), state: phone_state(p, now_ms).into(), media: p.granted.iter().any(|g| g == "media") }
+    let has = |right: &str| p.granted.iter().any(|g| g == right);
+    PhoneRow { id: p.id.as_str().into(), name: p.name.as_str().into(), state: phone_state(p, now_ms).into(), media: has("media"), sound: has("sound") }
 }
 
 /// Pose l'état de la liaison dans la page.
@@ -248,6 +250,8 @@ pub fn bind(app: &AppHandle, window: &SettingsWindow) {
     let a = app.clone();
     g.on_set_media(move |id, on| phone::set_right(&a, &id, "media", on));
     let a = app.clone();
+    g.on_set_sound(move |id, on| phone::set_right(&a, &id, "sound", on));
+    let a = app.clone();
     g.on_set_threshold(move |v| set_threshold(&a, v));
     host::listen(EV_PHONE_LINK, Some(LABEL), |e| {
         if let Some(view) = e.payload::<LinkView>()
@@ -338,6 +342,9 @@ mod tests {
         assert_eq!((row.id.as_str(), row.name.as_str(), row.state.as_str(), row.media), ("t", "Pixel", "Connecté", true));
         p.granted = vec!["battery".into(), "sound".into()];
         assert!(!phone_row(&p, 0).media);
+        assert!(phone_row(&p, 0).sound, "son et actions");
+        p.granted = vec!["battery".into()];
+        assert!(!phone_row(&p, 0).sound);
     }
 
     #[test]
