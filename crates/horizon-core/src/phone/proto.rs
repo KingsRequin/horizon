@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// Version du protocole parlée par cette version d'Horizon.
 pub const PROTOCOL: u32 = 1;
 /// Fonctions annoncées au téléphone dans `hello.ok`.
-pub const FEATURES: &[&str] = &["battery", "media", "mixer", "actions"];
+pub const FEATURES: &[&str] = &["battery", "media", "mixer", "actions", "input"];
 
 /// Genre d'un appareil dont le téléphone envoie la batterie.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,6 +83,28 @@ pub enum FromPhone {
     TimerPause { paused: bool },
     #[serde(rename = "timer.stop")]
     TimerStop,
+    /// Déplacer le pointeur (pixels, relatif).
+    #[serde(rename = "input.move")]
+    InputMove { dx: i32, dy: i32 },
+    /// `button` : `left`, `right`, `middle` ; `action` : `click`, `down`, `up`.
+    #[serde(rename = "input.button")]
+    InputButton { button: String, action: String },
+    /// Faire défiler (unités de molette, 120 = un cran ; `dx` : horizontal).
+    #[serde(rename = "input.scroll")]
+    InputScroll { dx: i32, dy: i32 },
+    /// Zoomer (Ctrl + molette, unités de molette).
+    #[serde(rename = "input.zoom")]
+    InputZoom { delta: i32 },
+    /// Taper ce texte (Unicode).
+    #[serde(rename = "input.text")]
+    InputText { text: String },
+    /// Appuyer sur une touche nommée, avec ses modificateurs.
+    #[serde(rename = "input.key")]
+    InputKey {
+        key: String,
+        #[serde(default)]
+        mods: Vec<String>,
+    },
     #[serde(other)]
     Unknown,
 }
@@ -288,6 +310,17 @@ mod tests {
         let headset = HeadsetView { name: "Casque".into(), level: 92, charging: false };
         same(ToPhone::ActionsState { dnd: true, timer: Some(timer), timer_presets: vec![5, 15, 25, 45], headset: Some(headset) }, "actions.state.json");
         same(ToPhone::ActionsState { dnd: false, timer: None, timer_presets: Vec::new(), headset: None }, "actions.state-vide.json");
+    }
+
+    #[test]
+    fn the_input_messages_parse() {
+        assert_eq!(parse(fixture("input.move.json")), Some(FromPhone::InputMove { dx: 12, dy: -5 }));
+        assert_eq!(parse(fixture("input.button.json")), Some(FromPhone::InputButton { button: "left".into(), action: "click".into() }));
+        assert_eq!(parse(fixture("input.scroll.json")), Some(FromPhone::InputScroll { dx: 0, dy: -120 }));
+        assert_eq!(parse(fixture("input.zoom.json")), Some(FromPhone::InputZoom { delta: 120 }));
+        assert_eq!(parse(fixture("input.text.json")), Some(FromPhone::InputText { text: "Bonjour é ☃".into() }));
+        assert_eq!(parse(fixture("input.key.json")), Some(FromPhone::InputKey { key: "c".into(), mods: vec!["ctrl".into()] }));
+        assert_eq!(parse(r#"{"type":"input.key","key":"escape"}"#), Some(FromPhone::InputKey { key: "escape".into(), mods: vec![] }), "sans modificateur");
     }
 
     #[test]

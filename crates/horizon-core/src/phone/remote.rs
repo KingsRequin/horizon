@@ -2,6 +2,7 @@
 //! état du média tel que le téléphone le reçoit. Le module `phone` d'Horizon relie ces décisions
 //! aux fonctions de lecture et de mixeur.
 
+use super::input::{ButtonAction, Mod, MouseButton, key_code};
 use super::proto::{AppView, FromPhone, MediaView, OutputView, SessionView, TimerState, ToPhone};
 use crate::media::{MediaInfo, position_at};
 
@@ -9,6 +10,12 @@ use crate::media::{MediaInfo, position_at};
 pub const MEDIA: &str = "media";
 /// Droit « Son et actions » : mixeur par appli, sortie audio, actions rapides.
 pub const SOUND: &str = "sound";
+/// Droit « Clavier et souris » : jamais accordé d'office.
+pub const INPUT: &str = "input";
+/// Bornes de la saisie : déplacement (pixels), molette (unités), texte (caractères).
+const MAX_MOVE: i32 = 2000;
+const MAX_WHEEL: i32 = 2400;
+const MAX_TEXT: usize = 256;
 /// Applis du mixeur envoyées au plus.
 const MAX_APPS: usize = 24;
 /// Durée d'un minuteur, en minutes, au plus (10 h).
@@ -43,6 +50,12 @@ pub enum Command {
     TimerStart(u32),
     TimerPause(bool),
     TimerStop,
+    Move(i32, i32),
+    Button(MouseButton, ButtonAction),
+    Scroll(i32, i32),
+    Zoom(i32),
+    Text(String),
+    Key(u16, Vec<Mod>),
 }
 
 /// Un identifiant reçu du téléphone (clé d'appli, sortie) : ni vide ni démesuré.
@@ -87,6 +100,7 @@ pub fn command(msg: &FromPhone, granted: &[String]) -> Option<Command> {
         | FromPhone::TimerStart { .. }
         | FromPhone::TimerPause { .. }
         | FromPhone::TimerStop => SOUND,
+        FromPhone::InputMove { .. } | FromPhone::InputButton { .. } | FromPhone::InputScroll { .. } | FromPhone::InputZoom { .. } | FromPhone::InputText { .. } | FromPhone::InputKey { .. } => INPUT,
         FromPhone::PairRequest { .. } | FromPhone::Hello { .. } | FromPhone::Battery { .. } | FromPhone::Watch { .. } | FromPhone::Unknown => return None,
     };
     if !has(granted, right) {
@@ -111,6 +125,12 @@ pub fn command(msg: &FromPhone, granted: &[String]) -> Option<Command> {
         FromPhone::TimerStart { minutes } if (1..=MAX_TIMER_MINUTES).contains(minutes) => Command::TimerStart(*minutes),
         FromPhone::TimerPause { paused } => Command::TimerPause(*paused),
         FromPhone::TimerStop => Command::TimerStop,
+        FromPhone::InputMove { dx, dy } => Command::Move((*dx).clamp(-MAX_MOVE, MAX_MOVE), (*dy).clamp(-MAX_MOVE, MAX_MOVE)),
+        FromPhone::InputButton { button, action } => Command::Button(MouseButton::parse(button)?, ButtonAction::parse(action)?),
+        FromPhone::InputScroll { dx, dy } => Command::Scroll((*dx).clamp(-MAX_WHEEL, MAX_WHEEL), (*dy).clamp(-MAX_WHEEL, MAX_WHEEL)),
+        FromPhone::InputZoom { delta } => Command::Zoom((*delta).clamp(-MAX_WHEEL, MAX_WHEEL)),
+        FromPhone::InputText { text } if !text.is_empty() && text.chars().count() <= MAX_TEXT && !text.chars().any(char::is_control) => Command::Text(text.clone()),
+        FromPhone::InputKey { key, mods } => Command::Key(key_code(key)?, mods.iter().map(|m| Mod::parse(m)).collect::<Option<Vec<_>>>()?),
         _ => return None,
     })
 }
@@ -188,6 +208,49 @@ mod tests {
 
     fn all() -> Vec<String> {
         rights(&["battery", "media", "sound"])
+    }
+
+    #[test]
+    fn input_needs_its_own_right() {
+        use crate::phone::input::{ButtonAction, Mod, MouseButton};
+        let msgs = [
+            FromPhone::InputMove { dx: 3, dy: -4 },
+            FromPhone::InputButton { button: "right".into(), action: "click".into() },
+            FromPhone::InputScroll { dx: 0, dy: -120 },
+            FromPhone::InputZoom { delta: 120 },
+            FromPhone::InputText { text: "é".into() },
+            FromPhone::InputKey { key: "c".into(), mods: vec!["ctrl".into()] },
+        ];
+        for msg in &msgs {
+            assert_eq!(command(msg, &all()), None, "media et sound ne suffisent pas : {msg:?}");
+        }
+        let input = rights(&["battery", "input"]);
+        let expected = [
+            Command::Move(3, -4),
+            Command::Button(MouseButton::Right, ButtonAction::Click),
+            Command::Scroll(0, -120),
+            Command::Zoom(120),
+            Command::Text("é".into()),
+            Command::Key(0x43, vec![Mod::Ctrl]),
+        ];
+        for (msg, want) in msgs.iter().zip(expected) {
+            assert_eq!(command(msg, &input), Some(want));
+        }
+    }
+
+    #[test]
+    fn input_values_are_bounded() {
+        let input = rights(&["input"]);
+        assert_eq!(command(&FromPhone::InputMove { dx: 99_999, dy: -99_999 }, &input), Some(Command::Move(2000, -2000)));
+        assert_eq!(command(&FromPhone::InputScroll { dx: 10_000, dy: 0 }, &input), Some(Command::Scroll(2400, 0)));
+        assert_eq!(command(&FromPhone::InputZoom { delta: -10_000 }, &input), Some(Command::Zoom(-2400)));
+        assert_eq!(command(&FromPhone::InputText { text: "x".repeat(257) }, &input), None, "texte trop long");
+        assert_eq!(command(&FromPhone::InputText { text: String::new() }, &input), None);
+        assert_eq!(command(&FromPhone::InputText { text: "a\u{1b}b".into() }, &input), None, "pas de caractère de contrôle");
+        assert_eq!(command(&FromPhone::InputKey { key: "ctrl+alt+del".into(), mods: vec![] }, &input), None, "touche inconnue");
+        assert_eq!(command(&FromPhone::InputKey { key: "a".into(), mods: vec!["hyper".into()] }, &input), None, "modificateur inconnu");
+        assert_eq!(command(&FromPhone::InputButton { button: "fourth".into(), action: "click".into() }, &input), None);
+        assert_eq!(command(&FromPhone::InputButton { button: "left".into(), action: "hold".into() }, &input), None);
     }
 
     #[test]

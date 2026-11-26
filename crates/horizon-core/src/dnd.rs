@@ -22,6 +22,9 @@ pub enum AlertKind {
     Update,
     /// Alerte d'un plugin (`horizon.alert`) : masquée pendant le NPD, comme une notification.
     Plugin,
+    /// Un téléphone prend le clavier et la souris : une garde, pas une notification, donc
+    /// montrée même pendant le NPD.
+    RemoteInput,
 }
 
 /// Options du NPD (réglages du widget Notifications).
@@ -66,7 +69,7 @@ pub fn allows(kind: AlertKind, active: bool, opts: &DndOptions) -> bool {
             AlertKind::Notification | AlertKind::Update | AlertKind::Plugin => false,
             AlertKind::Claude => opts.claude,
             AlertKind::Battery => opts.battery,
-            AlertKind::Timer | AlertKind::Feedback => true,
+            AlertKind::Timer | AlertKind::Feedback | AlertKind::RemoteInput => true,
         }
 }
 
@@ -125,6 +128,12 @@ impl DndFile {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn remote_input_passes_do_not_disturb() {
+        let o = DndOptions { claude: false, battery: false, discord: false, light: false };
+        assert!(allows(AlertKind::RemoteInput, true, &o), "une garde passe toujours");
+    }
 
     #[test]
     fn plugin_alerts_hidden_during_dnd() {
