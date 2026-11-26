@@ -10,6 +10,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DEVICE_NOTIFY_CALLBACK, PBT_APMRESUMEAUTOMATIC, PBT_APMRESUMESUSPEND, PBT_APMSUSPEND,
 };
 
+/// Verrouille la session Windows (comme Windows + L). Refusé par Windows sur un bureau
+/// sécurisé ou une session déjà verrouillée.
+pub fn lock_workstation() -> anyhow::Result<()> {
+    // SAFETY : appel sans argument ; le verrouillage est asynchrone, Windows le fait ensuite.
+    unsafe { windows::Win32::System::Shutdown::LockWorkStation() }.map_err(|e| anyhow::anyhow!("verrouillage refusé : {e}"))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PowerEvent {
     Suspend,
