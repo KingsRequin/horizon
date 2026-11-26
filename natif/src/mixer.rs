@@ -106,8 +106,8 @@ fn view_of(mut s: MixerSnapshot, pins: &[String], media_app_id: Option<&str>) ->
 /// Envoie l'état au panneau s'il a changé (aussi quand la lecture en cours change d'appli).
 pub fn publish(app: &AppHandle) {
     app.state::<Mixer>().shown.set(app, view(app));
-    // Le volume général, pour les téléphones qui le regardent (module Téléphone).
-    crate::widgets::phone::volume_changed(app);
+    // Volume général et mixeur, pour les téléphones qui les regardent (module Téléphone).
+    crate::widgets::phone::mixer_changed(app);
 }
 
 /// Sorties (ordre d'affichage, favoris en tête) et sortie par défaut, d'après la dernière

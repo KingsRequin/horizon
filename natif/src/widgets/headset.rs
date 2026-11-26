@@ -91,6 +91,8 @@ pub fn start(app: &AppHandle) -> anyhow::Result<()> {
             }
             let state = app.state::<HeadsetState>();
             state.headset.set(&app, now);
+            // Le casque du PC, pour les téléphones qui regardent les actions (rien s'il n'a pas changé).
+            crate::widgets::phone::actions_changed(&app);
             let wait = match switch.retry_in(horizon_core::time::now_ms()) {
                 Some(ms) if fallback.is_some() => Duration::from_millis(ms),
                 _ if fallback.is_some() => PERIOD_SWITCH,

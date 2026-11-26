@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 /// Version du protocole parlée par cette version d'Horizon.
 pub const PROTOCOL: u32 = 1;
 /// Fonctions annoncées au téléphone dans `hello.ok`.
-pub const FEATURES: &[&str] = &["battery", "media"];
+pub const FEATURES: &[&str] = &["battery", "media", "mixer", "actions"];
 
 /// Genre d'un appareil dont le téléphone envoie la batterie.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

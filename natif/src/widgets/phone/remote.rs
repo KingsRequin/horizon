@@ -6,8 +6,10 @@
 use crate::util::lock;
 use base64::Engine;
 use horizon_core::media::{MediaInfo, position_at, worth_sending};
-use horizon_core::phone::proto::{FromPhone, ToPhone};
-use horizon_core::phone::remote::{self, Command, Topic, art_key, media_message};
+use horizon_core::mixer::MixerSnapshot;
+use horizon_core::phone::proto::{FromPhone, HeadsetView, ToPhone};
+use horizon_core::phone::remote::{self, Command, Topic, art_key, media_message, mixer_message, timer_state};
+use horizon_core::timer::TimerView;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -29,8 +31,35 @@ pub trait Controls: Send + Sync {
     fn media(&self) -> MediaNow;
     /// Volume général du moment ; `None` sans sortie.
     fn volume(&self) -> Option<(f32, bool)>;
-    /// Le mixeur relit l'état tant que quelqu'un regarde le volume.
-    fn watch_volume(&self, on: bool);
+    /// Le mixeur relit l'état tant que quelqu'un regarde le volume ou le mixeur.
+    fn watch_mixer(&self, on: bool);
+    /// État du mixeur du moment ; `None` s'il n'a pas démarré.
+    fn mixer(&self) -> Option<MixerSnapshot>;
+    /// Ne pas déranger, minuteur, durées proposées et casque du moment.
+    fn actions(&self) -> ActionsNow;
+    fn set_app_volume(&self, key: &str, volume: f32);
+    fn set_app_mute(&self, key: &str, muted: bool);
+    fn set_output(&self, id: &str);
+    fn lock_pc(&self);
+    fn set_dnd(&self, on: bool);
+    fn timer_start(&self, minutes: u32);
+    fn timer_pause(&self, paused: bool);
+    fn timer_stop(&self);
+}
+
+/// Les actions rapides telles qu'Horizon les connaît : comparées telles quelles, le minuteur
+/// par son échéance (pas son temps restant, qui change à chaque seconde).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ActionsNow {
+    pub dnd: bool,
+    pub timer: Option<TimerView>,
+    pub presets: Vec<u32>,
+    pub headset: Option<HeadsetView>,
+}
+
+/// L'état des actions pour le téléphone, minuteur en temps restant à `now_ms`.
+fn actions_message(now: &ActionsNow, now_ms: u64) -> ToPhone {
+    ToPhone::ActionsState { dnd: now.dnd, timer: now.timer.as_ref().map(|t| timer_state(t, now_ms)), timer_presets: now.presets.clone(), headset: now.headset.clone() }
 }
 
 /// Lecture en cours et lectures entre lesquelles choisir (identifiant, nom).
@@ -72,9 +101,13 @@ struct Inner {
     requested: HashMap<String, Vec<String>>,
     /// Ce qu'il regarde vraiment : la demande triée par ses droits du moment.
     watch: HashMap<String, Vec<Topic>>,
-    /// Le mixeur a été réveillé pour le volume (décidé sous le verrou : deux fils ne peuvent pas
-    /// le réveiller ou l'endormir deux fois).
+    /// Le mixeur a été réveillé pour le volume ou le mixeur (décidé sous le verrou : deux fils
+    /// ne peuvent pas le réveiller ou l'endormir deux fois).
     volume_on: bool,
+    /// Dernier état du mixeur envoyé.
+    sent_mixer: Option<ToPhone>,
+    /// Dernières actions envoyées.
+    sent_actions: Option<ActionsNow>,
     sent: Option<Sent>,
     art: Option<Art>,
     volume: Option<(f32, bool)>,
@@ -127,7 +160,7 @@ impl Remote {
             self.watch(phone_id, topics, now_ms);
             return true;
         }
-        if !matches!(msg, FromPhone::MediaCommand { .. } | FromPhone::MediaSeek { .. } | FromPhone::MediaSelect { .. } | FromPhone::VolumeSet { .. } | FromPhone::VolumeMute { .. }) {
+        if matches!(msg, FromPhone::PairRequest { .. } | FromPhone::Hello { .. } | FromPhone::Battery { .. } | FromPhone::Unknown) {
             return false;
         }
         match remote::command(msg, &(self.rights)(phone_id)) {
@@ -146,6 +179,17 @@ impl Remote {
             Some(Command::Select(app_id)) => self.controls.select(&app_id),
             Some(Command::SetVolume(v)) => self.controls.set_volume(v),
             Some(Command::SetMute(m)) => self.controls.set_mute(m),
+            Some(Command::AppVolume(key, v)) => self.controls.set_app_volume(&key, v),
+            Some(Command::AppMute(key, m)) => self.controls.set_app_mute(&key, m),
+            Some(Command::Output(id)) => self.controls.set_output(&id),
+            Some(Command::Lock) => {
+                log::info!("téléphone : {phone_id} verrouille le PC");
+                self.controls.lock_pc();
+            }
+            Some(Command::Dnd(on)) => self.controls.set_dnd(on),
+            Some(Command::TimerStart(minutes)) => self.controls.timer_start(minutes),
+            Some(Command::TimerPause(paused)) => self.controls.timer_pause(paused),
+            Some(Command::TimerStop) => self.controls.timer_stop(),
             None => log::debug!("téléphone : commande de {phone_id} refusée"),
         }
         true
@@ -198,6 +242,75 @@ impl Remote {
             lock(&self.inner).volume = Some((volume, muted));
             (self.send)(phone_id, &ToPhone::VolumeState { volume, muted });
         }
+        if added.contains(&Topic::Mixer)
+            && let Some(snapshot) = self.controls.mixer()
+        {
+            let msg = mixer_message(&snapshot);
+            lock(&self.inner).sent_mixer = Some(msg.clone());
+            (self.send)(phone_id, &msg);
+        }
+        if added.contains(&Topic::Actions) {
+            let now = self.controls.actions();
+            let msg = actions_message(&now, now_ms);
+            lock(&self.inner).sent_actions = Some(now);
+            (self.send)(phone_id, &msg);
+        }
+    }
+
+    /// Vrai si un téléphone regarde le volume ou le mixeur : sans lui, le mixeur n'a rien à
+    /// calculer pour les téléphones.
+    pub fn wants_volume_or_mixer(&self) -> bool {
+        lock(&self.inner).volume_on
+    }
+
+    /// Vrai si un téléphone regarde le mixeur : sans lui, inutile de calculer son état.
+    pub fn wants_mixer(&self) -> bool {
+        !lock(&self.inner).watching(Topic::Mixer).is_empty()
+    }
+
+    /// Vrai si un téléphone regarde les actions.
+    pub fn wants_actions(&self) -> bool {
+        !lock(&self.inner).watching(Topic::Actions).is_empty()
+    }
+
+    /// L'état du mixeur a peut-être changé (fil du mixeur) : il part vers ceux qui le regardent,
+    /// seulement s'il a changé.
+    pub fn mixer_changed(&self, snapshot: Option<&MixerSnapshot>) {
+        let Some(snapshot) = snapshot else { return };
+        let watchers = {
+            let mut inner = lock(&self.inner);
+            let watchers = inner.watching(Topic::Mixer);
+            if watchers.is_empty() {
+                return;
+            }
+            let msg = mixer_message(snapshot);
+            if inner.sent_mixer.as_ref() == Some(&msg) {
+                return;
+            }
+            inner.sent_mixer = Some(msg.clone());
+            (watchers, msg)
+        };
+        for id in &watchers.0 {
+            (self.send)(id, &watchers.1);
+        }
+    }
+
+    /// Les actions ont peut-être changé (minuteur, NPD, casque) : elles partent vers ceux qui
+    /// les regardent, seulement si elles ont changé.
+    pub fn actions_changed(&self, now: &ActionsNow, now_ms: u64) {
+        let watchers = {
+            let mut inner = lock(&self.inner);
+            let watchers = inner.watching(Topic::Actions);
+            if watchers.is_empty() || inner.sent_actions.as_ref() == Some(now) {
+                return;
+            }
+            inner.sent_actions = Some(now.clone());
+            watchers
+        };
+        let msg = actions_message(now, now_ms);
+        for id in &watchers {
+            (self.send)(id, &msg);
+        }
     }
 
     /// Réveille ou rendort le mixeur quand le nombre de téléphones qui regardent le volume passe
@@ -206,14 +319,14 @@ impl Remote {
     fn sync_volume(&self) {
         let change = {
             let mut inner = lock(&self.inner);
-            let on = !inner.watching(Topic::Volume).is_empty();
+            let on = !inner.watching(Topic::Volume).is_empty() || !inner.watching(Topic::Mixer).is_empty();
             (on != inner.volume_on).then(|| {
                 inner.volume_on = on;
                 on
             })
         };
         if let Some(on) = change {
-            self.controls.watch_volume(on);
+            self.controls.watch_mixer(on);
         }
     }
 
@@ -294,6 +407,7 @@ impl Remote {
 mod tests {
     use super::*;
     use horizon_core::media::MediaInfo;
+    use horizon_core::mixer::{AppAudio, Level, MixerSnapshot};
     use horizon_core::phone::proto::{FromPhone, ToPhone};
     use std::sync::{Arc, Mutex};
 
@@ -306,6 +420,8 @@ mod tests {
         watched: Mutex<Vec<bool>>,
         /// Droits de tous les téléphones du test, lus par la télécommande au moment voulu.
         granted: Mutex<Vec<String>>,
+        mixer: Mutex<Option<MixerSnapshot>>,
+        actions: Mutex<ActionsNow>,
     }
 
     impl Controls for Arc<Fake> {
@@ -336,8 +452,38 @@ mod tests {
         fn volume(&self) -> Option<(f32, bool)> {
             *self.volume.lock().unwrap()
         }
-        fn watch_volume(&self, on: bool) {
+        fn watch_mixer(&self, on: bool) {
             self.watched.lock().unwrap().push(on);
+        }
+        fn mixer(&self) -> Option<MixerSnapshot> {
+            self.mixer.lock().unwrap().clone()
+        }
+        fn actions(&self) -> ActionsNow {
+            self.actions.lock().unwrap().clone()
+        }
+        fn set_app_volume(&self, key: &str, volume: f32) {
+            self.calls.lock().unwrap().push(format!("app {key} {volume}"));
+        }
+        fn set_app_mute(&self, key: &str, muted: bool) {
+            self.calls.lock().unwrap().push(format!("app mute {key} {muted}"));
+        }
+        fn set_output(&self, id: &str) {
+            self.calls.lock().unwrap().push(format!("output {id}"));
+        }
+        fn lock_pc(&self) {
+            self.calls.lock().unwrap().push("lock".into());
+        }
+        fn set_dnd(&self, on: bool) {
+            self.calls.lock().unwrap().push(format!("dnd {on}"));
+        }
+        fn timer_start(&self, minutes: u32) {
+            self.calls.lock().unwrap().push(format!("timer {minutes}"));
+        }
+        fn timer_pause(&self, paused: bool) {
+            self.calls.lock().unwrap().push(format!("timer pause {paused}"));
+        }
+        fn timer_stop(&self) {
+            self.calls.lock().unwrap().push("timer stop".into());
         }
     }
 
@@ -530,6 +676,80 @@ mod tests {
         // Une trame de plus de 64 Kio ferme la connexion (docs/PHONE.md) : le JPEG en base64 et
         // l'enveloppe JSON (type, clé) doivent y tenir.
         assert!(ART_MAX.div_ceil(3) * 4 + 128 <= 64 * 1024, "{} octets de base64", ART_MAX.div_ceil(3) * 4);
+    }
+
+    fn snapshot(volume: f32) -> MixerSnapshot {
+        let app = AppAudio { key: "spotify.exe".into(), name: "Spotify".into(), exe: String::new(), level: Level { volume, muted: false }, active: true, aumids: vec![] };
+        MixerSnapshot { apps: vec![app], ..MixerSnapshot::default() }
+    }
+
+    #[test]
+    fn the_mixer_is_sent_on_watch_then_on_change() {
+        let (r, fake, sent) = remote();
+        *fake.mixer.lock().unwrap() = Some(snapshot(0.5));
+        r.message("tel-1", &watch(&["volume", "mixer"]), 0);
+        assert_eq!(types(&sent), vec!["tel-1 mixer.state"], "le volume général n'est pas connu du faux : seul le mixeur part");
+        assert_eq!(*fake.watched.lock().unwrap(), vec![true], "un seul réveil du mixeur pour le volume et le mixeur");
+        assert!(r.wants_mixer());
+        r.mixer_changed(Some(&snapshot(0.5)));
+        assert_eq!(sent.lock().unwrap().len(), 1, "rien de changé");
+        r.mixer_changed(Some(&snapshot(0.7)));
+        assert_eq!(types(&sent), vec!["tel-1 mixer.state", "tel-1 mixer.state"]);
+        r.closed("tel-1");
+        assert!(!r.wants_mixer());
+        assert_eq!(*fake.watched.lock().unwrap(), vec![true, false]);
+    }
+
+    #[test]
+    fn actions_reach_their_watchers_only() {
+        let (r, fake, sent) = remote();
+        *fake.actions.lock().unwrap() = ActionsNow { dnd: true, ..ActionsNow::default() };
+        r.message("tel-1", &watch(&["actions"]), 0);
+        r.message("tel-2", &watch(&["media"]), 0);
+        assert!(types(&sent).contains(&"tel-1 actions.state".to_owned()));
+        sent.lock().unwrap().clear();
+        r.actions_changed(&ActionsNow { dnd: false, ..ActionsNow::default() }, 0);
+        assert_eq!(types(&sent), vec!["tel-1 actions.state"]);
+        *fake.granted.lock().unwrap() = vec!["battery".into(), "media".into()];
+        r.message("tel-3", &watch(&["actions"]), 0);
+        assert_eq!(types(&sent), vec!["tel-1 actions.state"], "sans le droit sound : pas d'actions");
+    }
+
+    #[test]
+    fn app_commands_reach_the_mixer_and_actions() {
+        let (r, fake, _) = remote();
+        for msg in [
+            FromPhone::MixerAppVolume { key: "spotify.exe".into(), volume: 0.4 },
+            FromPhone::MixerAppMute { key: "spotify.exe".into(), muted: true },
+            FromPhone::MixerOutput { id: "out-2".into() },
+            FromPhone::ActionLock,
+            FromPhone::ActionDnd { on: true },
+            FromPhone::TimerStart { minutes: 25 },
+            FromPhone::TimerPause { paused: true },
+            FromPhone::TimerStop,
+        ] {
+            assert!(r.message("tel-1", &msg, 0), "{msg:?}");
+        }
+        assert_eq!(
+            *fake.calls.lock().unwrap(),
+            vec!["app spotify.exe 0.4", "app mute spotify.exe true", "output out-2", "lock", "dnd true", "timer 25", "timer pause true", "timer stop"]
+        );
+    }
+
+    #[test]
+    fn a_running_timer_is_not_resent_every_second() {
+        use horizon_core::timer::{Phase, TimerView};
+        let (r, fake, sent) = remote();
+        let timer = TimerView { phase: Phase::Timer, total_ms: 1_500_000, ends_at_ms: Some(1_000_000), remaining_ms: None, cycle: 1 };
+        let now = ActionsNow { timer: Some(timer), ..ActionsNow::default() };
+        *fake.actions.lock().unwrap() = now.clone();
+        r.message("tel-1", &watch(&["actions"]), 100_000);
+        let first = sent.lock().unwrap()[0].1.clone();
+        let ToPhone::ActionsState { timer: Some(t), .. } = first else { panic!() };
+        assert_eq!((t.remaining_ms, t.paused), (900_000, false));
+        r.actions_changed(&now, 101_000);
+        r.actions_changed(&now, 102_000);
+        assert_eq!(sent.lock().unwrap().len(), 1, "l'échéance n'a pas bougé : le téléphone décompte seul");
     }
 
     #[test]

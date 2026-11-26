@@ -650,10 +650,26 @@ pub fn media_changed(app: &AppHandle, art: remote::ArtChange) {
     }
 }
 
-/// Le volume général a peut-être changé (fil du mixeur).
-pub fn volume_changed(app: &AppHandle) {
-    if let Some(remote) = app.state::<PhoneState>().remote.get() {
-        remote.volume_changed(master(app));
+/// Le mixeur a publié un état (volume général, applis, sorties) : il part vers les téléphones
+/// qui le regardent. Rien n'est calculé si personne ne regarde.
+pub fn mixer_changed(app: &AppHandle) {
+    let state = app.state::<PhoneState>();
+    let Some(remote) = state.remote.get() else { return };
+    if !remote.wants_volume_or_mixer() {
+        return;
+    }
+    let snapshot = crate::mixer::view(app).snapshot;
+    remote.volume_changed(snapshot.master.map(|l| (l.volume, l.muted)));
+    remote.mixer_changed(Some(&snapshot));
+}
+
+/// Ne pas déranger, le minuteur ou le casque ont peut-être changé : l'état des actions part
+/// vers les téléphones qui le regardent (seulement s'il a changé).
+pub fn actions_changed(app: &AppHandle) {
+    let state = app.state::<PhoneState>();
+    let Some(remote) = state.remote.get() else { return };
+    if remote.wants_actions() {
+        remote.actions_changed(&AppControls(app.clone()).actions_now(), now_ms());
     }
 }
 
@@ -671,13 +687,19 @@ fn named(sessions: Vec<(String, String)>) -> Vec<(String, String)> {
     }).collect()
 }
 
-/// La télécommande branchée sur Horizon : lecture en cours et mixeur.
+/// La télécommande branchée sur Horizon : lecture en cours, mixeur, actions rapides.
 struct AppControls(AppHandle);
 
 impl AppControls {
     fn media_now(&self) -> remote::MediaNow {
         let state = crate::widgets::media::media_state(&self.0);
         remote::MediaNow { info: state.payload.info, sessions: named(state.payload.sessions) }
+    }
+
+    fn actions_now(&self) -> remote::ActionsNow {
+        let timer = crate::timer::timer_state(&self.0);
+        let headset = crate::widgets::headset::current(&self.0).map(|h| horizon_core::phone::proto::HeadsetView { name: h.name, level: h.level, charging: h.charging });
+        remote::ActionsNow { dnd: crate::dnd::dnd_state(&self.0).active, timer: timer.timer, presets: timer.presets, headset }
     }
 
     fn report(what: &str, result: Result<(), String>) {
@@ -715,8 +737,42 @@ impl remote::Controls for AppControls {
     fn volume(&self) -> Option<(f32, bool)> {
         master(&self.0)
     }
-    fn watch_volume(&self, on: bool) {
+    fn watch_mixer(&self, on: bool) {
         crate::mixer::watch(&self.0, on);
+    }
+    fn mixer(&self) -> Option<horizon_core::mixer::MixerSnapshot> {
+        Some(crate::mixer::view(&self.0).snapshot)
+    }
+    fn actions(&self) -> remote::ActionsNow {
+        self.actions_now()
+    }
+    fn set_app_volume(&self, key: &str, volume: f32) {
+        Self::report("volume d'une appli", crate::mixer::set_app_volume(&self.0, key.to_owned(), volume));
+    }
+    fn set_app_mute(&self, key: &str, muted: bool) {
+        Self::report("muet d'une appli", crate::mixer::set_app_mute(&self.0, key.to_owned(), muted));
+    }
+    fn set_output(&self, id: &str) {
+        Self::report("sortie audio", crate::mixer::set_default(&self.0, id.to_owned()));
+    }
+    fn lock_pc(&self) {
+        if let Err(e) = horizon_sys::power::lock_workstation() {
+            log::warn!("téléphone : {e:#}");
+        }
+    }
+    fn set_dnd(&self, on: bool) {
+        if crate::dnd::dnd_state(&self.0).active != on {
+            crate::dnd::dnd_toggle(&self.0);
+        }
+    }
+    fn timer_start(&self, minutes: u32) {
+        crate::timer::timer_start(&self.0, minutes);
+    }
+    fn timer_pause(&self, paused: bool) {
+        crate::timer::timer_pause(&self.0, paused);
+    }
+    fn timer_stop(&self) {
+        crate::timer::timer_stop(&self.0);
     }
 }
 
@@ -810,7 +866,7 @@ mod tests {
         assert_eq!((id.as_str(), pc_id.as_str(), pc_name.as_str()), ("tel-1", "pc-1", "Bureau"));
         assert_eq!(device_token.len(), 43, "32 octets aléatoires");
         let ok = core.first(hello("tel-1", &device_token), 2);
-        assert!(matches!(&ok, Ok((id, ToPhone::HelloOk { protocol: 1, features, accent, .. })) if id == "tel-1" && features == &["battery", "media"] && accent == "#f97316"), "{ok:?}");
+        assert!(matches!(&ok, Ok((id, ToPhone::HelloOk { protocol: 1, features, accent, .. })) if id == "tel-1" && features == &["battery", "media", "mixer", "actions"] && accent == "#f97316"), "{ok:?}");
         assert!(matches!(core.first(hello("tel-1", "faux"), 3), Err(ToPhone::HelloRejected { reason }) if reason == "bad_token"));
         let newer = FromPhone::Hello { device_id: "tel-1".into(), device_token, protocol: 2, app_version: "9".into() };
         assert!(matches!(core.first(newer, 3), Err(ToPhone::HelloRejected { reason }) if reason == "protocol"));
@@ -1004,7 +1060,21 @@ mod tests {
         fn volume(&self) -> Option<(f32, bool)> {
             None
         }
-        fn watch_volume(&self, _on: bool) {}
+        fn watch_mixer(&self, _on: bool) {}
+        fn mixer(&self) -> Option<horizon_core::mixer::MixerSnapshot> {
+            None
+        }
+        fn actions(&self) -> remote::ActionsNow {
+            remote::ActionsNow::default()
+        }
+        fn set_app_volume(&self, _key: &str, _volume: f32) {}
+        fn set_app_mute(&self, _key: &str, _muted: bool) {}
+        fn set_output(&self, _id: &str) {}
+        fn lock_pc(&self) {}
+        fn set_dnd(&self, _on: bool) {}
+        fn timer_start(&self, _minutes: u32) {}
+        fn timer_pause(&self, _paused: bool) {}
+        fn timer_stop(&self) {}
     }
 
     /// Une télécommande qui ne commande rien ni n'envoie rien.
@@ -1020,7 +1090,7 @@ mod tests {
         assert_eq!(core.set_right("tel-1", "media", false), None, "rien de changé");
         assert_eq!(core.set_right("inconnu", "media", true), None);
         let Ok((_, ToPhone::HelloOk { features, granted, .. })) = core.first(hello("tel-1", &token), 2) else { panic!() };
-        assert_eq!(features, vec!["battery", "media"]);
+        assert_eq!(features, vec!["battery", "media", "mixer", "actions"]);
         assert_eq!(granted, vec!["battery", "sound"]);
         assert_eq!(core.phones(&[], 0)[0].granted, vec!["battery", "sound"]);
     }

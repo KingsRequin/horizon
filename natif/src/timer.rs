@@ -49,6 +49,7 @@ fn payload(app: &AppHandle) -> TimerPayload {
 /// Réglages modifiés : les panneaux reçoivent les nouvelles durées.
 pub fn broadcast(app: &AppHandle) {
     let _ = app.emit(EV_TIMER, payload(app));
+    crate::widgets::phone::actions_changed(app);
 }
 
 /// NPD de séance selon l'option et la phase en cours.
@@ -61,6 +62,8 @@ pub fn sync_session(app: &AppHandle) {
 fn changed(app: &AppHandle) {
     let _ = app.emit(EV_TIMER, payload(app));
     sync_session(app);
+    // Après le NPD de séance : les téléphones reçoivent l'un et l'autre à jour.
+    crate::widgets::phone::actions_changed(app);
     app.state::<TimerHub>().wake.wake();
 }
 

@@ -115,6 +115,7 @@ fn changed(app: &AppHandle, before: bool) {
         apply(app, active);
     }
     let _ = app.emit(EV_DND, v);
+    crate::widgets::phone::actions_changed(app);
 }
 
 /// Au démarrage : un NPD enregistré reprend ses effets (Discord et Prisme les appliquent à
