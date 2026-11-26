@@ -250,6 +250,11 @@ impl Remote {
         }
         {
             let mut input = lock(&self.input);
+            // Droit relu sous le verrou : une coupure (enregistrée avant `release`, qui prend ce
+            // verrou) ne peut pas être suivie d'une saisie ni d'un bouton tenu.
+            if !(self.rights)(phone_id).iter().any(|r| r == remote::INPUT) {
+                return;
+            }
             let state = input.entry(phone_id.to_owned()).or_default();
             if !state.rate.allow(now_ms) {
                 return;
@@ -508,6 +513,9 @@ mod tests {
         actions: Mutex<ActionsNow>,
         away: Mutex<bool>,
         seen: Mutex<Vec<String>>,
+        /// Retire tous les droits au moment où la saisie se prépare (une coupure qui tombe
+        /// entre la lecture du droit et l'application).
+        revoke_on_away: Mutex<bool>,
     }
 
     impl Controls for Arc<Fake> {
@@ -578,6 +586,9 @@ mod tests {
             self.seen.lock().unwrap().push(phone_id.to_owned());
         }
         fn away(&self) -> bool {
+            if *self.revoke_on_away.lock().unwrap() {
+                self.granted.lock().unwrap().clear();
+            }
             *self.away.lock().unwrap()
         }
     }
@@ -891,6 +902,16 @@ mod tests {
         *fake.away.lock().unwrap() = true;
         r.message("tel-1", &FromPhone::InputText { text: "secret".into() }, 0);
         assert!(fake.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_cut_between_the_check_and_the_input_wins() {
+        let (r, fake, _) = remote();
+        with_input(&fake);
+        *fake.revoke_on_away.lock().unwrap() = true;
+        r.message("tel-1", &FromPhone::InputButton { button: "left".into(), action: "down".into() }, 0);
+        assert!(fake.calls.lock().unwrap().is_empty(), "droit coupé entre-temps : rien n'est appliqué");
+        assert!(fake.seen.lock().unwrap().is_empty(), "ni signalé");
     }
 
     #[test]
