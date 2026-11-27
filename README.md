@@ -104,7 +104,8 @@ les modules intégrés (à activer) et les plugins de la
 [bibliothèque](https://github.com/KingsRequin/horizon-plugins) (installés d'un clic) dans
 *Réglages d'Horizon › Plugins*.
 
-**Et aussi :** minuteur et pomodoro, affichage du volume et du média à la place de celui de
+**Et aussi :** minuteur, pomodoro et chronomètre (avec une fenêtre flottante à placer n'importe
+où), affichage du volume et du média à la place de celui de
 Windows, couleur d'accent tirée du fond d'écran, mode jeu, profils de disposition par appli,
 page « État » qui dit ce qui marche et ce qui ne marche pas.
 

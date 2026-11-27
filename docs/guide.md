@@ -73,17 +73,23 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   de 10 min s'affiche en texte, puis la cloche.
 - **Micro** : le bouton coupe le micro par défaut de Windows (« Micro Windows (CABLE Output) —
   ouvert »).
-- **Minuteur** (clic sur l'horloge) : préréglages (5, 15, 25, 50 min par défaut), durée libre
-  (« 12 », « 1 h 30 » puis Entrée) ou pomodoro en boucle (durées dans Réglages d'Horizon ›
-  Minuteur) ; compte à rebours à côté de l'horloge, pause, « +5 min », arrêt. Fin ou changement de phase : alerte dans l'îlot
-  (même en NPD). Option « Ne pas déranger pendant la séance » (pas pendant les pauses du
-  pomodoro). L'état est tenu par Rust (partagé par les barres).
+- **Minuteur et chronomètre** (clic sur l'horloge) : deux onglets. *Minuteur* : préréglages (5,
+  15, 25, 50 min par défaut), durée libre (« 12 », « 1 h 30 » puis Entrée) ou pomodoro en boucle
+  (durées dans Réglages d'Horizon › Minuteur). *Chronomètre* : compte le temps écoulé, sans fin.
+  Une séance à la fois ; temps restant (ou écoulé) à côté de l'horloge, pause, « +5 min » (ou
+  « Zéro » pour le chronomètre), arrêt. Fin ou changement de phase : alerte dans l'îlot (même en
+  NPD). Option « Ne pas déranger pendant la séance » (pas pendant les pauses du pomodoro).
+  **Fenêtre flottante** (bouton en haut du panneau pendant une séance, ou palette) : petite
+  fenêtre toujours au premier plan, à placer d'un glisser n'importe où, sur n'importe quel écran,
+  avec pause et arrêt ; elle revient à chaque séance jusqu'à sa croix, à la même place
+  (`timer-float.json`). L'état est tenu par Rust (partagé par les barres).
 - **Palette de commandes** : Ctrl+Alt+P (`[palette]` `hotkey` dans `settings.toml`, par
   exemple `"Win+Shift+P"` ; vide = désactivée ; relu au démarrage, raccourci déjà pris signalé
   dans le journal). Fenêtre au centre de l'écran de la souris : raccourcis des barres,
   suggestions, applis du menu Démarrer, profils, sorties audio et micros, micro, sortie audio
   suivante, sessions Claude (Entrée = terminal, Tab = oublier), « Ne pas déranger », minuteur
-  (préréglages, pomodoro, pause, +5 min, arrêt), lecture / pause / suivant / précédent,
+  (préréglages, pomodoro, chronomètre, pause, +5 min, remise à zéro, fenêtre flottante, arrêt),
+  lecture / pause / suivant / précédent,
   recharger les barres, mode édition, réglages, quitter, entrées des plugins (le plugin Serveurs
   y met « SSH : nom » et « Web : nom »). Recherche
   floue (lettres dans l'ordre, débuts de mot, usage : `palette.json`). ↑↓, Entrée, Tab (action
@@ -136,7 +142,8 @@ Ce guide décrit en détail chaque fonction, les fichiers de configuration et le
   l'écran Télécommande est ouvert. **Mixeur et actions** (Horizon 0.10, appli 0.3) : sur la
   télécommande, la sortie audio (passer à la suivante, ou la choisir) et le volume et le muet de
   chaque appli qui a du son ; sur l'accueil de l'appli, verrouiller le PC, ne pas déranger, le
-  minuteur (durées des réglages du minuteur, pause, arrêt) et la batterie du casque du PC. Droit
+  minuteur (durées des réglages du minuteur, pause, arrêt ; le chronomètre n'y paraît pas) et la
+  batterie du casque du PC. Droit
   *Son et actions*, sous *Télécommande* dans la page (accordé à l'appairage). Le mixeur n'est
   envoyé que pendant que la télécommande est ouverte, les actions pendant que l'accueil l'est,
   et seulement quand ils changent (le minuteur part en temps restant, l'appli le décompte).
@@ -326,6 +333,7 @@ connaît la batterie. Sonde : `cargo run -p horizon-sys --example headset_probe`
 - `layout.json` : disposition (modifiée par le mode édition ; un fichier illisible est mis de
   côté en `layout.json.bak` et la disposition par défaut est reprise) ;
 - `dnd.json` : « Ne pas déranger » activé à la main, option du minuteur ;
+- `timer-float.json` : fenêtre flottante du minuteur demandée ou non, et sa place ;
 - `settings.toml` : `[night]` `start`, `end` (« 22:00 »), `opacity` (0–1) ; `[autohide]`
   `reveal` (la souris en haut de l'écran fait revenir une barre masquée ; `true` par défaut),
   `reveal_px` (hauteur de la zone de réapparition, px logiques, 200 au plus), `reveal_ms`

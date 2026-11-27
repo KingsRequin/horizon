@@ -108,7 +108,8 @@ modules (to enable) and plugins from the
 [library](https://github.com/KingsRequin/horizon-plugins) (one-click install) in
 *Réglages d'Horizon › Plugins*.
 
-**And also:** timer and pomodoro, volume and media on-screen display in place of Windows',
+**And also:** timer, pomodoro and stopwatch (with a floating window you can put anywhere),
+volume and media on-screen display in place of Windows',
 accent color from the wallpaper, game mode, layout profiles per app, status page that tells you
 what works and what doesn't.
 

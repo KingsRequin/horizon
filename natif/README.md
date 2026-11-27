@@ -176,6 +176,16 @@ déranger », recharger, démarrage avec Windows, journal, quitter) ; `state.rs`
   `OsdData`) : barre principale seulement, centré dans la bande ; l'îlot de Windows est masqué
   pendant ce temps et remis à la fermeture (`osd::exit`, aussi en cas de panique), en plein
   écran sur l'écran principal et quand `[features] osd` est coupé.
+- **Minuteur et chronomètre** (`src/timer.rs`, logique pure `horizon_core::timer` → `EV_TIMER`) :
+  une séance à la fois (minuteur, pomodoro ou chronomètre), affichée par l'horloge
+  (`src/widgets/clock/`) et, si elle est demandée, par la **fenêtre flottante**
+  (`src/ui/timer_float.rs`, `ui/timer-float.slint`) : sans cadre, au premier plan, jamais
+  active, déplacée par un glisser mené en Rust (position du pointeur à l'appui et à chaque
+  mouvement : pas de boucle modale de Windows, les minuteurs Slint continuent) ; passée sur un
+  écran d'une autre échelle, elle reprend sa taille logique ; au relâchement, ramenée dans la
+  zone de travail de l'écran le plus proche (`float_rect`) et sa place gardée
+  (`timer-float.json`). Essai sans souris, instance en cours : `horizon.exe --minuteur-essai
+  chrono|minuteur|pomodoro|pause|reprise|zero|stop|flottante|fixe|panneau`.
 - **Animations de la musique, par barre** : `BarLayout::music` (`horizon_core::layout::BarMusic` :
   `backdrop`, `progress`, `pulse`, dans `layout.json`), réglées par `BarOptionsPatch` (Réglages ›
   Barres, `ui::options::music_entries` ; menu de la barre › Musique, `MenuAction::Music`).

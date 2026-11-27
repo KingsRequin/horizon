@@ -128,7 +128,7 @@ l'autre retire le droit `input` du téléphone (il l'apprend par `rights`).
 | `media.art` | `artKey`, `jpeg` : pochette du morceau, JPEG carré de 300 px au plus et 47 Kio au plus, en base64 (la trame tient dans 64 Kio) |
 | `volume.state` | `volume` (de 0 à 1), `muted` |
 | `mixer.state` | `outputs` : liste de `{ id, name, kind }` (`kind` : `headset` ou `speaker`) ; `defaultOutput` ; `apps` : liste de `{ key, name, volume, muted, active }`, celles qui émettent d'abord, 24 au plus |
-| `actions.state` | `dnd` ; `timer` : `{ remainingMs, totalMs, paused }` ou `null` (arrêté) ; `timerPresets` : durées proposées, en minutes ; `headset` : `{ name, level, charging }` ou `null` (pas de casque) |
+| `actions.state` | `dnd` ; `timer` : `{ remainingMs, totalMs, paused }` ou `null` (arrêté, ou chronomètre en cours : le protocole ne connaît que les comptes à rebours) ; `timerPresets` : durées proposées, en minutes ; `headset` : `{ name, level, charging }` ou `null` (pas de casque) |
 
 Après `unknown_device` ou `bad_token`, le téléphone ne réessaie pas : il propose un nouvel
 appairage. `accent` est la couleur dont l'appli tire toute sa palette (pochette pendant la
