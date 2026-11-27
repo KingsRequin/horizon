@@ -38,6 +38,11 @@ pub(super) enum Action {
     TimerPause(bool),
     TimerStop,
     TimerExtend(u32),
+    Stopwatch,
+    /// Chronomètre remis à zéro.
+    TimerReset,
+    /// Mini-fenêtre du minuteur demandée (`true`) ou fermée.
+    TimerFloat(bool),
     PlayPause,
     NextTrack,
     PrevTrack,
@@ -325,10 +330,11 @@ fn dnd_entry(app: &AppHandle, out: &mut Vec<Entry>) {
     );
 }
 
-/// Minuteur : préréglages et pomodoro, ou pause / reprise / +5 min / arrêt d'une séance.
+/// Minuteur : préréglages, pomodoro et chronomètre, ou pause / reprise / +5 min (remise à zéro
+/// du chronomètre) / mini-fenêtre / arrêt d'une séance.
 fn timer_entries(app: &AppHandle, out: &mut Vec<Entry>) {
-    let kw = "minuteur timer chrono pomodoro";
-    match crate::timer::paused(app) {
+    let kw = "minuteur timer chrono chronomètre pomodoro";
+    match crate::timer::current(app) {
         None => {
             let t = crate::state::settings().timer;
             for m in t.presets {
@@ -343,16 +349,45 @@ fn timer_entries(app: &AppHandle, out: &mut Vec<Entry>) {
                     .keywords(kw)
                     .action("Démarrer", Action::Pomodoro),
             );
-        }
-        Some(paused) => {
-            let (title, icon) = if paused { ("Reprendre le minuteur", "play") } else { ("Mettre le minuteur en pause", "pause") };
-            out.push(Entry::new("timer:pause", title, "Minuteur", glyph(icon)).keywords(kw).action(title, Action::TimerPause(!paused)));
             out.push(
-                Entry::new("timer:extend", "Minuteur : +5 min", "Prolonge la phase en cours", glyph("plus"))
+                Entry::new("timer:stopwatch", "Chronomètre", "Temps écoulé près de l’horloge", glyph("timer"))
                     .keywords(kw)
-                    .action("Ajouter", Action::TimerExtend(5)),
+                    .action("Démarrer", Action::Stopwatch),
             );
-            out.push(Entry::new("timer:stop", "Arrêter le minuteur", "Minuteur", glyph("stop")).keywords(kw).action("Arrêter", Action::TimerStop));
+        }
+        Some(t) => {
+            let (paused, what) = (t.is_paused(), if t.is_stopwatch() { "le chronomètre" } else { "le minuteur" });
+            let subtitle = crate::timer::phase_label(&t);
+            let (title, icon) = if paused { (format!("Reprendre {what}"), "play") } else { (format!("Mettre {what} en pause"), "pause") };
+            out.push(
+                Entry::new("timer:pause", title.clone(), subtitle.clone(), glyph(icon)).keywords(kw).action(&title, Action::TimerPause(!paused)),
+            );
+            if t.is_stopwatch() {
+                out.push(
+                    Entry::new("timer:reset", "Chronomètre : remettre à zéro", subtitle.clone(), glyph("arrowCounterClockwise"))
+                        .keywords(kw)
+                        .action("Remettre à zéro", Action::TimerReset),
+                );
+            } else {
+                out.push(
+                    Entry::new("timer:extend", "Minuteur : +5 min", "Prolonge la phase en cours", glyph("plus"))
+                        .keywords(kw)
+                        .action("Ajouter", Action::TimerExtend(5)),
+                );
+            }
+            let floating = crate::timer::float_state(app).open;
+            let (title, icon) = if floating {
+                ("Fermer la fenêtre flottante du minuteur", "arrowSquareIn")
+            } else {
+                ("Fenêtre flottante du minuteur", "arrowSquareOut")
+            };
+            out.push(
+                Entry::new("timer:float", title, "Toujours visible, à placer n’importe où", glyph(icon))
+                    .keywords(format!("{kw} fenêtre flottante détacher"))
+                    .action(if floating { "Fermer" } else { "Afficher" }, Action::TimerFloat(!floating)),
+            );
+            let title = format!("Arrêter {what}");
+            out.push(Entry::new("timer:stop", title.clone(), subtitle, glyph("stop")).keywords(kw).action(&title, Action::TimerStop));
         }
     }
 }
@@ -443,6 +478,18 @@ pub(super) fn run_action(app: &AppHandle, a: Action) -> Result<(), String> {
         }
         Action::TimerExtend(m) => {
             crate::timer::timer_extend(app, m);
+            Ok(())
+        }
+        Action::Stopwatch => {
+            crate::timer::timer_stopwatch(app);
+            Ok(())
+        }
+        Action::TimerReset => {
+            crate::timer::timer_reset(app);
+            Ok(())
+        }
+        Action::TimerFloat(open) => {
+            crate::timer::float_set_open(app, open);
             Ok(())
         }
         Action::PlayPause => crate::widgets::media::media_play_pause(app),

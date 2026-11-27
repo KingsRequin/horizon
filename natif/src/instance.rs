@@ -121,6 +121,10 @@ fn received(args: &[String]) {
     if args.iter().any(|a| a == "--palette-essai") {
         crate::palette::open_essai(&app);
     }
+    // Minuteur d'essai, sans souris (`--minuteur-essai <quoi>`, voir `timer::essai`).
+    if let Some(i) = args.iter().position(|a| a == "--minuteur-essai") {
+        crate::timer::essai(&app, args.get(i + 1).map_or("", String::as_str));
+    }
     // Essai du mode édition et des menus de la barre principale (`--edition-essai <quoi>`).
     if let Some(i) = args.iter().position(|a| a == "--edition-essai") {
         crate::ui::edit::essai(&app, args.get(i + 1).map_or("", String::as_str));

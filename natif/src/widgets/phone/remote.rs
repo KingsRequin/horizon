@@ -74,7 +74,7 @@ pub struct ActionsNow {
 
 /// L'état des actions pour le téléphone, minuteur en temps restant à `now_ms`.
 fn actions_message(now: &ActionsNow, now_ms: u64) -> ToPhone {
-    ToPhone::ActionsState { dnd: now.dnd, timer: now.timer.as_ref().map(|t| timer_state(t, now_ms)), timer_presets: now.presets.clone(), headset: now.headset.clone() }
+    ToPhone::ActionsState { dnd: now.dnd, timer: now.timer.as_ref().and_then(|t| timer_state(t, now_ms)), timer_presets: now.presets.clone(), headset: now.headset.clone() }
 }
 
 /// Lecture en cours et lectures entre lesquelles choisir (identifiant, nom).
@@ -866,7 +866,15 @@ mod tests {
     fn a_running_timer_is_not_resent_every_second() {
         use horizon_core::timer::{Phase, TimerView};
         let (r, fake, sent) = remote();
-        let timer = TimerView { phase: Phase::Timer, total_ms: 1_500_000, ends_at_ms: Some(1_000_000), remaining_ms: None, cycle: 1 };
+        let timer = TimerView {
+            phase: Phase::Timer,
+            total_ms: 1_500_000,
+            ends_at_ms: Some(1_000_000),
+            remaining_ms: None,
+            started_at_ms: None,
+            elapsed_ms: None,
+            cycle: 1,
+        };
         let now = ActionsNow { timer: Some(timer), ..ActionsNow::default() };
         *fake.actions.lock().unwrap() = now.clone();
         r.message("tel-1", &watch(&["actions"]), 100_000);

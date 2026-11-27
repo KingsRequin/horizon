@@ -1,6 +1,7 @@
 //! Horloge (global `ClockData` de `ui/widgets/clock/widget.slint`) : heure mise à jour au
 //! début de chaque minute, date en français pour les exemplaires qui la montrent (`showDate`),
-//! minuteur en cours à côté (compte à rebours revu chaque seconde, seulement tant qu'il tourne).
+//! minuteur ou chronomètre en cours à côté (temps revu chaque seconde, seulement tant qu'il
+//! tourne).
 //! Le minuteur est au cœur (`crate::timer`) ; son panneau : `panel.rs`.
 
 mod panel;
@@ -72,13 +73,13 @@ fn show_timer() {
             let g = w.global::<ClockData>();
             g.set_timer(view.is_some());
             if let Some(t) = &view {
-                g.set_timer_text(timer::countdown(timer::remaining(t, now)).into());
+                g.set_timer_text(timer::shown(t, now).into());
                 g.set_timer_rest(t.phase == Phase::Break);
-                g.set_timer_paused(timer::is_paused(t));
+                g.set_timer_paused(t.is_paused());
             }
         }
     });
-    let run = view.as_ref().is_some_and(|t| !timer::is_paused(t));
+    let run = view.as_ref().is_some_and(|t| !t.is_paused());
     COUNTDOWN.with(|c| {
         if !run {
             c.stop();

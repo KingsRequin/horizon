@@ -1,6 +1,8 @@
-// Panneau du minuteur (app/src/widgets/clock/Panel.svelte), clic sur l'horloge : préréglages,
-// durée libre et pomodoro, ou minuteur en cours (pause, +5 min, arrêt) ; option « Ne pas
-// déranger pendant la séance ». L'état est au cœur (src/timer.rs), partagé par toutes les
+// Panneau du minuteur (app/src/widgets/clock/Panel.svelte), clic sur l'horloge. Sans séance,
+// deux onglets : « Minuteur » (préréglages, durée libre, pomodoro) et « Chronomètre »
+// (démarrer). Pendant une séance : temps restant ou écoulé, pause, +5 min (minuteur) ou remise
+// à zéro (chronomètre), arrêt, et la mini-fenêtre déplaçable (bouton de l'en-tête). Option « Ne
+// pas déranger pendant la séance ». L'état est au cœur (src/timer.rs), partagé par toutes les
 // barres ; les préréglages et le pomodoro se règlent dans Réglages d'Horizon › Minuteur
 // (« Régler », phase F). Relié par src/widgets/clock/panel.rs.
 
@@ -15,13 +17,19 @@ import { CheckRow } from "../../panel/check-row.slint";
 import { Divider } from "../../panel/divider.slint";
 
 export global ClockPanelData {
-    // Un minuteur existe (en marche ou en pause).
+    // Une séance existe (en marche ou en pause).
     in-out property <bool> running;
-    // « Minuteur », « Pomodoro · séance 2 · en pause »…
+    // La séance est un chronomètre (pas de part écoulée ni de « +5 min »).
+    in-out property <bool> stopwatch;
+    // Onglet choisi sans séance : chronomètre (sinon minuteur). Suit la dernière séance.
+    in-out property <bool> chrono;
+    // « Minuteur », « Pomodoro · séance 2 · en pause », « Chronomètre »…
     in-out property <string> title;
-    // Compte à rebours (« 24:59 »), part écoulée.
+    // Temps restant (« 24:59 ») ou écoulé, part écoulée.
     in-out property <string> countdown;
     in-out property <float> progress;
+    // Mini-fenêtre déplaçable demandée (affichée pendant chaque séance).
+    in-out property <bool> floating;
     // Pomodoro en pause (vert), minuteur en pause (estompé).
     in-out property <bool> rest;
     in-out property <bool> paused;
@@ -33,10 +41,14 @@ export global ClockPanelData {
     in-out property <bool> dnd;
     callback start(int);
     callback pomodoro();
+    callback stopwatch-start();
     // Pause (`true`) ou reprise.
     callback pause(bool);
     callback extend();
+    // Chronomètre remis à zéro.
+    callback reset();
     callback stop();
+    callback set-floating(bool);
     callback set-dnd(bool);
     // « Régler » : Réglages d'Horizon › Minuteur (phase F).
     callback settings();
@@ -64,6 +76,28 @@ component Cell inherits Btn {
     preferred-width: 0;
 }
 
+// Commande de la séance : largeur de son texte, la place qui reste partagée (en colonnes
+// égales, « Reprendre » était coupé).
+component ActionCell inherits Btn {
+    height: 32px;
+    horizontal-stretch: 1;
+    padding-x: 8px;
+}
+
+// Onglet de l'en-tête sans séance (« Minuteur », « Chronomètre »).
+component Tab inherits PanelButton {
+    in property <bool> active;
+    height: 24px;
+    padding-x: 9px;
+    radius: Theme.r-md;
+    rest: root.active ? Theme.accent-soft : transparent;
+    hover: root.active ? Theme.accent-soft : root.t.hover;
+    fg: root.active ? Theme.accent : root.t.text-dim;
+    hover-fg: root.active ? Theme.accent : root.t.text;
+    font-size: Theme.fs-meta;
+    font-weight: 600;
+}
+
 export component ClockPanel inherits PanelBase {
     width: 266px;
     spacing: 10px;
@@ -74,6 +108,21 @@ export component ClockPanel inherits PanelBase {
     if ClockPanelData.running: PanelHead {
         t: root.t;
         title: ClockPanelData.title;
+        center: true;
+        PanelButton {
+            t: root.t;
+            width: 22px;
+            height: 20px;
+            padding-x: 0;
+            icon: ClockPanelData.floating ? @image-url("../../../icons/phosphor/arrowSquareIn.svg") : @image-url("../../../icons/phosphor/arrowSquareOut.svg");
+            icon-size: 13px;
+            fg: ClockPanelData.floating ? Theme.accent : root.t.text-dim;
+            hover-fg: ClockPanelData.floating ? Theme.accent : root.t.text;
+            tip: ClockPanelData.floating ? "Fermer la fenêtre flottante" : "Fenêtre flottante, à placer n’importe où sur l’écran";
+            clicked => {
+                ClockPanelData.set-floating(!ClockPanelData.floating);
+            }
+        }
     }
     if ClockPanelData.running: Text {
         text: ClockPanelData.countdown;
@@ -85,14 +134,14 @@ export component ClockPanel inherits PanelBase {
         height: Theme.fs-hero * 1.0;
         vertical-alignment: center;
     }
-    if ClockPanelData.running: Track {
+    if ClockPanelData.running && !ClockPanelData.stopwatch: Track {
         t: root.t;
         value: ClockPanelData.progress;
         tint: ClockPanelData.rest ? root.t.ok : Theme.accent;
     }
     if ClockPanelData.running: HorizontalLayout {
         spacing: 6px;
-        if ClockPanelData.paused: Cell {
+        if ClockPanelData.paused: ActionCell {
             t: root.t;
             primary: true;
             icon: @image-url("../../../icons/phosphor/play.svg");
@@ -102,7 +151,7 @@ export component ClockPanel inherits PanelBase {
                 ClockPanelData.pause(false);
             }
         }
-        if !ClockPanelData.paused: Cell {
+        if !ClockPanelData.paused: ActionCell {
             t: root.t;
             icon: @image-url("../../../icons/phosphor/pause.svg");
             icon-size: 13px;
@@ -111,7 +160,7 @@ export component ClockPanel inherits PanelBase {
                 ClockPanelData.pause(true);
             }
         }
-        Cell {
+        if !ClockPanelData.stopwatch: ActionCell {
             t: root.t;
             icon: @image-url("../../../icons/phosphor/plus.svg");
             icon-size: 12px;
@@ -121,7 +170,17 @@ export component ClockPanel inherits PanelBase {
                 ClockPanelData.extend();
             }
         }
-        Cell {
+        if ClockPanelData.stopwatch: ActionCell {
+            t: root.t;
+            icon: @image-url("../../../icons/phosphor/arrowCounterClockwise.svg");
+            icon-size: 12px;
+            text: "Zéro";
+            tip: "Remettre le chronomètre à zéro";
+            clicked => {
+                ClockPanelData.reset();
+            }
+        }
+        ActionCell {
             t: root.t;
             icon: @image-url("../../../icons/phosphor/stop.svg");
             icon-size: 12px;
@@ -132,10 +191,28 @@ export component ClockPanel inherits PanelBase {
         }
     }
 
-    if !ClockPanelData.running: PanelHead {
-        t: root.t;
-        title: "Minuteur";
-        LinkButton {
+    if !ClockPanelData.running: HorizontalLayout {
+        spacing: 2px;
+        Tab {
+            t: root.t;
+            text: "Minuteur";
+            active: !ClockPanelData.chrono;
+            clicked => {
+                ClockPanelData.chrono = false;
+            }
+        }
+        Tab {
+            t: root.t;
+            text: "Chronomètre";
+            active: ClockPanelData.chrono;
+            clicked => {
+                ClockPanelData.chrono = true;
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+        }
+        if !ClockPanelData.chrono: LinkButton {
             t: root.t;
             padding-x: 0;
             fg: Theme.accent;
@@ -146,7 +223,29 @@ export component ClockPanel inherits PanelBase {
             }
         }
     }
-    if !ClockPanelData.running: HorizontalLayout {
+
+    // Chronomètre, sans séance : départ à zéro.
+    if !ClockPanelData.running && ClockPanelData.chrono: Text {
+        text: "0:00";
+        color: root.t.text-dim;
+        font-family: Theme.font-mono;
+        font-weight: 600;
+        font-size: Theme.fs-hero;
+        height: Theme.fs-hero * 1.0;
+        vertical-alignment: center;
+    }
+    if !ClockPanelData.running && ClockPanelData.chrono: Cell {
+        t: root.t;
+        primary: true;
+        icon: @image-url("../../../icons/phosphor/play.svg");
+        icon-size: 13px;
+        text: "Démarrer le chronomètre";
+        clicked => {
+            ClockPanelData.stopwatch-start();
+        }
+    }
+
+    if !ClockPanelData.running && !ClockPanelData.chrono: HorizontalLayout {
         spacing: 6px;
         for m in ClockPanelData.presets: Cell {
             t: root.t;
@@ -171,7 +270,7 @@ export component ClockPanel inherits PanelBase {
         }
     }
     // Durée libre : « 12 », « 1 h 30 »… puis Entrée (saisie gardée tant que le panneau existe).
-    if !ClockPanelData.running: HorizontalLayout {
+    if !ClockPanelData.running && !ClockPanelData.chrono: HorizontalLayout {
         spacing: 6px;
         TextField {
             t: root.t;
@@ -202,7 +301,7 @@ export component ClockPanel inherits PanelBase {
             }
         }
     }
-    if !ClockPanelData.running: Btn {
+    if !ClockPanelData.running && !ClockPanelData.chrono: Btn {
         t: root.t;
         alignment: start;
         clicked => {

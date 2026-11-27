@@ -27,6 +27,7 @@ pub mod profiles;
 pub mod pulse;
 pub mod settings_window;
 pub mod time;
+pub mod timer_float;
 pub mod tooltip;
 pub mod widget_settings;
 

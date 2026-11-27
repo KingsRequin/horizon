@@ -78,6 +78,7 @@ const STARTS: &[(&str, Start)] = &[
     ("mode nuit", comfort::start),
     ("ne pas déranger", dnd::start),
     ("minuteur", timer::start),
+    ("mini-fenêtre du minuteur", ui::timer_float::start),
     ("plugins", plugins::start),
     ("réglages", options::start),
     ("mise à jour", update::start),
@@ -204,6 +205,7 @@ pub fn run() {
     // qui n'existe plus, et panique.
     ui::popup::stop();
     ui::palette::stop();
+    ui::timer_float::stop();
     ui::essai::stop();
     ui::tooltip::close();
     tray::stop();

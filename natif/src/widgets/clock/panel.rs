@@ -1,7 +1,7 @@
 //! Panneau du minuteur (global `ClockPanelData` de `ui/widgets/clock/panel.slint`) : état du
-//! minuteur du cœur (`crate::timer`), compte à rebours revu chaque seconde seulement panneau
-//! ouvert et minuteur en marche (`every(1000)` de la version Tauri), actions vers le service.
-//! Fil de l'interface.
+//! minuteur ou du chronomètre du cœur (`crate::timer`), temps revu chaque seconde seulement
+//! panneau ouvert et séance en marche (`every(1000)` de la version Tauri), actions vers le
+//! service (dont la mini-fenêtre, `ui::timer_float`). Fil de l'interface.
 
 use crate::events::EV_TIMER;
 use crate::host::{self, AppHandle};
@@ -60,11 +60,17 @@ fn bind(app: &AppHandle, win: &Host) {
     let a = app.clone();
     g.on_pomodoro(move || act(&a, timer::timer_pomodoro));
     let a = app.clone();
+    g.on_stopwatch_start(move || act(&a, timer::timer_stopwatch));
+    let a = app.clone();
     g.on_pause(move |on| act(&a, move |a| timer::timer_pause(a, on)));
     let a = app.clone();
     g.on_extend(move || act(&a, |a| timer::timer_extend(a, EXTEND_MIN)));
     let a = app.clone();
+    g.on_reset(move || act(&a, timer::timer_reset));
+    let a = app.clone();
     g.on_stop(move || act(&a, timer::timer_stop));
+    let a = app.clone();
+    g.on_set_floating(move |on| act(&a, move |a| timer::float_set_open(a, on)));
     let a = app.clone();
     g.on_set_dnd(move |on| act(&a, move |a| crate::dnd::timer_set_dnd(a, on)));
     // Réglages d'Horizon › Minuteur (`settings_open`, page `options:minuteur`).
@@ -95,33 +101,37 @@ fn on_timer(p: &TimerPayload) {
         g.set_focus_min(p.pomodoro.0 as i32);
         g.set_rest_min(p.pomodoro.1 as i32);
         g.set_dnd(p.dnd);
+        g.set_floating(p.floating);
         g.set_running(p.timer.is_some());
         if let Some(t) = &p.timer {
-            let paused = timer::is_paused(t);
+            let paused = t.is_paused();
             g.set_title(format!("{}{}", timer::phase_label(t), if paused { " · en pause" } else { "" }).into());
             g.set_rest(t.phase == Phase::Break);
             g.set_paused(paused);
+            g.set_stopwatch(t.is_stopwatch());
+            // L'onglet suit la dernière séance : arrêtée, elle se relance d'où elle était.
+            g.set_chrono(t.is_stopwatch());
         }
     });
     show_countdown();
     sync_tick();
 }
 
-/// Compte à rebours et part écoulée, à l'instant.
+/// Temps restant (ou écoulé) et part écoulée, à l'instant.
 fn show_countdown() {
     let now = horizon_core::time::now_ms();
     STATE.with_borrow(|s| {
         let Some(t) = s.as_ref().and_then(|p| p.timer.as_ref()) else { return };
         with_data(|g| {
-            g.set_countdown(timer::countdown(timer::remaining(t, now)).into());
-            g.set_progress(timer::progress(t, now));
+            g.set_countdown(timer::shown(t, now).into());
+            g.set_progress(t.progress(now));
         });
     });
 }
 
-/// Chaque seconde, seulement panneau ouvert et minuteur en marche.
+/// Chaque seconde, seulement panneau ouvert et séance en marche.
 fn sync_tick() {
-    let run = OPEN.get() && STATE.with_borrow(|s| s.as_ref().and_then(|p| p.timer.as_ref()).is_some_and(|t| !timer::is_paused(t)));
+    let run = OPEN.get() && STATE.with_borrow(|s| s.as_ref().and_then(|p| p.timer.as_ref()).is_some_and(|t| !t.is_paused()));
     TICK.with(|t| {
         if !run {
             t.stop();

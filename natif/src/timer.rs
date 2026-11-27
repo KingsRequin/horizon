@@ -1,17 +1,21 @@
-//! Minuteur et pomodoro (panneau de l'horloge). L'état vit ici, partagé par toutes les barres et
-//! conservé quand elles se rechargent ; les barres affichent le compte à rebours à partir de
-//! l'échéance. Fin ou changement de phase : alerte dans l'îlot (et événement `timer` des plugins : Prisme y joue un bref signal).
+//! Minuteur, pomodoro et chronomètre (panneau de l'horloge) : une séance à la fois. L'état vit
+//! ici, partagé par toutes les barres et conservé quand elles se rechargent ; les barres
+//! affichent le temps restant (ou écoulé) à partir de l'échéance (ou du départ). Fin ou
+//! changement de phase : alerte dans l'îlot (et événement `timer` des plugins : Prisme y joue un
+//! bref signal). La mini-fenêtre déplaçable (`ui::timer_float`) suit chaque séance quand elle
+//! est demandée ; ce choix et sa place sont gardés dans `%APPDATA%\Horizon\timer-float.json`.
 //!
 //! Repris de `app/src-tauri/src/timer.rs`, avec les calculs d'affichage de `app/src/lib/timer.ts`
-//! (temps restant, part écoulée, titre, durée libre saisie).
+//! (titre, durée libre saisie).
 
 use crate::alerts::{Alert, Severity};
 use crate::events::EV_TIMER;
-use horizon_core::dnd::AlertKind;
 use crate::host::{AppHandle, Emitter, Manager};
 use crate::util::{Waker, start_thread};
+use horizon_core::config::OrderedWriter;
+use horizon_core::dnd::AlertKind;
 use horizon_core::time::now_ms;
-use horizon_core::timer::{Phase, Timer, TimerEvent, TimerView, duration_label};
+use horizon_core::timer::{FloatFile, Phase, Timer, TimerEvent, TimerView, duration_label};
 use serde::Serialize;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -21,10 +25,19 @@ const MAX_SLEEP: Duration = Duration::from_secs(30);
 /// Durée la plus longue d'un minuteur (`horizon_core::timer::MAX_MINUTES`).
 const MAX_MINUTES: u32 = 600;
 
-#[derive(Default)]
 pub struct TimerHub {
     timer: Mutex<Timer>,
     wake: Waker,
+    /// Mini-fenêtre : demandée ou non, et sa place.
+    float: Mutex<FloatFile>,
+    writer: OrderedWriter,
+}
+
+impl Default for TimerHub {
+    fn default() -> Self {
+        let float = std::fs::read_to_string(float_path()).map(|t| FloatFile::parse(&t)).unwrap_or_default();
+        TimerHub { timer: Mutex::default(), wake: Waker::default(), float: Mutex::new(float), writer: OrderedWriter::new() }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -35,15 +48,60 @@ pub struct TimerPayload {
     /// Durées proposées (minutes) et pomodoro (travail, pause), réglés dans `[timer]`.
     pub presets: Vec<u32>,
     pub pomodoro: (u32, u32),
+    /// Mini-fenêtre demandée (affichée pendant chaque séance).
+    pub floating: bool,
 }
 
 fn lock(app: &AppHandle) -> std::sync::MutexGuard<'_, Timer> {
     crate::util::lock(&app.state::<TimerHub>().inner().timer)
 }
 
+fn lock_float(app: &AppHandle) -> std::sync::MutexGuard<'_, FloatFile> {
+    crate::util::lock(&app.state::<TimerHub>().inner().float)
+}
+
 fn payload(app: &AppHandle) -> TimerPayload {
     let t = crate::state::settings().timer;
-    TimerPayload { timer: lock(app).view(), dnd: crate::dnd::timer_dnd(app), presets: t.presets, pomodoro: (t.focus, t.rest) }
+    TimerPayload {
+        timer: lock(app).view(),
+        dnd: crate::dnd::timer_dnd(app),
+        presets: t.presets,
+        pomodoro: (t.focus, t.rest),
+        floating: lock_float(app).open,
+    }
+}
+
+fn float_path() -> std::path::PathBuf {
+    crate::state::app_dir().join("timer-float.json")
+}
+
+/// `timer-float.json` réécrit ; `f` change l'état sous le verrou, l'écriture se fait après.
+fn save_float(app: &AppHandle, f: impl FnOnce(&mut FloatFile)) {
+    let hub = app.state::<TimerHub>();
+    let (ticket, text) = {
+        let mut file = lock_float(app);
+        f(&mut file);
+        (hub.inner().writer.ticket(), serde_json::to_string(&*file).unwrap_or_default())
+    };
+    if let Err(e) = hub.inner().writer.write(&float_path(), ticket, text.as_bytes()) {
+        log::warn!("enregistrement de timer-float.json : {e}");
+    }
+}
+
+/// Mini-fenêtre : demandée ou non, et sa place.
+pub fn float_state(app: &AppHandle) -> FloatFile {
+    *lock_float(app)
+}
+
+/// Mini-fenêtre demandée (bouton du panneau, palette) ou fermée (sa croix).
+pub fn float_set_open(app: &AppHandle, open: bool) {
+    save_float(app, |f| f.open = open);
+    broadcast(app);
+}
+
+/// Mini-fenêtre déplacée : sa nouvelle place (coin haut gauche, pixels physiques).
+pub fn float_moved(app: &AppHandle, x: i32, y: i32) {
+    save_float(app, |f| (f.x, f.y) = (Some(x), Some(y)));
 }
 
 /// Réglages modifiés : les panneaux reçoivent les nouvelles durées.
@@ -127,6 +185,18 @@ pub fn timer_pomodoro(app: &AppHandle) {
     changed(app);
 }
 
+/// Chronomètre (remplace la séance en cours).
+pub fn timer_stopwatch(app: &AppHandle) {
+    lock(app).stopwatch(now_ms());
+    changed(app);
+}
+
+/// Chronomètre remis à zéro (en marche comme en pause).
+pub fn timer_reset(app: &AppHandle) {
+    lock(app).reset(now_ms());
+    changed(app);
+}
+
 /// Pause (`true`) ou reprise (`false`).
 pub fn timer_pause(app: &AppHandle, pause: bool) {
     {
@@ -147,33 +217,51 @@ pub fn timer_extend(app: &AppHandle, minutes: u32) {
     changed(app);
 }
 
-/// Minuteur en pause (`Some(true)`), en marche (`Some(false)`) ou absent (palette).
-pub fn paused(app: &AppHandle) -> Option<bool> {
-    lock(app).paused()
+/// Essai sans souris (`horizon.exe --minuteur-essai <quoi>`, fil de l'interface) : `chrono`,
+/// `minuteur` (1 min), `pomodoro`, `pause`, `reprise`, `zero`, `stop`, `flottante` / `fixe`
+/// (mini-fenêtre demandée ou non), `panneau` (panneau de l'horloge épinglé sur la barre
+/// principale).
+pub fn essai(app: &AppHandle, what: &str) {
+    log::info!("essai du minuteur : {what}");
+    if what == "panneau" {
+        let state = app.state::<crate::state::AppState>();
+        if let Some(label) = state.main_monitor().and_then(|m| crate::edit::label_of(app, &m)) {
+            crate::ui::popup::show(&label, "clock", 900.0, 60.0, true);
+        }
+        return;
+    }
+    let f: fn(&AppHandle) = match what {
+        "chrono" => timer_stopwatch,
+        "minuteur" => |a| timer_start(a, 1),
+        "pomodoro" => timer_pomodoro,
+        "pause" => |a| timer_pause(a, true),
+        "reprise" => |a| timer_pause(a, false),
+        "zero" => timer_reset,
+        "stop" => timer_stop,
+        "flottante" => |a| float_set_open(a, true),
+        "fixe" => |a| float_set_open(a, false),
+        _ => return log::warn!("essai du minuteur inconnu : {what}"),
+    };
+    let a = app.clone();
+    crate::util::spawn_named("minuteur-essai", move || f(&a));
+}
+
+/// Séance en cours (palette) : `None` sans séance.
+pub fn current(app: &AppHandle) -> Option<TimerView> {
+    lock(app).view()
 }
 
 // ---- Affichage (lib/timer.ts) ----
 
-pub fn is_paused(t: &TimerView) -> bool {
-    t.ends_at_ms.is_none()
-}
-
-/// Temps restant à l'instant `now`.
-pub fn remaining(t: &TimerView, now: u64) -> u64 {
-    t.remaining_ms.unwrap_or_else(|| t.ends_at_ms.unwrap_or(now).saturating_sub(now))
-}
-
-/// Part écoulée, de 0 à 1.
-pub fn progress(t: &TimerView, now: u64) -> f32 {
-    if t.total_ms == 0 {
-        return 1.0;
-    }
-    (1.0 - remaining(t, now) as f64 / t.total_ms as f64).clamp(0.0, 1.0) as f32
-}
-
 /// Compte à rebours affiché (« 4:59 », « 1:02:03 ») : la seconde entamée compte.
 pub fn countdown(ms: u64) -> String {
     crate::ui::format::clock(ms.div_ceil(1000) * 1000)
+}
+
+/// Temps affiché à l'instant `now` : restant (compte à rebours) ou écoulé (chronomètre, en
+/// secondes pleines).
+pub fn shown(t: &TimerView, now: u64) -> String {
+    if t.is_stopwatch() { crate::ui::format::clock(t.elapsed(now)) } else { countdown(t.remaining(now)) }
 }
 
 pub fn phase_label(t: &TimerView) -> String {
@@ -181,6 +269,7 @@ pub fn phase_label(t: &TimerView) -> String {
         Phase::Focus => format!("Pomodoro · séance {}", t.cycle),
         Phase::Break => "Pomodoro · pause".to_owned(),
         Phase::Timer => "Minuteur".to_owned(),
+        Phase::Stopwatch => "Chronomètre".to_owned(),
     }
 }
 
@@ -212,7 +301,15 @@ mod tests {
     use super::*;
 
     fn view(ends: Option<u64>, rem: Option<u64>) -> TimerView {
-        TimerView { phase: Phase::Timer, total_ms: 60_000, ends_at_ms: ends, remaining_ms: rem, cycle: 0 }
+        TimerView {
+            phase: Phase::Timer,
+            total_ms: 60_000,
+            ends_at_ms: ends,
+            remaining_ms: rem,
+            started_at_ms: None,
+            elapsed_ms: None,
+            cycle: 0,
+        }
     }
 
     #[test]
@@ -242,15 +339,17 @@ mod tests {
     }
 
     #[test]
-    fn remaining_and_progress() {
-        let running = view(Some(100_000), None);
-        assert_eq!(remaining(&running, 70_000), 30_000);
-        assert_eq!(remaining(&running, 200_000), 0);
-        assert!((progress(&running, 70_000) - 0.5).abs() < 1e-6);
-        let paused = view(None, Some(15_000));
-        assert!(is_paused(&paused) && !is_paused(&running));
-        assert_eq!(remaining(&paused, 999_999), 15_000);
-        assert!((progress(&paused, 0) - 0.75).abs() < 1e-6);
+    fn shown_time() {
+        // Compte à rebours : la seconde entamée compte.
+        assert_eq!(shown(&view(Some(100_000), None), 70_500), "0:30");
+        assert_eq!(shown(&view(None, Some(15_000)), 999_999), "0:15");
+        // Chronomètre : secondes pleines.
+        let mut t = Timer::default();
+        t.stopwatch(1_000);
+        let v = t.view().unwrap();
+        assert_eq!(shown(&v, 1_999), "0:00");
+        assert_eq!(shown(&v, 62_000), "1:01");
+        assert_eq!(phase_label(&v), "Chronomètre");
     }
 
     #[test]

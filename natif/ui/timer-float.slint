@@ -1,0 +1,151 @@
+// Mini-fenêtre du minuteur (src/ui/timer_float.rs) : temps restant ou écoulé, toujours au premier
+// plan, à placer n'importe où d'un glisser (le temps reste visible quand on travaille ailleurs).
+// Pause / reprise, arrêt, et sa croix (ne plus l'afficher). Elle ne prend jamais le focus et
+// n'apparaît que pendant une séance. Taille fixe : `timer_float::SIZE` en Rust.
+
+import { Theme, Styles } from "theme.slint";
+import { Icon } from "components.slint";
+import { Track } from "gauge.slint";
+import { PanelButton } from "panel/button.slint";
+
+component RoundButton inherits PanelButton {
+    t: Styles.islands;
+    width: 26px;
+    height: 26px;
+    padding-x: 0;
+    radius: 13px;
+    icon-size: 13px;
+    fg: Styles.islands.text-dim;
+    hover-fg: Styles.islands.text;
+}
+
+export component TimerFloatWindow inherits Window {
+    // Temps affiché (« 24:59 ») et nature de la séance (« Pomodoro · pause »…).
+    in property <string> time;
+    in property <string> label;
+    // Part écoulée ; négative : pas de piste (chronomètre).
+    in property <float> progress: -1;
+    // Pomodoro en pause (vert), séance en pause (estompée).
+    in property <bool> rest;
+    in property <bool> paused;
+    callback pause(bool);
+    callback stop();
+    // Croix : la mini-fenêtre n'est plus demandée.
+    callback dismiss();
+    // Glisser : appui, déplacement de la souris, relâchement (positions lues par Rust).
+    callback drag-start();
+    callback drag-move();
+    callback drag-end();
+
+    property <color> tint: root.rest ? Styles.islands.ok : Theme.accent;
+
+    title: "Horizon — minuteur";
+    width: 248px;
+    height: 52px;
+    background: transparent;
+    default-font-family: Theme.font-ui;
+    default-font-size: Theme.fs-body;
+
+    box := Rectangle {
+        x: 1px;
+        y: 1px;
+        width: root.width - 2px;
+        height: root.height - 2px;
+        border-radius: Styles.islands.island-radius;
+        background: Styles.islands.popup-bg;
+        border-width: 1px;
+        border-color: Styles.islands.popup-border;
+
+        // Tout le fond se saisit pour déplacer la fenêtre (les boutons gardent leurs clics).
+        TouchArea {
+            mouse-cursor: MouseCursor.move;
+            pointer-event(e) => {
+                if e.button == PointerEventButton.left && e.kind == PointerEventKind.down {
+                    root.drag-start();
+                }
+                if e.button == PointerEventButton.left && e.kind == PointerEventKind.up {
+                    root.drag-end();
+                }
+            }
+            moved => {
+                root.drag-move();
+            }
+        }
+
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 8px;
+            spacing: 8px;
+            VerticalLayout {
+                alignment: center;
+                Icon {
+                    source: @image-url("../icons/phosphor/timer.svg");
+                    size: 16px;
+                    color: root.tint;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                spacing: 0px;
+                Text {
+                    text: root.time;
+                    color: root.rest ? Styles.islands.ok : Styles.islands.text;
+                    opacity: root.paused ? Theme.o-stale : 1;
+                    font-family: Theme.font-mono;
+                    font-weight: 600;
+                    font-size: 18px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.label;
+                    color: Styles.islands.text-dim;
+                    font-size: Theme.fs-label;
+                    overflow: elide;
+                    vertical-alignment: center;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                HorizontalLayout {
+                    spacing: 2px;
+                    RoundButton {
+                        icon: root.paused ? @image-url("../icons/phosphor/play.svg") : @image-url("../icons/phosphor/pause.svg");
+                        tip: root.paused ? "Reprendre" : "Pause";
+                        fg: root.paused ? Theme.accent : Styles.islands.text-dim;
+                        clicked => {
+                            root.pause(!root.paused);
+                        }
+                    }
+                    RoundButton {
+                        icon: @image-url("../icons/phosphor/stop.svg");
+                        icon-size: 12px;
+                        tip: "Arrêter";
+                        clicked => {
+                            root.stop();
+                        }
+                    }
+                    RoundButton {
+                        icon: @image-url("../icons/phosphor/x.svg");
+                        icon-size: 11px;
+                        tip: "Fermer la fenêtre flottante (la séance continue)";
+                        clicked => {
+                            root.dismiss();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Part écoulée : fine piste au bas de la fenêtre, rentrée à la courbe des coins.
+        if root.progress >= 0: Track {
+            t: Styles.islands;
+            x: Styles.islands.island-radius;
+            y: parent.height - 5px;
+            width: parent.width - 2 * Styles.islands.island-radius;
+            height: 2px;
+            value: root.progress;
+            tint: root.tint;
+        }
+    }
+}

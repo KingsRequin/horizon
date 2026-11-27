@@ -157,13 +157,9 @@ pub fn mixer_message(s: &crate::mixer::MixerSnapshot) -> ToPhone {
 }
 
 /// Minuteur pour le téléphone : le temps restant à `now_ms` (figé en pause, jamais négatif).
-pub fn timer_state(t: &crate::timer::TimerView, now_ms: u64) -> TimerState {
-    let remaining_ms = match (t.ends_at_ms, t.remaining_ms) {
-        (Some(end), _) => end.saturating_sub(now_ms),
-        (None, Some(left)) => left,
-        (None, None) => 0,
-    };
-    TimerState { remaining_ms, total_ms: t.total_ms, paused: t.ends_at_ms.is_none() }
+/// `None` pour le chronomètre : le protocole ne connaît que les comptes à rebours.
+pub fn timer_state(t: &crate::timer::TimerView, now_ms: u64) -> Option<TimerState> {
+    (!t.is_stopwatch()).then(|| TimerState { remaining_ms: t.remaining(now_ms), total_ms: t.total_ms, paused: t.is_paused() })
 }
 
 /// Clé de la pochette d'un morceau : FNV-1a 64 bits des trois champs séparés, en hexadécimal.
@@ -330,11 +326,22 @@ mod tests {
     #[test]
     fn the_timer_is_sent_as_time_left() {
         use crate::timer::{Phase, TimerView};
-        let running = TimerView { phase: Phase::Timer, total_ms: 1_500_000, ends_at_ms: Some(10_000 + 760_000), remaining_ms: None, cycle: 1 };
+        let running = TimerView {
+            phase: Phase::Timer,
+            total_ms: 1_500_000,
+            ends_at_ms: Some(10_000 + 760_000),
+            remaining_ms: None,
+            started_at_ms: None,
+            elapsed_ms: None,
+            cycle: 1,
+        };
         let paused = TimerView { ends_at_ms: None, remaining_ms: Some(300_000), ..running.clone() };
-        assert_eq!(timer_state(&running, 10_000), TimerState { remaining_ms: 760_000, total_ms: 1_500_000, paused: false });
-        assert_eq!(timer_state(&paused, 10_000), TimerState { remaining_ms: 300_000, total_ms: 1_500_000, paused: true });
-        assert_eq!(timer_state(&running, 5_000_000).remaining_ms, 0, "échu : jamais négatif");
+        assert_eq!(timer_state(&running, 10_000), Some(TimerState { remaining_ms: 760_000, total_ms: 1_500_000, paused: false }));
+        assert_eq!(timer_state(&paused, 10_000), Some(TimerState { remaining_ms: 300_000, total_ms: 1_500_000, paused: true }));
+        assert_eq!(timer_state(&running, 5_000_000).unwrap().remaining_ms, 0, "échu : jamais négatif");
+        let mut stopwatch = crate::timer::Timer::default();
+        stopwatch.stopwatch(10_000);
+        assert_eq!(timer_state(&stopwatch.view().unwrap(), 20_000), None, "le chronomètre n'est pas envoyé");
     }
 
     #[test]
