@@ -12,15 +12,12 @@ use horizon_core::layout::BarLayout;
 use serde_json::Value;
 use slint::{ComponentHandle, Rgba8Pixel, SharedPixelBuffer, VecModel};
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Avatars montrés au plus.
 const MAX_AVATARS: usize = 5;
-/// Un participant reste montré ce temps après s'être tu : la barre ne change pas de largeur à
-/// chaque pause entre deux phrases.
-const HOLD: Duration = Duration::from_secs(3);
 /// Taille maximale d'un avatar téléchargé.
 const MAX_BYTES: u64 = 2 * 1024 * 1024;
 
@@ -39,9 +36,6 @@ thread_local! {
     static BOUND: RefCell<Vec<Bound>> = RefCell::default();
     static LAST: RefCell<Option<Voice>> = const { RefCell::new(None) };
     static AVATARS: RefCell<HashMap<String, Avatar>> = RefCell::default();
-    static HEARD: RefCell<Heard> = RefCell::default();
-    /// Retire de la barre le prochain participant tu depuis `HOLD`.
-    static EXPIRE: slint::Timer = slint::Timer::default();
 }
 
 /// Initiales d'un participant sans avatar : « Sarah K » → « SK ».
@@ -75,39 +69,10 @@ fn users(v: &Voice) -> Vec<User> {
         .collect()
 }
 
-/// Qui parle, et depuis quand ceux qui viennent de se taire sont silencieux.
-#[derive(Default)]
-struct Heard {
-    live: HashSet<String>,
-    quiet: HashMap<String, Instant>,
-}
-
-impl Heard {
-    /// Note le nouvel état des participants ; oublie ceux qui sont partis et ceux qui se
-    /// taisent depuis `HOLD`.
-    fn update(&mut self, users: &[User], now: Instant) {
-        for u in users {
-            if u.speaking {
-                self.live.insert(u.id.clone());
-                self.quiet.remove(&u.id);
-            } else if self.live.remove(&u.id) {
-                self.quiet.insert(u.id.clone(), now);
-            }
-        }
-        self.live.retain(|id| users.iter().any(|u| &u.id == id));
-        self.quiet.retain(|id, t| now.duration_since(*t) < HOLD && users.iter().any(|u| &u.id == id));
-    }
-
-    /// Participants montrés dans la barre : les autres qui parlent ou viennent de se taire,
-    /// dans l'ordre de Discord (pas d'avatars qui permutent), 5 au plus.
-    fn shown(&self, users: Vec<User>) -> Vec<User> {
-        users.into_iter().filter(|u| !u.me && (u.speaking || self.quiet.contains_key(&u.id))).take(MAX_AVATARS).collect()
-    }
-
-    /// Délai avant que le prochain participant tu quitte la barre.
-    fn next_expiry(&self, now: Instant) -> Option<Duration> {
-        self.quiet.values().map(|t| (*t + HOLD).saturating_duration_since(now)).min()
-    }
+/// Participants montrés dans la barre : les autres qui parlent, dans l'ordre de Discord (pas
+/// d'avatars qui permutent), 5 au plus.
+fn shown(users: &[User]) -> impl Iterator<Item = &User> {
+    users.iter().filter(|u| u.speaking && !u.me).take(MAX_AVATARS)
 }
 
 /// Avatar déjà là ; sinon son téléchargement part (une seule fois par adresse).
@@ -192,21 +157,7 @@ fn show_all(v: &Voice) {
     // Infobulle « serveur — salon » (`v.guild?.name ?? 'Discord'`).
     let guild = v.rest.get("guild").and_then(|g| g["name"].as_str()).unwrap_or("Discord").to_owned();
     let all = if in_call { users(v) } else { Vec::new() };
-    let count = all.len();
-    let now = Instant::now();
-    let (list, expiry) = HEARD.with_borrow_mut(|h| {
-        h.update(&all, now);
-        (h.shown(all), h.next_expiry(now))
-    });
-    EXPIRE.with(|t| match expiry {
-        // Une marge : au réveil, le participant est tu depuis `HOLD` au moins.
-        Some(d) => t.start(slint::TimerMode::SingleShot, d + Duration::from_millis(20), || {
-            LAST.with_borrow(|l| l.iter().for_each(show_all));
-        }),
-        None => t.stop(),
-    });
-    let rows: Vec<VoiceAvatarRow> = list
-        .iter()
+    let rows: Vec<VoiceAvatarRow> = shown(&all)
         .map(|u| {
             let img = u.avatar.as_deref().and_then(avatar);
             VoiceAvatarRow {
@@ -227,7 +178,7 @@ fn show_all(v: &Voice) {
             d.set_in_call(in_call);
             d.set_channel(channel.as_str().into());
             d.set_guild(guild.as_str().into());
-            d.set_count(count as i32);
+            d.set_count(all.len() as i32);
             d.set_mute(v.mute.unwrap_or(false));
             d.set_deaf(v.deaf.unwrap_or(false));
             model::sync(&x.users, rows.clone());
@@ -282,56 +233,21 @@ mod tests {
     }
 
     fn ids(list: &[User]) -> Vec<&str> {
-        list.iter().map(|u| u.id.as_str()).collect()
+        shown(list).map(|u| u.id.as_str()).collect()
     }
 
     #[test]
     fn only_speakers_in_discord_order() {
-        let (mut h, now) = (Heard::default(), Instant::now());
-        h.update(&call(&[]), now);
-        assert!(h.shown(call(&[])).is_empty(), "personne ne parle : aucun avatar");
-        h.update(&call(&[5, 1]), now);
-        assert_eq!(ids(&h.shown(call(&[5, 1]))), ["1", "5"]);
-        h.update(&call(&[0, 1, 2, 3, 4, 5, 6]), now);
-        assert_eq!(h.shown(call(&[0, 1, 2, 3, 4, 5, 6])).len(), MAX_AVATARS);
-    }
-
-    #[test]
-    fn a_speaker_stays_shown_a_moment_after_falling_silent() {
-        let (mut h, t0) = (Heard::default(), Instant::now());
-        h.update(&call(&[2]), t0);
-        assert_eq!(h.next_expiry(t0), None, "tant qu'il parle, rien à retirer");
-        // Il a parlé 10 s : le délai part de la fin de sa phrase, pas du début.
-        let stop = t0 + Duration::from_secs(10);
-        h.update(&call(&[]), stop);
-        assert_eq!(ids(&h.shown(call(&[]))), ["2"]);
-        assert_eq!(h.next_expiry(stop), Some(HOLD));
-        // Il reprend avant la fin du délai : toujours là, sans délai en cours.
-        h.update(&call(&[2]), stop + Duration::from_secs(1));
-        assert_eq!(h.next_expiry(stop), None);
-        let stop = stop + Duration::from_secs(2);
-        h.update(&call(&[]), stop);
-        h.update(&call(&[]), stop + HOLD);
-        assert!(h.shown(call(&[])).is_empty(), "tu depuis HOLD : retiré");
-        assert_eq!(h.next_expiry(stop + HOLD), None);
+        assert!(ids(&call(&[])).is_empty(), "personne ne parle : aucun avatar");
+        assert_eq!(ids(&call(&[5, 1])), ["1", "5"]);
+        assert_eq!(ids(&call(&[0, 1, 2, 3, 4, 5, 6])).len(), MAX_AVATARS);
     }
 
     #[test]
     fn i_am_never_in_the_bar() {
         let users = json!([{ "id": "moi", "name": "x", "speaking": true, "self": true }, { "id": "b", "name": "y", "speaking": true }]);
         let v: Voice = serde_json::from_value(json!({ "available": true, "channel": { "name": "Général" }, "users": users })).unwrap();
-        let (mut h, now) = (Heard::default(), Instant::now());
-        let all = super::users(&v);
-        h.update(&all, now);
-        assert_eq!(ids(&h.shown(all)), ["b"]);
-    }
-
-    #[test]
-    fn those_who_leave_are_forgotten() {
-        let (mut h, now) = (Heard::default(), Instant::now());
-        h.update(&call(&[3]), now);
-        h.update(&[], now);
-        assert!(h.live.is_empty() && h.quiet.is_empty());
+        assert_eq!(ids(&super::users(&v)), ["b"]);
     }
 
     #[test]
