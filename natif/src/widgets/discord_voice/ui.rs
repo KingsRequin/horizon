@@ -50,9 +50,6 @@ struct User {
     avatar: Option<String>,
     speaking: bool,
     muted: bool,
-    /// Moi : jamais dans la barre (on sait quand on parle, et le moindre bruit du micro
-    /// déclenche Discord).
-    me: bool,
 }
 
 fn users(v: &Voice) -> Vec<User> {
@@ -64,15 +61,14 @@ fn users(v: &Voice) -> Vec<User> {
             avatar: u["avatar"].as_str().filter(|a| a.starts_with("https://")).map(str::to_owned),
             speaking: u["speaking"] == true,
             muted: u["mute"] == true || u["deaf"] == true,
-            me: u["self"] == true,
         })
         .collect()
 }
 
-/// Participants montrés dans la barre : les autres qui parlent, dans l'ordre de Discord (pas
+/// Participants montrés dans la barre : ceux qui parlent, dans l'ordre de Discord (pas
 /// d'avatars qui permutent), 5 au plus.
 fn shown(users: &[User]) -> impl Iterator<Item = &User> {
-    users.iter().filter(|u| u.speaking && !u.me).take(MAX_AVATARS)
+    users.iter().filter(|u| u.speaking).take(MAX_AVATARS)
 }
 
 /// Avatar déjà là ; sinon son téléchargement part (une seule fois par adresse).
@@ -241,13 +237,6 @@ mod tests {
         assert!(ids(&call(&[])).is_empty(), "personne ne parle : aucun avatar");
         assert_eq!(ids(&call(&[5, 1])), ["1", "5"]);
         assert_eq!(ids(&call(&[0, 1, 2, 3, 4, 5, 6])).len(), MAX_AVATARS);
-    }
-
-    #[test]
-    fn i_am_never_in_the_bar() {
-        let users = json!([{ "id": "moi", "name": "x", "speaking": true, "self": true }, { "id": "b", "name": "y", "speaking": true }]);
-        let v: Voice = serde_json::from_value(json!({ "available": true, "channel": { "name": "Général" }, "users": users })).unwrap();
-        assert_eq!(ids(&super::users(&v)), ["b"]);
     }
 
     #[test]
