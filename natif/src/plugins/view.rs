@@ -200,7 +200,18 @@ fn apply_std(k: &(String, String)) {
         })
     });
     if let Some((surface, std)) = job {
-        let surface = surface.borrow();
+        // Surface en plein rendu (`tick`) : Slint y lance les `changed` en attente, dont celui
+        // de la barre qui appelle ici. Posé juste après.
+        let Ok(surface) = surface.try_borrow() else {
+            STATE.with_borrow_mut(|s| {
+                if let Some(v) = s.views.get_mut(k) {
+                    v.std = None;
+                }
+            });
+            let k = k.clone();
+            Timer::single_shot(Duration::ZERO, move || apply_std(&k));
+            return;
+        };
         surface.set_std(&std);
         surface.touch();
     }
