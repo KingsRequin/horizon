@@ -56,6 +56,9 @@ struct User {
     avatar: Option<String>,
     speaking: bool,
     muted: bool,
+    /// Moi : jamais dans la barre (on sait quand on parle, et le moindre bruit du micro
+    /// déclenche Discord).
+    me: bool,
 }
 
 fn users(v: &Voice) -> Vec<User> {
@@ -67,6 +70,7 @@ fn users(v: &Voice) -> Vec<User> {
             avatar: u["avatar"].as_str().filter(|a| a.starts_with("https://")).map(str::to_owned),
             speaking: u["speaking"] == true,
             muted: u["mute"] == true || u["deaf"] == true,
+            me: u["self"] == true,
         })
         .collect()
 }
@@ -94,10 +98,10 @@ impl Heard {
         self.quiet.retain(|id, t| now.duration_since(*t) < HOLD && users.iter().any(|u| &u.id == id));
     }
 
-    /// Participants montrés dans la barre : ceux qui parlent ou viennent de se taire, dans
-    /// l'ordre de Discord (pas d'avatars qui permutent), 5 au plus.
+    /// Participants montrés dans la barre : les autres qui parlent ou viennent de se taire,
+    /// dans l'ordre de Discord (pas d'avatars qui permutent), 5 au plus.
     fn shown(&self, users: Vec<User>) -> Vec<User> {
-        users.into_iter().filter(|u| u.speaking || self.quiet.contains_key(&u.id)).take(MAX_AVATARS).collect()
+        users.into_iter().filter(|u| !u.me && (u.speaking || self.quiet.contains_key(&u.id))).take(MAX_AVATARS).collect()
     }
 
     /// Délai avant que le prochain participant tu quitte la barre.
@@ -310,6 +314,16 @@ mod tests {
         h.update(&call(&[]), stop + HOLD);
         assert!(h.shown(call(&[])).is_empty(), "tu depuis HOLD : retiré");
         assert_eq!(h.next_expiry(stop + HOLD), None);
+    }
+
+    #[test]
+    fn i_am_never_in_the_bar() {
+        let users = json!([{ "id": "moi", "name": "x", "speaking": true, "self": true }, { "id": "b", "name": "y", "speaking": true }]);
+        let v: Voice = serde_json::from_value(json!({ "available": true, "channel": { "name": "Général" }, "users": users })).unwrap();
+        let (mut h, now) = (Heard::default(), Instant::now());
+        let all = super::users(&v);
+        h.update(&all, now);
+        assert_eq!(ids(&h.shown(all)), ["b"]);
     }
 
     #[test]

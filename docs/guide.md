@@ -237,8 +237,8 @@ la première fois, Discord demande d'autoriser StreamKit (une fenêtre dans Disc
 rien. Le jeton est gardé dans le Gestionnaire d'identifiants de Windows ; page « État », ligne
 « Discord vocal ».
 
-- Dans la barre, seuls ceux qui parlent ont leur avatar (5 au plus, gardés 3 s après s'être
-  tus), suivis du nombre de participants ; le panneau du salon les montre tous.
+- Dans la barre, seuls les autres participants qui parlent ont leur avatar (5 au plus, gardés
+  3 s après s'être tus), suivis du nombre de participants ; le panneau du salon les montre tous.
 - Les commandes (micro, son, quitter le salon, volume d'un participant, suppression de bruit)
   passent si Discord les permet à l'application ; sinon le widget reste en lecture seule.
 - **Ta propre application Discord** (portail des développeurs, avec `http://localhost` dans

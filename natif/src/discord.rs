@@ -283,6 +283,11 @@ impl Session<'_> {
                     self.command("AUTHENTICATE", json!({ "access_token": token }), Pending::Authenticate)?;
                 }
                 (_, _, Some(Pending::Authenticate)) => {
+                    // `READY` ne nomme pas toujours l'utilisateur (StreamKit) ; la réponse
+                    // d'`AUTHENTICATE`, si.
+                    if let Some(id) = data["user"]["id"].as_str() {
+                        self.model.me = Some(id.to_owned());
+                    }
                     self.model.ready = true;
                     self.model.write = true;
                     d.active.store(true, Ordering::SeqCst);
