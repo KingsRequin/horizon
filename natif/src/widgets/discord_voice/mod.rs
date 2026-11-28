@@ -131,6 +131,33 @@ fn sync_status(app: &AppHandle, i: &mut Inner) {
     }
 }
 
+/// Faux appel, sans Discord (`horizon.exe --discord-essai`, instance en cours) : 8 participants
+/// sans avatar dont la parole tourne pendant 16 s, puis l'état vocal d'avant revient (un
+/// message réel de Discord pendant l'essai le remplace).
+pub fn essai(app: &AppHandle) {
+    log::info!("essai de Discord vocal");
+    const NAMES: [&str; 8] = ["Alice Martin", "Bruno", "Chloé D", "David", "Emma L", "Farid", "Gaël", "Hugo P"];
+    // (seconde, qui parle) : personne, un seul, relais, deux à la fois, courtes pauses.
+    const STEPS: [(u64, &[usize]); 9] =
+        [(0, &[]), (2, &[2]), (5, &[5]), (6, &[5, 0]), (8, &[]), (11, &[7]), (12, &[]), (12, &[7]), (13, &[])];
+    let before = voice_state(app.clone());
+    let a = app.clone();
+    crate::util::spawn_named("discord-essai", move || {
+        let start = Instant::now();
+        for (at, speaking) in STEPS {
+            std::thread::sleep((start + Duration::from_secs(at)).saturating_duration_since(Instant::now()));
+            let users: Vec<Value> = NAMES
+                .iter()
+                .enumerate()
+                .map(|(i, name)| json!({ "id": format!("essai{i}"), "name": name, "speaking": speaking.contains(&i), "mute": i == 3 }))
+                .collect();
+            on_voice(&a, json!({ "type": "voice", "available": true, "channel": { "name": "Essai" }, "users": users }));
+        }
+        std::thread::sleep((start + Duration::from_secs(16)).saturating_duration_since(Instant::now()));
+        on_voice(&a, serde_json::to_value(before).unwrap_or_default());
+    });
+}
+
 /// Message `voice` du relais (illisible : Discord vu comme indisponible).
 pub fn on_voice(app: &AppHandle, raw: Value) {
     let v = serde_json::from_value::<Voice>(raw)

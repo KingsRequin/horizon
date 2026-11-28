@@ -1,8 +1,8 @@
 //! Partie interface de Discord vocal (`ui/widgets/discord_voice/widget.slint`) : salon,
-//! participants (ceux qui parlent d'abord, 5 au plus) et boutons micro / son
-//! (`DiscordVoiceData`). Les avatars (PNG du CDN de Discord, adresse donnée par le plugin) sont
-//! téléchargés une fois hors du fil de l'interface, découpés en disque et gardés ; un avatar
-//! illisible laisse les initiales (`onerror` de VoiceAvatar.svelte).
+//! participants qui parlent (5 au plus), nombre de participants et boutons micro / son
+//! (`DiscordVoiceData`). La liste complète est dans le panneau. Les avatars (PNG du CDN de
+//! Discord, adresse donnée par le plugin) sont téléchargés une fois hors du fil de l'interface,
+//! découpés en disque et gardés ; un avatar illisible laisse les initiales.
 
 use super::{EV_VOICE, Voice, voice_state, voice_toggle};
 use crate::host::{self, AppHandle};
@@ -12,12 +12,15 @@ use horizon_core::layout::BarLayout;
 use serde_json::Value;
 use slint::{ComponentHandle, Rgba8Pixel, SharedPixelBuffer, VecModel};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-/// Avatars montrés au plus (`MAX_AVATARS`).
+/// Avatars montrés au plus.
 const MAX_AVATARS: usize = 5;
+/// Un participant reste montré ce temps après s'être tu : la barre ne change pas de largeur à
+/// chaque pause entre deux phrases.
+const HOLD: Duration = Duration::from_secs(3);
 /// Taille maximale d'un avatar téléchargé.
 const MAX_BYTES: u64 = 2 * 1024 * 1024;
 
@@ -36,6 +39,9 @@ thread_local! {
     static BOUND: RefCell<Vec<Bound>> = RefCell::default();
     static LAST: RefCell<Option<Voice>> = const { RefCell::new(None) };
     static AVATARS: RefCell<HashMap<String, Avatar>> = RefCell::default();
+    static HEARD: RefCell<Heard> = RefCell::default();
+    /// Retire de la barre le prochain participant tu depuis `HOLD`.
+    static EXPIRE: slint::Timer = slint::Timer::default();
 }
 
 /// Initiales d'un participant sans avatar : « Sarah K » → « SK ».
@@ -65,13 +71,39 @@ fn users(v: &Voice) -> Vec<User> {
         .collect()
 }
 
-/// Participants montrés : ceux qui parlent d'abord (ordre gardé sinon), 5 au plus ; et le
-/// nombre de ceux qui restent.
-fn shown(mut list: Vec<User>) -> (Vec<User>, usize) {
-    let total = list.len();
-    list.sort_by_key(|u| !u.speaking);
-    list.truncate(MAX_AVATARS);
-    (list, total.saturating_sub(MAX_AVATARS))
+/// Qui parle, et depuis quand ceux qui viennent de se taire sont silencieux.
+#[derive(Default)]
+struct Heard {
+    live: HashSet<String>,
+    quiet: HashMap<String, Instant>,
+}
+
+impl Heard {
+    /// Note le nouvel état des participants ; oublie ceux qui sont partis et ceux qui se
+    /// taisent depuis `HOLD`.
+    fn update(&mut self, users: &[User], now: Instant) {
+        for u in users {
+            if u.speaking {
+                self.live.insert(u.id.clone());
+                self.quiet.remove(&u.id);
+            } else if self.live.remove(&u.id) {
+                self.quiet.insert(u.id.clone(), now);
+            }
+        }
+        self.live.retain(|id| users.iter().any(|u| &u.id == id));
+        self.quiet.retain(|id, t| now.duration_since(*t) < HOLD && users.iter().any(|u| &u.id == id));
+    }
+
+    /// Participants montrés dans la barre : ceux qui parlent ou viennent de se taire, dans
+    /// l'ordre de Discord (pas d'avatars qui permutent), 5 au plus.
+    fn shown(&self, users: Vec<User>) -> Vec<User> {
+        users.into_iter().filter(|u| u.speaking || self.quiet.contains_key(&u.id)).take(MAX_AVATARS).collect()
+    }
+
+    /// Délai avant que le prochain participant tu quitte la barre.
+    fn next_expiry(&self, now: Instant) -> Option<Duration> {
+        self.quiet.values().map(|t| (*t + HOLD).saturating_duration_since(now)).min()
+    }
 }
 
 /// Avatar déjà là ; sinon son téléchargement part (une seule fois par adresse).
@@ -155,7 +187,20 @@ fn show_all(v: &Voice) {
     let channel = v.channel.as_ref().and_then(|c| c["name"].as_str()).unwrap_or_default().to_owned();
     // Infobulle « serveur — salon » (`v.guild?.name ?? 'Discord'`).
     let guild = v.rest.get("guild").and_then(|g| g["name"].as_str()).unwrap_or("Discord").to_owned();
-    let (list, more) = if in_call { shown(users(v)) } else { (Vec::new(), 0) };
+    let all = if in_call { users(v) } else { Vec::new() };
+    let count = all.len();
+    let now = Instant::now();
+    let (list, expiry) = HEARD.with_borrow_mut(|h| {
+        h.update(&all, now);
+        (h.shown(all), h.next_expiry(now))
+    });
+    EXPIRE.with(|t| match expiry {
+        // Une marge : au réveil, le participant est tu depuis `HOLD` au moins.
+        Some(d) => t.start(slint::TimerMode::SingleShot, d + Duration::from_millis(20), || {
+            LAST.with_borrow(|l| l.iter().for_each(show_all));
+        }),
+        None => t.stop(),
+    });
     let rows: Vec<VoiceAvatarRow> = list
         .iter()
         .map(|u| {
@@ -178,7 +223,7 @@ fn show_all(v: &Voice) {
             d.set_in_call(in_call);
             d.set_channel(channel.as_str().into());
             d.set_guild(guild.as_str().into());
-            d.set_more(more as i32);
+            d.set_count(count as i32);
             d.set_mute(v.mute.unwrap_or(false));
             d.set_deaf(v.deaf.unwrap_or(false));
             model::sync(&x.users, rows.clone());
@@ -225,13 +270,54 @@ mod tests {
         assert_eq!(initials(""), "");
     }
 
-    #[test]
-    fn speakers_first_and_five_at_most() {
-        let users: Vec<Value> = (0..7).map(|i| json!({ "id": i.to_string(), "name": "x", "speaking": i == 6 })).collect();
+    /// Sept participants ; ceux de `speaking` parlent.
+    fn call(speaking: &[usize]) -> Vec<User> {
+        let users: Vec<Value> = (0..7).map(|i| json!({ "id": i.to_string(), "name": "x", "speaking": speaking.contains(&i) })).collect();
         let v: Voice = serde_json::from_value(json!({ "available": true, "channel": { "name": "Général" }, "users": users })).unwrap();
-        let (list, more) = shown(super::users(&v));
-        assert_eq!(list.iter().map(|u| u.id.as_str()).collect::<Vec<_>>(), ["6", "0", "1", "2", "3"]);
-        assert_eq!(more, 2);
+        super::users(&v)
+    }
+
+    fn ids(list: &[User]) -> Vec<&str> {
+        list.iter().map(|u| u.id.as_str()).collect()
+    }
+
+    #[test]
+    fn only_speakers_in_discord_order() {
+        let (mut h, now) = (Heard::default(), Instant::now());
+        h.update(&call(&[]), now);
+        assert!(h.shown(call(&[])).is_empty(), "personne ne parle : aucun avatar");
+        h.update(&call(&[5, 1]), now);
+        assert_eq!(ids(&h.shown(call(&[5, 1]))), ["1", "5"]);
+        h.update(&call(&[0, 1, 2, 3, 4, 5, 6]), now);
+        assert_eq!(h.shown(call(&[0, 1, 2, 3, 4, 5, 6])).len(), MAX_AVATARS);
+    }
+
+    #[test]
+    fn a_speaker_stays_shown_a_moment_after_falling_silent() {
+        let (mut h, t0) = (Heard::default(), Instant::now());
+        h.update(&call(&[2]), t0);
+        assert_eq!(h.next_expiry(t0), None, "tant qu'il parle, rien à retirer");
+        // Il a parlé 10 s : le délai part de la fin de sa phrase, pas du début.
+        let stop = t0 + Duration::from_secs(10);
+        h.update(&call(&[]), stop);
+        assert_eq!(ids(&h.shown(call(&[]))), ["2"]);
+        assert_eq!(h.next_expiry(stop), Some(HOLD));
+        // Il reprend avant la fin du délai : toujours là, sans délai en cours.
+        h.update(&call(&[2]), stop + Duration::from_secs(1));
+        assert_eq!(h.next_expiry(stop), None);
+        let stop = stop + Duration::from_secs(2);
+        h.update(&call(&[]), stop);
+        h.update(&call(&[]), stop + HOLD);
+        assert!(h.shown(call(&[])).is_empty(), "tu depuis HOLD : retiré");
+        assert_eq!(h.next_expiry(stop + HOLD), None);
+    }
+
+    #[test]
+    fn those_who_leave_are_forgotten() {
+        let (mut h, now) = (Heard::default(), Instant::now());
+        h.update(&call(&[3]), now);
+        h.update(&[], now);
+        assert!(h.live.is_empty() && h.quiet.is_empty());
     }
 
     #[test]

@@ -125,6 +125,10 @@ fn received(args: &[String]) {
     if let Some(i) = args.iter().position(|a| a == "--minuteur-essai") {
         crate::timer::essai(&app, args.get(i + 1).map_or("", String::as_str));
     }
+    // Faux appel Discord, parole qui tourne (`--discord-essai`).
+    if args.iter().any(|a| a == "--discord-essai") {
+        crate::widgets::discord_voice::essai(&app);
+    }
     // Essai du mode édition et des menus de la barre principale (`--edition-essai <quoi>`).
     if let Some(i) = args.iter().position(|a| a == "--edition-essai") {
         crate::ui::edit::essai(&app, args.get(i + 1).map_or("", String::as_str));

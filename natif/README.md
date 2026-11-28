@@ -442,7 +442,8 @@ Une seule brique par rôle ; tout widget passe par elles.
   `src/ui/images.rs` (images chargées à la demande : icônes d'exe, favicons ; cache),
   `src/ui/icons.rs` (icônes choisies à l'exécution), `src/web.rs` (HTTP borné, lien ouvert
   dans le navigateur), `src/brands.rs` (logos Simple Icons), `src/wsclient.rs` +
-  `src/relay.rs` (relais Discord).
+  `src/relay.rs` (relais Discord). Discord vocal sans Discord, instance en cours :
+  `horizon.exe --discord-essai` (faux appel de 8 personnes, parole qui tourne pendant 16 s).
 - Catalogue `src/widgets/mod.rs` : `Backend { id, name, manage, start, bind, exit, panel }` de chaque
   widget porté dans `BACKENDS` (ordre alphabétique, vérifié par un test) ; `manage_all` avant
   les barres, `start_all` après le cœur et avant le premier plan (le widget d'un module intégré

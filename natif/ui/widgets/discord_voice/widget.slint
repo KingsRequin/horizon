@@ -1,6 +1,6 @@
-// Discord vocal (app/src/widgets/discord_voice/Widget.svelte) : salon, qui est là et qui parle
-// (ceux qui parlent d'abord, 5 au plus, puis « +N »), micro et son de Discord. Masqué hors
-// appel. Survol = panneau du salon.
+// Discord vocal : salon, ceux qui parlent (5 au plus, gardés 3 s après s'être tus), nombre de
+// participants, micro et son de Discord. Masqué hors appel. Survol = panneau du salon (liste
+// complète).
 
 import { Theme, StyleTokens } from "../../theme.slint";
 import { PanelArea } from "../../panels.slint";
@@ -24,8 +24,8 @@ export global DiscordVoiceData {
     // Serveur du salon (« Discord » à défaut).
     in property <string> guild: "Discord";
     in property <[VoiceAvatarRow]> users;
-    // Participants au-delà des 5 montrés.
-    in property <int> more;
+    // Participants du salon (`users` : seulement ceux qui parlent).
+    in property <int> count;
     in property <bool> mute;
     in property <bool> deaf;
     // « mute » ou « deaf » : bascule dans Discord (l'état suit au retour du plugin).
@@ -114,25 +114,31 @@ export component DiscordVoiceWidget inherits WidgetFrame {
             }
         }
     }
-    // Avatars qui se chevauchent de 5 px.
-    HorizontalLayout {
+    // Ceux qui parlent : avatars qui se chevauchent de 5 px.
+    if DiscordVoiceData.users.length > 0: HorizontalLayout {
         spacing: -5px;
         for u in DiscordVoiceData.users: VoiceAvatar {
             y: (root.t.island-h - self.height) / 2;
             t: root.t;
             user: u;
         }
-        // Marge de 4 px après le dernier avatar (au lieu du chevauchement de 5 px).
-        if DiscordVoiceData.more > 0: HorizontalLayout {
-            padding-left: 9px;
-            Text {
-                text: "+\{DiscordVoiceData.more}";
-                color: root.t.text-dim;
-                font-family: Theme.font-mono;
-                font-size: Theme.fs-label;
-                font-weight: 600;
-                vertical-alignment: center;
-            }
+    }
+    // Nombre de participants.
+    if DiscordVoiceData.count > 0: HorizontalLayout {
+        spacing: 3px;
+        Icon {
+            y: (root.t.island-h - self.height) / 2;
+            source: @image-url("../../../icons/phosphor/users.svg");
+            size: 13px;
+            color: root.t.text-dim;
+        }
+        Text {
+            text: DiscordVoiceData.count;
+            color: root.t.text-dim;
+            font-family: Theme.font-mono;
+            font-size: Theme.fs-label;
+            font-weight: 600;
+            vertical-alignment: center;
         }
     }
     for what in ["mute", "deaf"]: btn := BarButton {
